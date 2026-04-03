@@ -161,6 +161,35 @@ fn nested_convert_with_referenced_links() {
 }
 
 #[test]
+fn streamed_conversion_with_referenced_links() {
+    let converter = HtmlToMarkdown::builder()
+        .options(Options {
+            link_style: LinkStyle::Referenced,
+            ..Default::default()
+        })
+        .build();
+
+    let conversion = converter.start_conversion();
+    let first = conversion.tree_to_markdown(
+        &converter
+            .html_to_tree(r#"<p><a href="https://a.com">A</a></p>"#)
+            .unwrap(),
+    );
+    let second = conversion.tree_to_markdown(
+        &converter
+            .html_to_tree(r#"<p><a href="https://b.com">B</a></p>"#)
+            .unwrap(),
+    );
+
+    assert_eq!("[A][1]", first);
+    assert_eq!("[B][2]", second);
+    assert_eq!(
+        "\n\n[1]: https://a.com\n[2]: https://b.com",
+        conversion.finish()
+    );
+}
+
+#[test]
 fn discard_links_in_table_falling_back_to_raw_html() {
     use indoc::indoc;
 

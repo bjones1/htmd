@@ -4,6 +4,7 @@ mod html_block;
 pub mod options;
 pub(crate) mod util;
 
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 use dom_walker::walk_node;
@@ -166,15 +167,61 @@ impl HtmlToMarkdown {
     }
 
     /// Convert a DOM tree to Markdown. For convenience, `Node` is re-exported;
-    /// simply `use htmd::Node;` to access this type.
+    /// simply `use htmd::Node;` to access this type. To convert a document
+    /// supplied as several trees, use [`Self::start_conversion`].
     pub fn tree_to_markdown(&self, tree: &Rc<Node>) -> String {
+        let conversion = self.start_conversion();
+        let mut content = conversion.tree_to_markdown(tree);
+        content.push_str(&conversion.finish());
+
+        // With an empty body, the appended content's separating blank line
+        // would otherwise lead the document.
+        let start = content.len() - content.trim_start_matches('\n').len();
+        if start > 0 {
+            content.drain(..start);
+        }
+        content
+    }
+
+    /// Begin converting a document supplied as several DOM trees.
+    pub fn start_conversion(&self) -> Conversion<'_> {
         self.handlers.emit_doc_enter();
+        Conversion {
+            converter: self,
+            _not_send: PhantomData,
+        }
+    }
+
+    /// Convert HTML to Markdown.
+    pub fn convert(&self, html: &str) -> std::io::Result<String> {
+        Ok(self.tree_to_markdown(&self.html_to_tree(html)?))
+    }
+}
+
+/// A document conversion in progress, from
+/// [`HtmlToMarkdown::start_conversion`]. Content placed at the end of the
+/// document, such as link reference definitions, accumulates across every tree
+/// converted until [`Self::finish`] returns it; dropping an unfinished
+/// conversion discards that content.
+///
+/// Handlers keep per-document state on thread-local stacks, so a conversion
+/// cannot move between threads, and conversions on one thread must end in the
+/// reverse of the order they started.
+pub struct Conversion<'a> {
+    converter: &'a HtmlToMarkdown,
+    _not_send: PhantomData<*const ()>,
+}
+
+impl Conversion<'_> {
+    /// Convert the document's next DOM tree to Markdown. Leading and trailing
+    /// newlines are trimmed, so the caller separates the results.
+    pub fn tree_to_markdown(&self, tree: &Rc<Node>) -> String {
         let mut content = String::new();
 
         walk_node(
             tree,
             &mut content,
-            &self.handlers,
+            &self.converter.handlers,
             None,
             true,
             Context {
@@ -183,34 +230,39 @@ impl HtmlToMarkdown {
             },
         );
 
-        // Trim the body's trailing newlines before the appends below, whose
-        // content opens with a blank line separating it from the body.
-        content.truncate(content.trim_end_matches('\n').len());
-
-        for handler in &self.handlers.handlers {
-            let Some(append_content) = handler.append() else {
-                continue;
-            };
-            content.push_str(&append_content);
-        }
-
-        // Trim the document's edges in place instead of allocating a copy. The
-        // leading trim runs after the appends, not before: with an empty body,
-        // the first append's separating blank line would otherwise lead the
-        // document.
-        content.truncate(content.trim_end_matches('\n').len());
+        // Trim leading/trailing newlines in place instead of allocating a copy.
         let start = content.len() - content.trim_start_matches('\n').len();
         if start > 0 {
             content.drain(..start);
         }
-
-        self.handlers.emit_doc_leave();
+        let end = content.trim_end_matches('\n').len();
+        content.truncate(end);
         content
     }
 
-    /// Convert HTML to Markdown.
-    pub fn convert(&self, html: &str) -> std::io::Result<String> {
-        Ok(self.tree_to_markdown(&self.html_to_tree(html)?))
+    /// End the document, returning the Markdown which handlers place at its
+    /// end. It opens with a blank line separating it from the content before.
+    #[must_use]
+    pub fn finish(self) -> String {
+        let mut append = String::new();
+        for handler in &self.converter.handlers.handlers {
+            let Some(append_content) = handler.append() else {
+                continue;
+            };
+            append.push_str(&append_content);
+        }
+
+        append.truncate(append.trim_end_matches('\n').len());
+
+        // Dropping `self` here ends the document. This must follow the appends,
+        // which read the handlers' document state.
+        append
+    }
+}
+
+impl Drop for Conversion<'_> {
+    fn drop(&mut self) {
+        self.converter.handlers.emit_doc_leave();
     }
 }
 
