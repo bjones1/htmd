@@ -125,8 +125,8 @@ impl HtmlToMarkdown {
         Ok(dom.document)
     }
 
-    /// Convert a DOM tree to Markdown. For convenience, `Node` is re-exported;
-    /// simply `use htmd::Node;` to access this type.
+    /// Convert a DOM tree to Markdown. This can be called repeatedly to produce more content. Be sure to call
+    /// `finalize_conversion` after the final call to this function.
     pub fn tree_to_markdown(&self, tree: &Rc<Node>) -> String {
         let mut content = String::new();
 
@@ -146,21 +146,27 @@ impl HtmlToMarkdown {
         }
         let end = content.trim_end_matches('\n').len();
         content.truncate(end);
+        content
+    }
 
+    /// Finish the conversion by appending all Markdown placed at the end of the conversion.
+    pub fn finalize_conversion(&self) -> String {
+        let mut append = String::new();
         for handler in &self.handlers.handlers {
             let Some(append_content) = handler.append() else {
                 continue;
             };
-            content.push_str(&append_content);
+            append.push_str(&append_content);
         }
-        content.truncate(content.trim_end_matches('\n').len());
 
-        content
+        append.trim_end_matches('\n').to_string()
     }
 
     /// Convert HTML to Markdown.
     pub fn convert(&self, html: &str) -> std::io::Result<String> {
-        Ok(self.tree_to_markdown(&self.html_to_tree(html)?))
+        let mut content = self.tree_to_markdown(&self.html_to_tree(html)?);
+        content.push_str(&self.finalize_conversion());
+        Ok(content)
     }
 }
 
