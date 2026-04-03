@@ -124,34 +124,34 @@ fn test_passive_tag_filtering() {
     assert_eq!(vec!["table", "pre"], tags);
 }
 
+#[derive(Clone, Default)]
+struct DocListener {
+    lifecycle: Arc<Mutex<Vec<String>>>,
+}
+
+impl ElementHandler for DocListener {
+    fn event_subscription(&self, _options: &Options) -> EventSubscription {
+        EventSubscription {
+            events: EventTypes::DOC_EVENTS,
+            tags: &[],
+        }
+    }
+
+    fn on_doc_enter(&self) {
+        self.lifecycle.lock().unwrap().push("doc_enter".to_string());
+    }
+
+    fn on_doc_leave(&self) {
+        self.lifecycle.lock().unwrap().push("doc_leave".to_string());
+    }
+
+    fn handle(&self, _handlers: &dyn Handlers, _element: &Element) -> Option<HandlerResult> {
+        None
+    }
+}
+
 #[test]
 fn test_doc_lifecycle_events_with_nesting() {
-    #[derive(Clone, Default)]
-    struct DocListener {
-        lifecycle: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl ElementHandler for DocListener {
-        fn event_subscription(&self, _options: &Options) -> EventSubscription {
-            EventSubscription {
-                events: EventTypes::DOC_EVENTS,
-                tags: &[],
-            }
-        }
-
-        fn on_doc_enter(&self) {
-            self.lifecycle.lock().unwrap().push("doc_enter".to_string());
-        }
-
-        fn on_doc_leave(&self) {
-            self.lifecycle.lock().unwrap().push("doc_leave".to_string());
-        }
-
-        fn handle(&self, _handlers: &dyn Handlers, _element: &Element) -> Option<HandlerResult> {
-            None
-        }
-    }
-
     let listener = DocListener::default();
     let lifecycle = Arc::clone(&listener.lifecycle);
 
@@ -187,6 +187,29 @@ fn test_doc_lifecycle_events_with_nesting() {
     assert_eq!(
         vec!["doc_enter", "doc_enter", "doc_leave", "doc_leave"],
         log
+    );
+}
+
+#[test]
+fn test_doc_lifecycle_events_span_a_streamed_conversion() {
+    let listener = DocListener::default();
+    let lifecycle = Arc::clone(&listener.lifecycle);
+    let converter = HtmlToMarkdown::builder()
+        .add_handler(vec!["watcher"], listener)
+        .build();
+    let tree = converter.html_to_tree("<p>text</p>").unwrap();
+
+    let conversion = converter.start_conversion();
+    conversion.tree_to_markdown(&tree);
+    conversion.tree_to_markdown(&tree);
+    conversion.finish();
+    assert_eq!(vec!["doc_enter", "doc_leave"], *lifecycle.lock().unwrap());
+
+    // An unfinished conversion still ends its document when dropped.
+    drop(converter.start_conversion());
+    assert_eq!(
+        vec!["doc_enter", "doc_leave", "doc_enter", "doc_leave"],
+        *lifecycle.lock().unwrap()
     );
 }
 
