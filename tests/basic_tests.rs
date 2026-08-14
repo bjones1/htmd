@@ -238,13 +238,28 @@ fn convert_in(html: &str, translation_mode: TranslationMode) -> String {
 // interior block leaves one with content on both sides, where nothing can hoist
 // it away.
 //
-// Whether that reaches the output turns on what encloses the emphasis, so both
-// tests run the same `<em>a<div>b</div>c</em>` in every context and differ only
-// in what they expect.
+// Pure mode answers that by writing the content block by block: a pair of
+// markers around each paragraph the blank lines leave, and every other kind of
+// block left exactly as it stands, since a paragraph is the only one that can
+// carry a pair. Faithful mode has no such answer yet, and the defect that
+// leaves is pinned below.
+//
+// Whether the emphasis reaches the output therefore turns on the mode and on
+// what encloses the element. Both tests run the same `<em>a<div>b</div>c</em>`
+// and differ only in what they expect of it: the first holds every context
+// under pure mode, along with the faithful outputs that keep their markers, and
+// the second holds the faithful outputs that do not.
 // ---------------------------------------------------------------------------
 
-/// The emphasis carries a block child intact here — each for its own reason,
-/// none of them the flanking check:
+/// The emphasis survives its block child here.
+///
+/// Pure mode manages it wherever the blocks are paragraphs, by emphasizing each
+/// on its own — the same thing the markers asked for, said the only way Markdown
+/// can say it. A block that is *not* a paragraph goes out unmarked instead and
+/// loses the emphasis on itself alone, which
+/// `emphasis_loses_only_what_cannot_carry_markers` holds. Faithful mode manages
+/// it only where something else has already taken the blank line out of the
+/// markers' way:
 ///
 /// * In a `<p>`, the HTML parser gets there first. A `<div>` closes an open
 ///   paragraph, so html5ever reconstructs the `<em>` around each piece and htmd
@@ -257,83 +272,375 @@ fn convert_in(html: &str, translation_mode: TranslationMode) -> String {
 fn emphasis_around_a_block_keeps_its_markers() {
     let cell = "<table><thead><tr><th>h</th></tr></thead><tbody><tr>\
                 <td>x<em>a<div>b</div>c</em></td></tr></tbody></table>";
+    // A `None` is a faithful output asserted in the test below rather than one
+    // that goes unchecked; the pure output is always asserted, so no entry here
+    // can pass without pinning something.
     for (html, faithful, pure) in [
         (
             "<p><em>a<div>b</div>c</em></p>",
-            "*a*\n\n<div><em>b</em></div>\n\n*c*",
+            Some("*a*\n\n<div><em>b</em></div>\n\n*c*"),
             "*a*\n\n*b*\n\n*c*",
         ),
         (
             "<div><em>a<div>b</div>c</em></div>",
-            "<div><em>a<div>b</div>c</em></div>",
-            // Pure mode has no HTML to hide behind, so it is the broken case
-            // below; only the faithful half belongs here.
-            "",
+            Some("<div><em>a<div>b</div>c</em></div>"),
+            "*a*\n\n*b*\n\n*c*",
         ),
         (
             cell,
-            "| h                     |\n| --------------------- |\n| x*a  <div>b</div>  c* |",
-            "| h          |\n| ---------- |\n| x*a  b  c* |",
+            Some("| h                     |\n| --------------------- |\n| x*a  <div>b</div>  c* |"),
+            // The cell flattens the paragraphs, but only after the emphasis has
+            // been written onto each, so the source's one `<em>` comes back as
+            // three and the spaces that separated them fall outside all of
+            // them. Faithful mode keeps the single run here. That is the price
+            // of deciding the emphasis before the cell has said what it will do
+            // with the content — the handler cannot know a cell is above it.
+            "| h              |\n| -------------- |\n| x*a*  *b*  *c* |",
         ),
+        // The contexts that neither split the element nor flatten it. Faithful
+        // mode loses the emphasis in each; that half is asserted below.
+        (
+            "<ul><li><em>a<div>b</div>c</em></li></ul>",
+            None,
+            "*   *a*\n\n    *b*\n\n    *c*",
+        ),
+        (
+            "<blockquote><em>a<div>b</div>c</em></blockquote>",
+            None,
+            "> *a*\n> \n> *b*\n> \n> *c*",
+        ),
+        ("<em>a<div>b</div>c</em>", None, "*a*\n\n*b*\n\n*c*"),
     ] {
-        let md = convert_in(html, TranslationMode::Faithful);
-        assert_eq!(faithful, md);
-        // The markers really do pair up: this reads back as emphasis.
-        assert!(
-            render(&md).contains("<em>"),
-            "{html:?} became {md:?}, which reads back with no emphasis"
-        );
-        if !pure.is_empty() {
-            assert_eq!(pure, convert_in(html, TranslationMode::Pure));
+        let md = convert_in(html, TranslationMode::Pure);
+        assert_eq!(pure, md, "{html:?}");
+        if let Some(faithful) = faithful {
+            assert_eq!(
+                faithful,
+                convert_in(html, TranslationMode::Faithful),
+                "{html:?}"
+            );
+        }
+        // The markers really do pair up: each of these reads back as emphasis.
+        for md in [Some(md.as_str()), faithful].into_iter().flatten() {
+            assert!(
+                render(md).contains("<em>"),
+                "{html:?} became {md:?}, which reads back with no emphasis"
+            );
         }
     }
 }
 
-/// The same emphasis, in the contexts that neither split it nor flatten it. The
-/// markers straddle a blank line, so CommonMark reads them as literal asterisks
-/// and the `<em>` is lost — `*a\n\nb\n\nc*` reads back as three paragraphs, the
-/// first opening with a stray `*` and the last closing with one.
+/// The same emphasis under faithful mode, in the contexts that neither split it
+/// nor flatten it. The markers straddle a blank line, so CommonMark reads them
+/// as literal asterisks and the `<em>` is lost — `*a\n\nb\n\nc*` reads back as
+/// three paragraphs, the first opening with a stray `*` and the last closing
+/// with one.
 ///
 /// **This pins a known defect, not intended behavior.** The flanking check
 /// should reject these and let faithful mode serialize the element, the way it
-/// already does for the `<br>` shapes in `br_tests`; pure mode, which never
-/// consults that check, needs its own answer. Fixing either will fail these
+/// already does for the `<br>` shapes in `br_tests`. Fixing it will fail these
 /// assertions — that is what they are for. See `emphasis_handler`.
 #[test]
 fn emphasis_around_a_block_loses_its_markers() {
-    for (html, faithful, pure) in [
-        // A `<div>` is serialized whole in faithful mode, so only pure mode
-        // reaches the emphasis here; the faithful half is asserted above.
-        ("<div><em>a<div>b</div>c</em></div>", "", "*a\n\nb\n\nc*"),
+    for (html, faithful) in [
         (
             "<ul><li><em>a<div>b</div>c</em></li></ul>",
             "*   *a\n\n    <div>b</div>\n\n    c*",
-            "*   *a\n\n    b\n\n    c*",
         ),
         (
             "<blockquote><em>a<div>b</div>c</em></blockquote>",
             "> *a\n> \n> <div>b</div>\n> \n> c*",
-            "> *a\n> \n> b\n> \n> c*",
         ),
-        (
-            "<em>a<div>b</div>c</em>",
-            "*a\n\n<div>b</div>\n\nc*",
-            "*a\n\nb\n\nc*",
-        ),
+        ("<em>a<div>b</div>c</em>", "*a\n\n<div>b</div>\n\nc*"),
     ] {
-        if !faithful.is_empty() {
-            assert_eq!(faithful, convert_in(html, TranslationMode::Faithful));
-        }
-        assert_eq!(pure, convert_in(html, TranslationMode::Pure));
+        assert_eq!(
+            faithful,
+            convert_in(html, TranslationMode::Faithful),
+            "{html:?}"
+        );
 
         // The defect itself: no emphasis survives the round trip.
-        for md in [faithful, pure].into_iter().filter(|md| !md.is_empty()) {
-            assert!(
-                !render(md).contains("<em>"),
-                "{html:?} became {md:?}, which now reads back as emphasis — if this was \
-                 fixed on purpose, move the shape into the test above"
-            );
+        assert!(
+            !render(faithful).contains("<em>"),
+            "{html:?} became {faithful:?}, which now reads back as emphasis — if this was \
+             fixed on purpose, move the shape into the test above"
+        );
+    }
+}
+
+/// A block that cannot carry a pair of markers comes back as the block it is,
+/// losing the emphasis rather than the block.
+///
+/// The block is the whole content in each of these, so there is no interior
+/// blank line and the markers would have been written. What they would have
+/// spelled is not emphasis, though: set against a `#`, a bullet, or a fence they
+/// land *inside* the block and change what it says — `<em><h1>a</h1></em>` wrote
+/// `*# a*`, which is no longer a heading at all.
+#[test]
+fn emphasis_loses_only_what_cannot_carry_markers() {
+    for (html, pure, rendered) in [
+        ("<em><h1>a</h1></em>", "# a", "<h1>a</h1>"),
+        ("<em><ul><li>a</li></ul></em>", "*   a", "<li>a</li>"),
+        ("<em><ol><li>a</li></ol></em>", "1.  a", "<li>a</li>"),
+        ("<em><hr></em>", "* * *", "<hr />"),
+        (
+            "<em><pre><code>c1\nc2</code></pre></em>",
+            "```\nc1\nc2\n```",
+            "<code>c1\nc2\n</code>",
+        ),
+        (
+            "<em><blockquote><p>q1</p><p>q2</p></blockquote></em>",
+            "> q1\n> \n> q2",
+            "<blockquote>",
+        ),
+    ] {
+        let md = convert_in(html, TranslationMode::Pure);
+        assert_eq!(pure, md, "{html:?}");
+        // The block itself survives, which is what the markers would have cost.
+        assert!(
+            render(&md).contains(rendered),
+            "{html:?} became {md:?}, which no longer holds its block"
+        );
+    }
+}
+
+/// A code span htmd wrote does not open a fence, so no marker is written into
+/// the code block that follows it.
+///
+/// `code_handler` spells a span whose content touches a backtick with a longer
+/// run and padding spaces, which puts three backticks at the start of a line.
+/// Read as a fence, that span opens a block which then closes on the next *real*
+/// fence — and the real block's own lines land where markers get written, which
+/// puts them inside somebody's code.
+#[test]
+fn emphasis_does_not_write_markers_into_a_code_block() {
+    let md = convert_in(
+        "<em><code>``x</code><pre><code>a```b\n\nc\n\nd</code></pre></em>",
+        TranslationMode::Pure,
+    );
+    assert_eq!("*``` ``x ```*\n\n````\na```b\n\nc\n\nd\n````", md);
+    // The code comes back exactly as it went in, and the span reads as an
+    // emphasized span rather than as a fence.
+    let html = render(&md);
+    assert!(html.contains("a```b\n\nc\n\nd"), "{md:?} lost its code");
+    assert!(html.contains("<em><code>``x</code></em>"), "{md:?}");
+
+    // With no second fence to close on, the span used to swallow everything
+    // after it instead.
+    assert_eq!(
+        "*``` ``x ```*\n\n*d1*\n\n*d2*",
+        convert_in(
+            "<em><code>``x</code><div>d1</div><div>d2</div></em>",
+            TranslationMode::Pure
+        )
+    );
+}
+
+/// A marker set against markers an inline child already wrote would join their
+/// delimiter run rather than open one of its own, so the paragraph goes out
+/// unmarked and keeps the emphasis it already has.
+///
+/// Getting this wrong costs more than the outer emphasis: a `*` against the
+/// `*b*` of a nested `<em>` reads as the `**` of strong, and against `*b*z` it
+/// strands a literal `**` in the text and moves the emphasis onto the `z`.
+#[test]
+fn emphasis_leaves_a_delimiter_run_it_would_join() {
+    for (html, pure, rendered) in [
+        (
+            "<em>a<div><em>b</em></div>c</em>",
+            "*a*\n\n*b*\n\n*c*",
+            "<p><em>b</em></p>",
+        ),
+        (
+            "<em>a<div><em>b</em>z</div>c</em>",
+            "*a*\n\n*b*z\n\n*c*",
+            "<p><em>b</em>z</p>",
+        ),
+        (
+            "<em>a<div>z<em>b</em></div>c</em>",
+            "*a*\n\nz*b*\n\n*c*",
+            "<p>z<em>b</em></p>",
+        ),
+        (
+            "<strong>a<div><strong>b</strong></div>c</strong>",
+            "**a**\n\n**b**\n\n**c**",
+            "<p><strong>b</strong></p>",
+        ),
+    ] {
+        let md = convert_in(html, TranslationMode::Pure);
+        assert_eq!(pure, md, "{html:?}");
+        let html_out = render(&md);
+        // The child's own emphasis is intact,
+        assert!(
+            html_out.contains(rendered),
+            "{html:?} became {md:?}, whose inner emphasis moved"
+        );
+        // and no marker was left behind as literal text.
+        assert!(
+            !html_out.contains('*'),
+            "{html:?} became {md:?}, which leaves a literal marker"
+        );
+    }
+}
+
+/// Text that merely opens with a block's character is still text, and it keeps
+/// its emphasis.
+///
+/// htmd leaves a `#` against a word and a lone pipe unescaped precisely because
+/// neither is a block — `#x` is no heading without the space, and pipes are no
+/// table without a delimiter row. Reading them as blocks would cost an ordinary
+/// paragraph the markers it can carry perfectly well.
+#[test]
+fn emphasis_survives_text_that_only_looks_like_a_block() {
+    for (html, pure) in [
+        ("<em>a<div>#x</div>c</em>", "*a*\n\n*#x*\n\n*c*"),
+        ("<em>a<div>|x|</div>c</em>", "*a*\n\n*|x|*\n\n*c*"),
+    ] {
+        let md = convert_in(html, TranslationMode::Pure);
+        assert_eq!(pure, md, "{html:?}");
+        assert_eq!(
+            3,
+            render(&md).matches("<em>").count(),
+            "{html:?} became {md:?}, which lost an emphasis"
+        );
+    }
+}
+
+/// Text that htmd left unescaped keeps the markers that are the only thing
+/// still making it text.
+///
+/// The escaper writes `\#` for the `# ` that would open a heading, but leaves a
+/// bare `#`, a `---`, a lone `-`, and a `1) x` alone — none of which it needs to
+/// escape while something else is keeping them off the line's edge. By the time
+/// the content is a string it is indistinguishable from a block htmd wrote:
+/// `<em>#</em>` and `<em><h1></h1></em>` both hold exactly `#`. So the element
+/// is what gets asked, not the string.
+///
+/// Dropping the markers here would not merely lose the emphasis, the way it does
+/// for a block that really is one. It would turn the text into the block it was
+/// imitating and lose the text itself.
+#[test]
+fn emphasis_shields_text_that_htmd_left_unescaped() {
+    for (html, pure, block_tag) in [
+        ("<em>#</em>", "*#*", "<h1>"),
+        ("<em>######</em>", "*######*", "<h6>"),
+        ("<em>---</em>", "*---*", "<hr"),
+        ("<em>-</em>", "*-*", "<ul>"),
+        ("<em>1) x</em>", "*1) x*", "<ol>"),
+        ("<em>|--|</em>", "*|--|*", "<table>"),
+        ("<em>a<br>---</em>", "*a  \n---*", "<h2>"),
+        // The same text beside a block child, which is the harder half: the
+        // element really does hold a block, so the content is written block by
+        // block, and each piece still has to be judged for what it is.
+        ("<em>a<div>b</div>#</em>", "*a*\n\n*b*\n\n*#*", "<h1>"),
+        ("<em>#<div>b</div>c</em>", "*#*\n\n*b*\n\n*c*", "<h1>"),
+        ("<em>a<div>---</div>c</em>", "*a*\n\n*---*\n\n*c*", "<hr"),
+        ("<em>a<div>1) x</div>c</em>", "*a*\n\n*1) x*\n\n*c*", "<ol>"),
+        ("<em>a<div>-</div>c</em>", "*a*\n\n*-*\n\n*c*", "<ul>"),
+    ] {
+        let md = convert_in(html, TranslationMode::Pure);
+        assert_eq!(pure, md, "{html:?}");
+        let rendered = render(&md);
+        // The text is still text, and still emphasized.
+        assert!(
+            rendered.contains("<em>"),
+            "{html:?} became {md:?}, which reads back with no emphasis"
+        );
+        assert!(
+            !rendered.contains(block_tag),
+            "{html:?} became {md:?}, whose text turned into a {block_tag} block"
+        );
+    }
+}
+
+/// A tab after a `#` run costs the text the run was written with.
+///
+/// The escaper guards a `#` run closed by a *space* — `is_markdown_atx_heading`
+/// in `text_util` — so `#\tx` goes out unescaped. Every tab has become a space
+/// by the time `emphasis_handler` sees the content, which leaves it holding
+/// `# x`: a string nothing can tell from the heading that `<h1>x</h1>` would
+/// have written. `is_paragraph_line` reads it as the heading it now looks like,
+/// and the markers that were the text's only shield come off.
+///
+/// **This pins a known defect, not intended behavior.** The fix belongs to the
+/// escaper, which should guard a `#` run closed by any whitespace rather than by
+/// a space alone; nothing the emphasis handler can see distinguishes these two
+/// cases. `emphasis_shields_text_that_htmd_left_unescaped` holds the shapes the
+/// escaper's rule already covers. Fixing it will fail these assertions — that is
+/// what they are for.
+///
+/// Faithful mode keeps the text here, since it never takes the block-by-block
+/// path; what it does to these shapes instead is
+/// `emphasis_around_a_block_loses_its_markers`.
+#[test]
+fn a_tab_after_a_hash_turns_the_text_into_a_heading() {
+    for (html, pure) in [
+        ("<em>#\tx<div>b</div>c</em>", "# x\n\n*b*\n\n*c*"),
+        ("<em>a<div>b</div>#\tx</em>", "*a*\n\n*b*\n\n# x"),
+        (
+            "<strong>#\tx<div>b</div>c</strong>",
+            "# x\n\n**b**\n\n**c**",
+        ),
+    ] {
+        let md = convert_in(html, TranslationMode::Pure);
+        assert_eq!(pure, md, "{html:?}");
+
+        // The defect itself: the `#` the author wrote is gone from the document,
+        // and what was text is a heading.
+        assert!(
+            render(&md).contains("<h1>x</h1>"),
+            "{html:?} became {md:?}, which no longer reads back as a heading — if this was \
+             fixed on purpose, move the shape into \
+             emphasis_shields_text_that_htmd_left_unescaped"
+        );
+    }
+}
+
+/// Emphasis nested directly inside emphasis fuses the two pairs of markers.
+///
+/// The inner element writes `*b*` and the outer writes a `*` straight against
+/// it, which CommonMark reads as one run of two: `**b*z*` opens strong where the
+/// source meant to close the inner emphasis, and the marker left over becomes
+/// literal text. Both modes do it — the flanking check looks at whether a marker
+/// *can* flank, never at what is already sitting at the content's edge.
+///
+/// **This pins a known defect, not intended behavior.** `push_paragraph` refuses
+/// exactly this through `fuses_with_marker`, but it runs only where a block child
+/// split the content into paragraphs; with nothing to split, `emphasis_handler`
+/// writes the pair unconditionally. Extending the guard to that path is what
+/// would fix these, and doing so will fail these assertions — that is what they
+/// are for. `emphasis_leaves_a_delimiter_run_it_would_join` holds the shapes
+/// already covered.
+#[test]
+fn emphasis_directly_inside_emphasis_fuses_its_markers() {
+    for (html, md, rendered) in [
+        // A stranded `**`, and the emphasis moved onto the wrong word.
+        ("<em><em>b</em>z</em>", "**b*z*", "<p>**b<em>z</em></p>\n"),
+        ("<em>z<em>b</em></em>", "*z*b**", "<p><em>z</em>b**</p>\n"),
+        (
+            "<strong><strong>b</strong>z</strong>",
+            "****b**z**",
+            "<p>****b<strong>z</strong></p>\n",
+        ),
+        // Nothing is stranded here, but one `<em>` too few came back and the
+        // other changed strength.
+        (
+            "<em><em>b</em></em>",
+            "**b**",
+            "<p><strong>b</strong></p>\n",
+        ),
+    ] {
+        for mode in [TranslationMode::Pure, TranslationMode::Faithful] {
+            assert_eq!(md, convert_in(html, mode), "{html:?} in {mode:?}");
         }
+
+        // The defect itself: what reads back is not the emphasis that went in.
+        assert_eq!(
+            rendered,
+            render(md),
+            "{html:?} no longer round-trips wrongly — if this was fixed on purpose, move \
+             the shape into emphasis_leaves_a_delimiter_run_it_would_join"
+        );
     }
 }
 
