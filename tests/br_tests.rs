@@ -1506,6 +1506,192 @@ fn br_after_an_img_that_writes_nothing_in_a_setext_heading() {
 }
 
 // ---------------------------------------------------------------------------
+// `BrStyle::Raw` writes the `<br>` itself, in place, and the line runs on past
+// it. Everything above is about the two Markdown spellings and the fallbacks
+// they need; this style has no fallbacks, because the tag asks nothing of the
+// line it sits on. So the hard cases stop being hard: the break survives in an
+// ATX heading, in a table cell, at the end of a link label, and — the thing
+// neither other style can do — in pure mode wherever Markdown has no syntax for
+// it.
+//
+// Two things still overrule it. A `<code>` answers for the breaks inside it,
+// since a tag written there is text about a break rather than a break. And a
+// `<br>` that ends up *alone* on its line is a complete tag with only whitespace
+// after it, which is an HTML block of type 7 — so faithful mode still serializes
+// the paragraph around it, exactly as it does for the other two styles.
+// ---------------------------------------------------------------------------
+
+/// The ordinary case, and the shape of every one below it: the tag goes where
+/// the `<br>` was, the line does not end, and both translation modes agree
+/// because nothing was dropped in either.
+#[test]
+fn raw_style_writes_the_tag_in_place() {
+    for convert in [faithful, pure] {
+        assert_eq!("a<br>b", convert("<p>a<br>b</p>", BrStyle::Raw));
+        // Neither end of the line is needed, so neither is checked: a break that
+        // opens its line is written there, and so is one that ends it.
+        assert_eq!("<br>a", convert("<p><br>a</p>", BrStyle::Raw));
+        assert_eq!("a<br>", convert("<p>a<br></p>", BrStyle::Raw));
+        // A run of breaks needs no fallback either. The two Markdown spellings
+        // put every break after the first on a line of its own, where only the
+        // backslash form works; these stay on the one line they came from.
+        assert_eq!("a<br><br>b", convert("<p>a<br><br>b</p>", BrStyle::Raw));
+        // Attributes come along, since the tag is written rather than translated.
+        assert_eq!(
+            "a<br class=\"x\">b",
+            convert("<p>a<br class=\"x\">b</p>", BrStyle::Raw)
+        );
+    }
+}
+
+/// The blocks that put a marker of their own on the line. Each of these is a
+/// place a hard break cannot go — an ATX heading is one line, a cell cannot hold
+/// a newline — and where the other two styles reach for a raw `<br>` in faithful
+/// mode and drop the break in pure mode. Here both modes keep it, by the style's
+/// ordinary rule rather than a fallback.
+#[test]
+fn raw_style_survives_where_a_hard_break_cannot_go() {
+    for convert in [faithful, pure] {
+        assert_eq!("# a<br>b", convert("<h1>a<br>b</h1>", BrStyle::Raw));
+        assert_eq!("# <br>", convert("<h1><br></h1>", BrStyle::Raw));
+        assert_eq!(
+            indoc! {"
+                | h      |
+                | ------ |
+                | a<br>b |"},
+            convert(&table("a<br>b"), BrStyle::Raw)
+        );
+        // A link label is the same story one level in: the `]` is no line for a
+        // break to land on, but it is no obstacle to a tag.
+        assert_eq!(
+            "[a<br>](u)b",
+            convert("<p><a href=\"u\">a<br></a>b</p>", BrStyle::Raw)
+        );
+    }
+}
+
+/// The line markers a list item and a blockquote write are no obstacle either,
+/// and — unlike the two-space break, which an item's indent pass has to be
+/// careful not to trim — nothing about the tag can be trimmed away.
+#[test]
+fn raw_style_inside_line_marked_blocks() {
+    for convert in [faithful, pure] {
+        assert_eq!(
+            "*   a<br>b",
+            convert("<ul><li>a<br>b</li></ul>", BrStyle::Raw)
+        );
+        assert_eq!(
+            "*   <br>a",
+            convert("<ul><li><br>a</li></ul>", BrStyle::Raw)
+        );
+        assert_eq!(
+            "> a<br>b",
+            convert("<blockquote>a<br>b</blockquote>", BrStyle::Raw)
+        );
+    }
+}
+
+/// A `<code>` decides how all of its content is written, whatever `BrStyle`
+/// asks for: a tag written between backticks is the literal text `<br>`, not a
+/// break. So the two code cases are spelled exactly as they are under the other
+/// styles — a code span drops the break, a code block writes the newline it
+/// already is — and faithful mode serializes both, since a `<code>` holding a
+/// `<br>` has a child that is not text.
+#[test]
+fn raw_style_leaves_code_to_the_code() {
+    assert_eq!(
+        "<code>a<br>b</code>",
+        faithful("<p><code>a<br>b</code></p>", BrStyle::Raw)
+    );
+    assert_eq!("`ab`", pure("<p><code>a<br>b</code></p>", BrStyle::Raw));
+    assert_eq!(
+        "<pre><code>a<br>b</code></pre>",
+        faithful("<pre><code>a<br>b</code></pre>", BrStyle::Raw)
+    );
+    assert_eq!(
+        indoc! {"
+            ```
+            a
+            b
+            ```"},
+        pure("<pre><code>a<br>b</code></pre>", BrStyle::Raw)
+    );
+}
+
+/// The one place the style gives anything up, and the one place the two modes
+/// part company. A `<br>` that is all its paragraph holds ends up alone on its
+/// line, where a complete tag followed by only whitespace is an HTML block —
+/// which parses back without the `<p>` around it. Faithful mode keeps the
+/// paragraph by serializing it whole; pure mode keeps the break and lets the
+/// paragraph go, which is the trade this style is asking for and is more than
+/// the other two manage, since they drop the break outright.
+///
+/// A break alone at the document root has no paragraph to lose, so both modes
+/// simply write it.
+#[test]
+fn raw_style_alone_in_a_block() {
+    assert_eq!("<p><br></p>", faithful("<p><br></p>", BrStyle::Raw));
+    assert_eq!("<br>", pure("<p><br></p>", BrStyle::Raw));
+    for convert in [faithful, pure] {
+        assert_eq!("<br>", convert("<br>", BrStyle::Raw));
+        assert_eq!(
+            "a\n\n<br>\n\nb",
+            convert("<p>a</p><br><p>b</p>", BrStyle::Raw)
+        );
+    }
+}
+
+/// Markers written against the tag answer to the flanking rules, exactly as they
+/// do against the other two spellings — `<` and `>` are punctuation the same way
+/// `\` is. Faithful mode serializes the `<em>` whose markers would not flank;
+/// pure mode writes them anyway and lets them read as literal text, which is
+/// what it already does for the backslash break.
+#[test]
+fn raw_style_against_emphasis_markers() {
+    assert_eq!(
+        "a<em><br></em>b",
+        faithful("<p>a<em><br></em>b</p>", BrStyle::Raw)
+    );
+    assert_eq!("a*<br>*b", pure("<p>a<em><br></em>b</p>", BrStyle::Raw));
+    // With text on both sides inside the element the markers flank as usual, so
+    // the emphasis is written in both modes.
+    for convert in [faithful, pure] {
+        assert_eq!(
+            "a*b<br>c*d",
+            convert("<p>a<em>b<br>c</em>d</p>", BrStyle::Raw)
+        );
+    }
+}
+
+/// The sweep the other styles get from `faithful_output_round_trips`, run for
+/// this one. It is kept separate rather than added to `STYLES` because the three
+/// rules that sweep alongside it are about the *Markdown* spellings: this style
+/// writes a raw `<br>` wherever the break is, including at the start of a line,
+/// which `a_raw_br_never_opens_an_output_line` exists to forbid the others from
+/// doing. That is safe here for the reason the rule is stricter than CommonMark:
+/// only a tag with nothing but whitespace after it opens an HTML block, and this
+/// round-trip check against a real parser is what pins the distinction.
+#[test]
+fn raw_style_faithful_output_round_trips() {
+    for input in corpus_with_root() {
+        for heading_style in [HeadingStyle::Atx, HeadingStyle::Setex] {
+            let md = convert(
+                &input,
+                TranslationMode::Faithful,
+                BrStyle::Raw,
+                heading_style,
+            );
+            assert_eq!(
+                shape(&input),
+                shape(&render(&md)),
+                "{input:?}, Raw, {heading_style:?} became {md:?}, which reads back as \
+                 different HTML"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Invariants that must hold over *every* shape in this file, whatever spelling
 // the cases above settle on. These four sweep `CORPUS`, so a shape added there
 // is checked by all of them.

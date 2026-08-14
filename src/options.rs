@@ -63,6 +63,9 @@ pub enum BrStyle {
     TwoSpaces,
     /// A `\` at the end of the line.
     Backslash,
+    /// The `<br>` element itself, left as raw HTML on the line it already sits
+    /// on: `a<br>b`.
+    Raw,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]

@@ -43,6 +43,32 @@ pub(super) fn br_handler(handlers: &dyn Handlers, element: Element) -> Option<Ha
         None => {}
     }
 
+    // The raw `<br>` asks nothing of the line around it: the tag is what
+    // breaks, so it is written where it stands and the line runs on past it.
+    // That settles every question below — content ahead of the break, content
+    // after it, whether the block can hold a hard break at all — and retires
+    // every fallback with them, since there is nothing left to fall back from.
+    // Only the `<code>` above still overrides it, and for a reason no line
+    // scan reaches: a tag written there is text about a break, not a break.
+    //
+    // A `<br>` that ends up alone on its output line is the one place this
+    // gives anything up. Alone it is a complete tag with only whitespace after
+    // it, which opens an [HTML
+    // block](https://spec.commonmark.org/0.31.2/#html-blocks) — so `<p><br></p>`
+    // parses back without its paragraph. Faithful mode keeps the `<p>` by
+    // serializing it whole, which `block_holds_unwritable_br` already reports;
+    // pure mode keeps the break and lets the paragraph go, which is the trade
+    // this style is asking for. Two or more breaks on one line are not this
+    // case: a tag followed by another tag is not alone on its line, so
+    // `<br><br>` stays a paragraph holding two of them.
+    if handlers.options().br_style == BrStyle::Raw {
+        return Some(HandlerResult {
+            content: serialize_element(handlers, &element),
+            // This was translated using HTML, not Markdown.
+            markdown_translated: false,
+        });
+    }
+
     // What the output line holds on either side of the break decides every
     // question below, so both walks are made once here and passed down.
     let before = scan_line_before(element.node);
@@ -86,6 +112,8 @@ pub(super) fn br_handler(handlers: &dyn Handlers, element: Element) -> Option<Ha
         BrStyle::TwoSpaces if !before.two_space_break_is_visible() => Some("\\\n".into()),
         BrStyle::TwoSpaces => Some("  \n".into()),
         BrStyle::Backslash => Some("\\\n".into()),
+        // Written above, before any of the line scanning these two need.
+        BrStyle::Raw => unreachable!(),
     }
 }
 
