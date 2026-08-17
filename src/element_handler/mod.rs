@@ -42,6 +42,7 @@ use html::html_handler;
 use html5ever::Attribute;
 use img::img_handler;
 use li::list_item_handler;
+pub(crate) use list::holds_tight_blocks;
 use list::list_handler;
 use markup5ever_rcdom::Node;
 use p::p_handler;

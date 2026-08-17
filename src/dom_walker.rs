@@ -3,7 +3,10 @@ use markup5ever_rcdom::{Node, NodeData};
 use phf::phf_set;
 use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
-use crate::element_handler::ElementHandlers;
+use crate::{
+    element_handler::{ElementHandlers, holds_tight_blocks},
+    node_util::get_parent_node,
+};
 
 use super::{
     options::TranslationMode,
@@ -102,6 +105,18 @@ fn walk_element(
     handlers: &ElementHandlers,
     is_pre: bool,
 ) -> bool {
+    // A blank line anywhere inside a list makes the whole list loose, so where
+    // this element is written into a tight one — between two of its items, or
+    // between two blocks of one item — the blocks join on consecutive lines
+    // instead. Everything the element writes *within* itself is its own to
+    // space, hence the boundary alone.
+    let max_boundary_newlines =
+        if get_parent_node(node).is_some_and(|parent| holds_tight_blocks(&parent)) {
+            1
+        } else {
+            2
+        };
+
     // In pure mode a plain `<span>` writes nothing of its own, so it passes its
     // content through like an element with no handler at all. The content is
     // left untrimmed: trimming would decapitate a hard break the span ends on,
@@ -113,7 +128,7 @@ fn walk_element(
         let mut content = String::new();
         let markdown_translated =
             walk_children(node, &mut content, handlers, is_block_element(tag), is_pre);
-        append_normalized_content(output, content, is_pre);
+        append_normalized_content(output, content, is_pre, max_boundary_newlines);
         return markdown_translated;
     }
 
@@ -121,7 +136,7 @@ fn walk_element(
         return true;
     };
     if !result.content.is_empty() || tag != "head" {
-        append_normalized_content(output, result.content, is_pre);
+        append_normalized_content(output, result.content, is_pre, max_boundary_newlines);
     }
     result.markdown_translated
 }
@@ -330,9 +345,15 @@ fn combine_nodes(parent: &Rc<Node>, nodes: &[Rc<Node>]) -> Rc<Node> {
 }
 
 /// Normalizes content before adding to output by:
-/// 1. Collapsing excessive newlines (max 2 consecutive newlines)
+/// 1. Collapsing the newlines between the two down to `max_boundary_newlines`,
+///    which is 2 — one blank line — everywhere but inside a tight list
 /// 2. Collapsing adjacent spaces between inline elements (when not in pre context)
-fn append_normalized_content(output: &mut String, mut content: String, is_pre: bool) {
+fn append_normalized_content(
+    output: &mut String,
+    mut content: String,
+    is_pre: bool,
+    max_boundary_newlines: usize,
+) {
     if output.is_empty() {
         *output = content;
         return;
@@ -343,10 +364,17 @@ fn append_normalized_content(output: &mut String, mut content: String, is_pre: b
     let content_newlines = content.len() - content.trim_start_matches('\n').len();
     let total_newlines = last_newlines + content_newlines;
 
-    // Collapse excessive newlines (max 2)
-    if total_newlines > 2 {
-        let to_remove = std::cmp::min(total_newlines - 2, content_newlines);
+    // Collapse excessive newlines, taking them off the content first and then,
+    // for what the content has not got to give, off the end of the output: the
+    // block already written there wrote its own trailing blank line without
+    // knowing what would follow it.
+    if total_newlines > max_boundary_newlines {
+        let to_remove = std::cmp::min(total_newlines - max_boundary_newlines, content_newlines);
         content.drain(..to_remove);
+        let kept = total_newlines - to_remove;
+        if kept > max_boundary_newlines {
+            output.truncate(output.len() - (kept - max_boundary_newlines));
+        }
     }
 
     // Collapse adjacent spaces between inline elements (not in pre context)

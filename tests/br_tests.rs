@@ -38,6 +38,16 @@
 //! renders identically and lets the element vanish where the break was all it
 //! held.
 //!
+//! One more CommonMark rule reaches these tests through the blocks around the
+//! break rather than through the break itself: a list is *tight* or *loose*, and
+//! the two render differently — a loose list wraps every item's text in a `<p>`,
+//! a tight one leaves it bare. Those `<p>`s are content, to be carried across
+//! like any other, but the bit that decides them belongs to the list and not the
+//! item: one list is tight or loose throughout, spelled by blank lines between
+//! its items or between two blocks inside one. Where no blank line can say it —
+//! a single item holding a single paragraph — the loose list has no spelling at
+//! all.
+//!
 //! The file has two layers. Most tests pin exact output, one shape at a time.
 //! Under them, four tests sweep `CORPUS` — every shape the file exercises — for
 //! the properties that must hold whatever spelling any one case settles on.
@@ -388,10 +398,8 @@ fn br_inside_list_item() {
         "1.  a  \n    b",
         faithful("<ol><li>a<br>b</li></ol>", BrStyle::TwoSpaces)
     );
-    assert_eq!(
-        "*   a  \n    b",
-        faithful("<ul><li><p>a<br>b</p></li></ul>", BrStyle::TwoSpaces)
-    );
+    // The `<p>` case is `loose_list_item_keeps_its_paragraph`, where the
+    // looseness a `<p>` forces on the list is the point rather than a detail.
     assert_eq!(
         "*   > a  \n    > b",
         faithful(
@@ -502,6 +510,74 @@ fn consecutive_br_backslash() {
     assert_eq!(
         "a \\\n\\\n\\\n\\\n b",
         faithful("<p>a\n<br>\n<br>\n<br>\n<br>\nb</p>", BrStyle::Backslash)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tight and loose lists, which are two documents rather than two spellings of
+// one. A `<br>` in either has to come back out of the same one, which is why
+// `shape` at the foot of the file compares the `<p>`s inside a list where it
+// ignores every other one.
+// ---------------------------------------------------------------------------
+
+/// A list is loose when blank lines separate its items, or when one item holds
+/// two blocks with a blank line between them. Either route makes the whole list
+/// loose, wrapping every item's text and not just the one the blank line
+/// touched. Both are below, each paired with the tight list of the same text.
+#[test]
+fn loose_list_item_keeps_its_paragraph() {
+    assert_eq!(
+        "*   a  \n    b\n\n    > q",
+        faithful(
+            "<ul><li><p>a<br>b</p><blockquote>q</blockquote></li></ul>",
+            BrStyle::TwoSpaces
+        )
+    );
+    assert_eq!(
+        "*   a  \n    b\n    > q",
+        faithful(
+            "<ul><li>a<br>b<blockquote>q</blockquote></li></ul>",
+            BrStyle::TwoSpaces
+        )
+    );
+    assert_eq!(
+        "*   a  \n    b\n\n*   c",
+        faithful(
+            "<ul><li><p>a<br>b</p></li><li><p>c</p></li></ul>",
+            BrStyle::TwoSpaces
+        )
+    );
+    assert_eq!(
+        "*   a  \n    b\n*   c",
+        faithful("<ul><li>a<br>b</li><li>c</li></ul>", BrStyle::TwoSpaces)
+    );
+}
+
+/// A loose list CommonMark cannot spell: a single item holding a single
+/// paragraph. Neither route into looseness is open to it — there is no second
+/// item to leave a blank line before, and no second block inside the item — so
+/// the tight list is all the syntax has, and it means something else. Faithful
+/// mode falls back to serializing the list as HTML, as
+/// `br_only_list_item_faithful` does for its own unwritable items; pure mode
+/// drops the looseness the way it drops everything else Markdown has no room
+/// for.
+///
+/// It is not the only list Markdown cannot write. Looseness being one bit for
+/// the whole list, a list whose items disagree —
+/// `<ul><li><p>a</p></li><li>b</li></ul>` — has no spelling either, and reads
+/// back with both items wrapped or with neither. That one says nothing about a
+/// `<br>`, though, so it belongs to the list tests rather than here.
+#[test]
+fn loose_list_of_one_paragraph_is_unrepresentable() {
+    for html in [
+        "<ul><li><p>a<br>b</p></li></ul>",
+        "<ul><li><p>a<br></p></li></ul>",
+    ] {
+        assert_faithful(html, html);
+    }
+    assert_eq!(
+        "*   a  \n    b",
+        pure("<ul><li><p>a<br>b</p></li></ul>", BrStyle::TwoSpaces)
     );
 }
 
@@ -1742,6 +1818,11 @@ const CORPUS: &[&str] = &[
     "<ol><li>a<br>b</li></ol>",
     "<ul><li><p>a<br>b</p></li></ul>",
     "<ul><li><p>a<br></p></li></ul>",
+    // Loose lists, each with the tight list of the same text.
+    "<ul><li><p>a<br>b</p></li><li><p>c</p></li></ul>",
+    "<ul><li>a<br>b</li><li>c</li></ul>",
+    "<ul><li><p>a<br>b</p><blockquote>q</blockquote></li></ul>",
+    "<ul><li>a<br>b<blockquote>q</blockquote></li></ul>",
     "<ul><li><blockquote>a<br>b</blockquote></li></ul>",
     "<ul><li><ul><li>a<br>b</li></ul></li></ul>",
     "<ul><li>a<em><br>b</em></li></ul>",
@@ -2181,10 +2262,21 @@ enum Piece {
 /// with everything that says nothing about a `<br>` left out.
 ///
 /// Whitespace collapses the way HTML collapses it, and adjacent text merges,
-/// since a dropped element leaves the text on either side of it touching. `<p>`
-/// is ignored outright, coming and going with CommonMark's tight-and-loose list
-/// rules; `<i>` and `<b>` read as `<em>` and `<strong>`. Everything else,
-/// including every attribute, has to match.
+/// since a dropped element leaves the text on either side of it touching; `<i>`
+/// and `<b>` read as `<em>` and `<strong>`. Everything else, including every
+/// attribute, has to match.
+///
+/// A `<p>` is ignored *except* directly inside an `<li>`. Everywhere else
+/// CommonMark decides for itself whether inline content sits in a paragraph —
+/// the document root and a blockquote always wrap it, a table cell never can —
+/// so a `<p>` there says nothing either side chose. A list is the one place both
+/// spellings exist and render differently, which makes its `<p>`s content htmd
+/// has to carry rather than punctuation it may add or drop at will.
+///
+/// The choice is the list's and not the item's: one list is tight or loose
+/// throughout. These `<p>`s are compared per item only because that is where
+/// they hang — a list whose items disagree is one no Markdown spells, and would
+/// fail this comparison from either side.
 fn shape(html: &str) -> Vec<Piece> {
     fn walk(node: ego_tree::NodeRef<'_, Node>, out: &mut Vec<Piece>) {
         for child in node.children() {
@@ -2196,9 +2288,15 @@ fn shape(html: &str) -> Vec<Piece> {
                         "b" => "strong",
                         other => other,
                     };
-                    // `<html>` is the wrapper the fragment parser adds; `<p>` is
-                    // the one both sides may disagree about for free.
-                    if name == "html" || name == "p" {
+                    // A `<p>` outside a list item is the one element both sides
+                    // may disagree about for free; `<html>` is the wrapper the
+                    // fragment parser adds.
+                    let free_paragraph = name == "p"
+                        && !node
+                            .value()
+                            .as_element()
+                            .is_some_and(|parent| parent.name() == "li");
+                    if name == "html" || free_paragraph {
                         walk(child, out);
                         continue;
                     }

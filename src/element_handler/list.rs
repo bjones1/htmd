@@ -1,7 +1,9 @@
-use markup5ever_rcdom::NodeData;
+use markup5ever_rcdom::{Node, NodeData};
+use std::rc::Rc;
 
 use crate::{
     Element,
+    dom_walker::is_block_element,
     element_handler::{HandlerResult, Handlers, serialize_element},
     node_util::{get_node_tag_name, get_parent_node},
     options::{Options, TranslationMode},
@@ -29,6 +31,16 @@ pub(super) fn list_handler(handlers: &dyn Handlers, element: Element) -> Option<
                 tag_name == Some("li") || tag_name.is_none()
             })
         {
+            return Some(HandlerResult {
+                content: serialize_element(handlers, &element),
+                markdown_translated: false,
+            });
+        }
+
+        // ...and a loose list needs somewhere to put the blank line that spells
+        // it. Where there is nowhere, the list survives only as HTML: the tight
+        // list is all the syntax has, and it means something else.
+        if !is_tight_list(element.node) && !loose_list_is_writable(element.node) {
             return Some(HandlerResult {
                 content: serialize_element(handlers, &element),
                 markdown_translated: false,
@@ -69,6 +81,73 @@ pub(super) fn list_handler(handlers: &dyn Handlers, element: Element) -> Option<
     } else {
         Some(concat_strings!("\n\n", trimmed, "\n\n").into())
     }
+}
+
+/// Whether blocks written directly inside `node` have to land on consecutive
+/// lines, with no blank line between them: `node` is a tight list, or an item of
+/// one.
+///
+/// A blank line between two items, or between two blocks of one item, is exactly
+/// what spells a *loose* list, so a tight one can hold neither. This is what the
+/// document walker asks before joining two blocks.
+pub(crate) fn holds_tight_blocks(node: &Rc<Node>) -> bool {
+    match get_node_tag_name(node) {
+        Some("ul" | "ol") => is_tight_list(node),
+        Some("li") => enclosing_list(node).is_some_and(|list| is_tight_list(&list)),
+        _ => false,
+    }
+}
+
+/// Whether this `<ul>` or `<ol>` is *tight*, which CommonMark renders with each
+/// item's text bare rather than wrapped in a `<p>`.
+///
+/// The choice belongs to the list rather than to any one item — one blank line
+/// anywhere in a list makes the whole list loose — so a single `<p>` under any
+/// item settles it for all of them. An item with no paragraph of its own, one
+/// holding only a nested block, renders the same either way and so says nothing.
+fn is_tight_list(list: &Rc<Node>) -> bool {
+    !items(list).any(|item| {
+        item.children
+            .borrow()
+            .iter()
+            .any(|child| get_node_tag_name(child) == Some("p"))
+    })
+}
+
+/// Whether a loose list can be spelled at all. The blank line that makes it
+/// loose needs somewhere to go: between two items, or between two blocks of one
+/// item. A single item holding a single block offers neither, leaving the tight
+/// list — which means something else — as the only Markdown there is.
+fn loose_list_is_writable(list: &Rc<Node>) -> bool {
+    let mut items = items(list);
+    let Some(first) = items.next() else {
+        return false;
+    };
+    items.next().is_some() || block_child_count(&first) > 1
+}
+
+/// The `<li>` children of a list, ignoring the text nodes of whitespace between
+/// them.
+fn items(list: &Rc<Node>) -> impl Iterator<Item = Rc<Node>> {
+    let children = list.children.borrow().clone();
+    children
+        .into_iter()
+        .filter(|child| get_node_tag_name(child) == Some("li"))
+}
+
+/// How many blocks this list item holds, a blank line's worth of room lying
+/// between each pair of them.
+fn block_child_count(item: &Rc<Node>) -> usize {
+    item.children
+        .borrow()
+        .iter()
+        .filter(|child| get_node_tag_name(child).is_some_and(is_block_element))
+        .count()
+}
+
+/// The `<ul>` or `<ol>` this item belongs to, if it is in one at all.
+fn enclosing_list(item: &Rc<Node>) -> Option<Rc<Node>> {
+    get_parent_node(item).filter(|list| matches!(get_node_tag_name(list), Some("ul" | "ol")))
 }
 
 struct ListChildContent {
@@ -117,6 +196,11 @@ fn get_ol_content(handlers: &dyn Handlers, element: &Element) -> (String, bool) 
 
     let mut curr_li_idx = start_idx - 1;
 
+    // A blank line between two items is what makes a list loose, so a tight one
+    // joins them on consecutive lines. The `<ul>` case is settled in the
+    // document walker, which is what joins those items.
+    let max_boundary_newlines = if is_tight_list(element.node) { 1 } else { 2 };
+
     let capacity = buffer.iter().map(|content| content.text.len()).sum();
     let mut contents = String::with_capacity(capacity);
     for content in buffer {
@@ -131,7 +215,7 @@ fn get_ol_content(handlers: &dyn Handlers, element: &Element) -> (String, bool) 
         } else {
             content.text
         };
-        append_block(&mut contents, &rendered);
+        append_block(&mut contents, &rendered, max_boundary_newlines);
     }
 
     (contents, all_translated)

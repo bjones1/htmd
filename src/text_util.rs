@@ -90,7 +90,10 @@ where
     }
 }
 
-pub(crate) fn append_block(output: &mut String, content: &str) {
+/// Appends `content` to `output` as the next block, with no more than
+/// `max_boundary_newlines` line endings between the two — 2, one blank line,
+/// everywhere but inside a tight list, which can hold no blank line at all.
+pub(crate) fn append_block(output: &mut String, content: &str, max_boundary_newlines: usize) {
     if content.is_empty() {
         return;
     }
@@ -99,7 +102,7 @@ pub(crate) fn append_block(output: &mut String, content: &str) {
     let content_without_newlines = content.trim_start_matches('\n');
     let boundary_newlines = (output.len() - output_without_newlines)
         .max(content.len() - content_without_newlines.len())
-        .min(2);
+        .min(max_boundary_newlines);
 
     output.truncate(output_without_newlines);
     for _ in 0..boundary_newlines {
