@@ -40,3 +40,20 @@ pub fn convert_faithful_setext(html: &str) -> String {
     )
     .unwrap()
 }
+
+/// The one-column, one-row table the table cells section of
+/// `unsupported_html.md` writes its rows against, with `cell` as the body cell.
+pub fn one_cell_table(cell: &str) -> String {
+    format!(
+        "<table><thead><tr><th>h</th></tr></thead>\
+         <tbody><tr><td>{cell}</td></tr></tbody></table>"
+    )
+}
+
+/// [`one_cell_table`] with `cell` as the *heading* cell instead.
+pub fn one_cell_table_heading(cell: &str) -> String {
+    format!(
+        "<table><thead><tr><th>{cell}</th></tr></thead>\
+         <tbody><tr><td>c</td></tr></tbody></table>"
+    )
+}

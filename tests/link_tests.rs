@@ -64,7 +64,6 @@ fn links_inlined_prefer_autolinks() {
     );
 }
 
-
 /// A line ending in a link destination ends the leaf block holding it: written
 /// literally, `a[t](u⏎⏎v)b` is two paragraphs and no link at all. CommonMark
 /// decodes a character reference in a destination, so it is encoded instead.

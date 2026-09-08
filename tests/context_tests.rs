@@ -5,7 +5,7 @@
 use pretty_assertions::assert_eq;
 
 mod common;
-use common::{convert_faithful, convert_faithful_setext};
+use common::{convert_faithful, convert_faithful_setext, one_cell_table, one_cell_table_heading};
 
 #[test]
 fn html_at_the_document_root_is_a_block() {
@@ -33,6 +33,13 @@ fn html_at_the_document_root_is_a_block() {
 fn a_type_7_tag_is_a_raw_inline_even_in_a_block_context() {
     assert_eq!("<br>", convert_faithful("<br>").unwrap());
     assert_eq!("<br><br>", convert_faithful("<br><br>").unwrap());
+    // The example the analysis section of `unsupported_html.md` gives for the
+    // type 7 tradeoff.
+    assert_eq!(
+        "This is *really* important.",
+        convert_faithful("This is <em>really</em> important.").unwrap()
+    );
+    // An element sent to HTML by an attribute is still a raw HTML inline.
     assert_eq!(
         r#"This is <em foo="">really</em> important."#,
         convert_faithful("This is <em foo>really</em> important.").unwrap()
@@ -184,11 +191,17 @@ fn html_in_a_list_item_is_a_block() {
         "*   <br>\n\n    a",
         convert_faithful("<ul><li><br><p>a</p></li></ul>").unwrap()
     );
-    // Row 1 of "Lists" in `unsupported_html.md` wants two HTML blocks here, but
-    // `br` is a type 7 tag, so the run stays inline.
+    // The analysis section of `unsupported_html.md` would want two HTML blocks
+    // here, but `br` is a type 7 tag, so the run stays inline.
     assert_eq!(
         "*   <br><br>",
         convert_faithful("<ul><li><br><br></li></ul>").unwrap()
+    );
+    // The same section's other container rule: a following sibling item closes
+    // the block, so no blank line is written before it.
+    assert_eq!(
+        "*   <br>\n*   a",
+        convert_faithful("<ul><li><br></li><li>a</li></ul>").unwrap()
     );
 }
 
@@ -690,4 +703,229 @@ fn a_setext_heading_whose_content_opens_an_html_block_falls_back_to_atx() {
     );
     // Levels 3-6 have no setext form and are unaffected.
     assert_eq!("### <br>", convert_faithful_setext("<h3><br></h3>"));
+}
+
+/// The rows of the code, links, and document root sections of
+/// `unsupported_html.md` which a run of `<br>`s, rather than a lone one, is
+/// written for.
+#[test]
+fn a_run_of_type_7_tags_stays_a_raw_inline() {
+    assert_eq!(
+        "a<code>x<br><br>y</code>b",
+        convert_faithful("<p>a<code>x<br><br>y</code>b</p>").unwrap()
+    );
+    assert_eq!(
+        "a<code><br><br></code>b",
+        convert_faithful("<p>a<code><br><br></code>b</p>").unwrap()
+    );
+    assert_eq!(
+        "<pre><code><br><br></code></pre>",
+        convert_faithful("<pre><code><br><br></code></pre>").unwrap()
+    );
+    assert_eq!(
+        "a[<br><br>](u)b",
+        convert_faithful(r#"<p>a<a href="u"><br><br></a>b</p>"#).unwrap()
+    );
+    assert_eq!(
+        "a[<br><br>c](u)b",
+        convert_faithful(r#"<p>a<a href="u"><br><br>c</a>b</p>"#).unwrap()
+    );
+    assert_eq!(
+        "a[c<br><br>](u)b",
+        convert_faithful(r#"<p>a<a href="u">c<br><br></a>b</p>"#).unwrap()
+    );
+    assert_eq!(
+        "| h        |\n| -------- |\n| <br><br> |",
+        convert_faithful(&one_cell_table("<br><br>")).unwrap()
+    );
+}
+
+/// The same rows written for a lone `<br>` rather than a run of them. A single
+/// complete tag on a line of its own is the one shape which meets a type 7
+/// start condition, so these are the cases where one `<br>` and a run of them
+/// could part company — and none of these positions starts a line.
+#[test]
+fn a_lone_type_7_tag_stays_a_raw_inline() {
+    // Code section, rows 2 and 4.
+    assert_eq!(
+        "a<code><br></code>b",
+        convert_faithful("<p>a<code><br></code>b</p>").unwrap()
+    );
+    assert_eq!(
+        "<pre><code><br></code></pre>",
+        convert_faithful("<pre><code><br></code></pre>").unwrap()
+    );
+    // Code section, row 3 with a run, the counterpart of the lone `<br>`
+    // already covered by `a_type_7_tag_is_a_raw_inline_even_in_a_block_context`.
+    assert_eq!(
+        "<pre><code>a<br><br>b</code></pre>",
+        convert_faithful("<pre><code>a<br><br>b</code></pre>").unwrap()
+    );
+    // Links section, rows 2 and 3.
+    assert_eq!(
+        "a[<br>c](u)b",
+        convert_faithful(r#"<p>a<a href="u"><br>c</a>b</p>"#).unwrap()
+    );
+    assert_eq!(
+        "a[c<br>](u)b",
+        convert_faithful(r#"<p>a<a href="u">c<br></a>b</p>"#).unwrap()
+    );
+    // Document root, row 5.
+    assert_eq!(
+        "<div><br></div>",
+        convert_faithful("<div><br></div>").unwrap()
+    );
+    // Blockquotes, row 1.
+    assert_eq!(
+        "> <br>",
+        convert_faithful("<blockquote><br></blockquote>").unwrap()
+    );
+    // Table cells, row 3.
+    assert_eq!(
+        "| h    |\n| ---- |\n| <br> |",
+        convert_faithful(&one_cell_table("<br>")).unwrap()
+    );
+}
+
+/// The rows of `unsupported_html.md` whose `<br>` ends the container, which is
+/// the position no other test reaches.
+#[test]
+fn a_type_7_tag_ending_a_container_stays_a_raw_inline() {
+    // Blockquotes, row 4.
+    assert_eq!(
+        "> *a*<br>",
+        convert_faithful("<blockquote><p><em>a</em><br></p></blockquote>").unwrap()
+    );
+    // Table cells, row 2.
+    assert_eq!(
+        "| h       |\n| ------- |\n| *a*<br> |",
+        convert_faithful(&one_cell_table("<em>a</em><br>")).unwrap()
+    );
+}
+
+/// "Table heading behavior is identical to body-cell behavior" — the table
+/// cells section of `unsupported_html.md`.
+#[test]
+fn html_in_a_table_heading_cell_matches_a_body_cell() {
+    assert_eq!(
+        "| <br>*b* |\n| ------- |\n| c       |",
+        convert_faithful(&one_cell_table_heading("<br><em>b</em>")).unwrap()
+    );
+    assert_eq!(
+        "| *a*<br> |\n| ------- |\n| c       |",
+        convert_faithful(&one_cell_table_heading("<em>a</em><br>")).unwrap()
+    );
+    assert_eq!(
+        "| <br> |\n| ---- |\n| c    |",
+        convert_faithful(&one_cell_table_heading("<br>")).unwrap()
+    );
+}
+
+/// The ATX table of the headings section, reached through the default heading
+/// style rather than the setext fallback.
+#[test]
+fn a_lone_br_in_an_atx_heading_is_a_raw_inline() {
+    assert_eq!("# <br>", convert_faithful("<h1><br></h1>").unwrap());
+    assert_eq!("###### <br>", convert_faithful("<h6><br></h6>").unwrap());
+}
+
+/// "No handler may write a bare newline in an inline context: every one of them
+/// is encoded, replaced or removed by the rules above, so an inline context
+/// holds a single line" — the "Translating HTML nodes" section of
+/// `unsupported_html.md`. Every construct below is put in each inline context
+/// and the translation checked for a second line.
+#[test]
+fn an_inline_context_holds_one_line() {
+    // Only the containers which an HTML parser leaves holding the content: a
+    // `<p>` is closed by the first block start tag written inside it, and a
+    // heading by another heading.
+    const CONTAINERS: &[&str] = &[
+        "<h1>x{}y</h1>",
+        "<h6>x{}y</h6>",
+        // Inside a raw HTML inline, one element deeper.
+        "<h1>p<div>x{}y</div>q</h1>",
+        "<h1>p<del>x{}y</del>q</h1>",
+        "<h1>p<pre>x{}y</pre>q</h1>",
+    ];
+    const INNERS: &[&str] = &[
+        "<p>a</p>",
+        "<p>a</p><p>b</p>",
+        "<div>a\n\nb</div>",
+        "<ul><li>a</li><li>b</li></ul>",
+        "<ol start=\"3\"><li>a</li><li>b</li></ol>",
+        "<ul><li><p>a</p><ul><li>b</li></ul></li></ul>",
+        "<blockquote>a\n\nb</blockquote>",
+        "<blockquote><p>a</p><p>b</p></blockquote>",
+        "<hr>",
+        "<div><h2>a</h2><h3>b</h3></div>",
+        "<pre>a\nb</pre>",
+        "<pre><code>a\nb</code></pre>",
+        "<pre><code class=\"language-rust\">a\nb</code></pre>",
+        "<code>a\nb</code>",
+        "<code></code>",
+        "<script>a\n\nb</script>",
+        "<style>a\n\nb</style>",
+        "<textarea>a\nb</textarea>",
+        "<title>a\nb</title>",
+        "<!--a\n\nb-->",
+        "<![CDATA[a\nb]]>",
+        "<table><caption>c</caption><tr><th>h</th></tr><tr><td>d</td></tr></table>",
+        "<table><tr><th>h</th></tr><tr><td>d\n\ne</td></tr></table>",
+        "<table><tr><td colspan=\"2\">d</td></tr></table>",
+        "<dl><dt>a</dt><dd>b</dd></dl>",
+        "<figure><img src=\"i\" alt=\"x\ny\"><figcaption>c</figcaption></figure>",
+        "<details><summary>s</summary><p>a</p></details>",
+        "<form><input name=\"n\"></form>",
+        "<a href=\"u\" title=\"t\nq\">l</a>",
+        "<span class=\"math math-inline\">a\nb</span>",
+        "<span class=\"math math-display\">a\nb</span>",
+        "<em>a<br>b</em>",
+        "<del>a\n\nb</del>",
+        "<pre>a<em>b*c*</em>d</pre>",
+        "<div>a<code>b*c*\n\nd</code>e</div>",
+    ];
+
+    for container in CONTAINERS {
+        for inner in INNERS {
+            let html = container.replace("{}", inner);
+            let markdown = convert_faithful(&html).unwrap();
+            assert!(
+                !markdown.contains('\n'),
+                "more than one line for {html}\n=>\n{markdown}"
+            );
+        }
+    }
+
+    // A table cell is the remaining inline context. Its own row structure makes
+    // the whole translation several lines, so only the cell's line is checked —
+    // and a table written as HTML is a block, free to hold line endings.
+    for inner in INNERS {
+        let html = one_cell_table(&format!("x{inner}y"));
+        let markdown = convert_faithful(&html).unwrap();
+        let cell_line = markdown.lines().nth(2).unwrap_or_default();
+        assert!(
+            markdown.starts_with("<table")
+                || (cell_line.starts_with('|') && cell_line.ends_with('|')),
+            "cell spread over lines for {html}\n=>\n{markdown}"
+        );
+    }
+}
+
+/// The content of a raw HTML inline is CommonMark text, so its Markdown
+/// specials are escaped even where a `<pre>` or a `<code>` encloses them: that
+/// element is written as HTML rather than translated to a code construct.
+#[test]
+fn a_raw_inline_escapes_the_markdown_of_a_nested_element() {
+    assert_eq!(
+        r"# x<pre>a*b\*c\*d*e</pre>y",
+        convert_faithful("<h1>x<pre>a<em>b*c*d</em>e</pre>y</h1>").unwrap()
+    );
+    assert_eq!(
+        r"# x<pre>**a\*b\*c**</pre>y",
+        convert_faithful("<h1>x<pre><b>a*b*c</b></pre>y</h1>").unwrap()
+    );
+    assert_eq!(
+        r"# x<pre>[a\*b](u)</pre>y",
+        convert_faithful(r#"<h1>x<pre><a href="u">a*b</a></pre>y</h1>"#).unwrap()
+    );
 }
