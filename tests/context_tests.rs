@@ -5,7 +5,7 @@
 use pretty_assertions::assert_eq;
 
 mod common;
-use common::convert_faithful;
+use common::{convert_faithful, convert_faithful_setext};
 
 #[test]
 fn html_at_the_document_root_is_a_block() {
@@ -563,6 +563,41 @@ fn a_serialized_element_follows_its_context() {
     );
 }
 
+/// A paragraph is opened only where the block scan matched nothing else, so
+/// content which meets an HTML block start condition is read back as that block
+/// with the `<p>` around it lost. See the "Special case for paragraphs" section
+/// of `unsupported_html.md`.
+#[test]
+fn a_paragraph_whose_content_opens_an_html_block_is_serialized() {
+    assert_eq!("<p><br></p>", convert_faithful("<p><br></p>").unwrap());
+    assert_eq!(
+        r#"<p><iframe src="u">a</iframe></p>"#,
+        convert_faithful(r#"<p><iframe src="u">a</iframe></p>"#).unwrap()
+    );
+    // A list item's marker and a blockquote's `>` are stripped before the block
+    // scan runs, so neither protects the paragraph one container down.
+    assert_eq!(
+        "> <p><br></p>",
+        convert_faithful("<blockquote><p><br></p></blockquote>").unwrap()
+    );
+    assert_eq!(
+        "*   <p><br></p>",
+        convert_faithful("<ul><li><p><br></p></li></ul>").unwrap()
+    );
+    // Type 7 needs whitespace alone after the one complete tag, so a run of
+    // `<br>`s meets no start condition.
+    assert_eq!("<br><br>", convert_faithful("<p><br><br></p>").unwrap());
+    assert_eq!("a<br>", convert_faithful("<p>a<br></p>").unwrap());
+    assert_eq!(
+        "*a*<br>",
+        convert_faithful("<p><em>a</em><br></p>").unwrap()
+    );
+    assert_eq!(
+        "![](i)<br>",
+        convert_faithful(r#"<p><img src="i"><br></p>"#).unwrap()
+    );
+}
+
 /// The contents of a math span are literal text, but a line ending there would
 /// end the span and begin another block. LaTeX ignores whitespace, so each line
 /// ending becomes a space.
@@ -588,4 +623,33 @@ fn a_math_span_replaces_its_line_endings_with_spaces() {
         "$a b$",
         convert_faithful("<p><span class=\"math math-inline\">a&#13;b</span></p>").unwrap()
     );
+}
+
+/// A setext heading's content is a paragraph, so it is dissolved the same way.
+/// An ATX heading's `#` is leaf block syntax the block scan matches first. See
+/// the headings section of `unsupported_html.md`.
+#[test]
+fn a_setext_heading_whose_content_opens_an_html_block_falls_back_to_atx() {
+    assert_eq!("# <br>", convert_faithful_setext("<h1><br></h1>"));
+    assert_eq!("## <br>", convert_faithful_setext("<h2><br></h2>"));
+    assert_eq!("# <p>a</p>", convert_faithful_setext("<h1><p>a</p></h1>"));
+    // A heading which opens no block keeps the setext form.
+    assert_eq!(
+        "<br><br>\n========",
+        convert_faithful_setext("<h1><br><br></h1>")
+    );
+    assert_eq!(
+        "<br>*b*\n=======",
+        convert_faithful_setext("<h1><br><em>b</em></h1>")
+    );
+    assert_eq!(
+        "*a*<br>\n=======",
+        convert_faithful_setext("<h1><em>a</em><br></h1>")
+    );
+    assert_eq!(
+        "<br>*b*\n-------",
+        convert_faithful_setext("<h2><br><em>b</em></h2>")
+    );
+    // Levels 3-6 have no setext form and are unaffected.
+    assert_eq!("### <br>", convert_faithful_setext("<h3><br></h3>"));
 }

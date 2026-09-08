@@ -1,5 +1,6 @@
 mod dom_walker;
 pub mod element_handler;
+pub(crate) mod html_block;
 mod html_escape;
 pub(crate) mod node_util;
 pub mod options;

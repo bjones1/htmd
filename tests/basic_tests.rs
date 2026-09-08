@@ -796,6 +796,43 @@ fn round_trip_in_a_block_context() {
     assert_eq!("<br>", round_trip("<br>"));
 }
 
+/// A paragraph is opened only where the block scan matched nothing else, so
+/// content meeting an HTML block start condition would be read back as that
+/// block with the `<p>` around it lost. See the "Special case for paragraphs"
+/// section of `unsupported_html.md`.
+#[test]
+fn round_trip_of_a_paragraph_which_opens_an_html_block() {
+    // An HTML block passes through as it stands, so there is no line ending
+    // for pulldown-cmark to add.
+    assert_eq!("<p><br></p>", round_trip("<p><br></p>"));
+    assert_eq!(
+        r#"<p><iframe src="u">a</iframe></p>"#,
+        round_trip(r#"<p><iframe src="u">a</iframe></p>"#)
+    );
+
+    // A run of tags meets no start condition — type 7 wants whitespace alone
+    // after the one complete tag — so the plain encoding is already faithful.
+    assert_round_trips("<p><br><br></p>");
+    assert_round_trips("<p><del>x</del></p>");
+    assert_round_trips(r#"<p><em foo="">y</em></p>"#);
+
+    // A code span is the one inline whose literal text could carry a bare line
+    // ending, and one written there makes the `<code>` an HTML element rather
+    // than a span, so the whitespace collapse keeps the paragraph whole.
+    assert_eq!(
+        "<p><code>a b</code></p>\n",
+        round_trip("<p><code>a\n\nb</code></p>")
+    );
+    assert_eq!(
+        "<p><code>a === b</code></p>\n",
+        round_trip("<p><code>a\n===\nb</code></p>")
+    );
+    assert_eq!(
+        "<p>x<code>a # h b</code>y</p>\n",
+        round_trip("<p>x<code>a\n# h\nb</code>y</p>")
+    );
+}
+
 /// An empty `<code>` has no code span to be written as: the delimiters meet,
 /// and the backtick string they make closes nothing. An empty code block does
 /// have a spelling, so long as no content line is written between its fences.

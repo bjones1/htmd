@@ -103,6 +103,30 @@ fn a_link_destination_escapes_its_line_endings() {
     );
 }
 
+/// A paragraph written as HTML throws away the walk which produced its content,
+/// and with it any link reference definition that walk buffered.
+///
+/// `<legend>` is one of the few tags which can sit inside a `<p>` and still
+/// force it out as HTML: most block-level names close the paragraph during
+/// parsing instead.
+#[test]
+fn a_serialized_paragraph_drops_the_link_references_it_walked() {
+    let converter = referenced_link_converter();
+
+    assert_eq!(
+        r#"<p><legend><a href="q">z</a></legend></p>"#,
+        converter
+            .convert(r#"<p><legend><a href="q">z</a></legend></p>"#)
+            .unwrap()
+    );
+    // The next definition is numbered as though the discarded one had never
+    // been walked.
+    assert_eq!(
+        "[y][1]\n\n[1]: r",
+        converter.convert(r#"<p><a href="r">y</a></p>"#).unwrap()
+    );
+}
+
 /// Faithful mode writing every link as a reference-style one, which is what
 /// puts a definition in the buffer the rollback empties.
 fn referenced_link_converter() -> HtmlToMarkdown {

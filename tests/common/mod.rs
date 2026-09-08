@@ -28,3 +28,15 @@ pub fn convert_with(options: Options, html: &str) -> std::io::Result<String> {
 pub fn convert_faithful(html: &str) -> std::io::Result<String> {
     convert_with(faithful_options(), html)
 }
+
+/// [`convert_faithful`] writing an `<h1>` or an `<h2>` as a setext heading.
+pub fn convert_faithful_setext(html: &str) -> String {
+    convert_with(
+        Options {
+            heading_style: HeadingStyle::Setex,
+            ..faithful_options()
+        },
+        html,
+    )
+    .unwrap()
+}
