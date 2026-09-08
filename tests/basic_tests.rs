@@ -507,9 +507,47 @@ fn with_head() {
         </body>
     </html>
     "#;
+    // Neither the `<head>` nor the `<body>` tag survives, but what they hold
+    // does: `<!DOCTYPE html>` is the only thing the "Translating HTML nodes"
+    // section of `unsupported_html.md` drops.
     assert_eq!(
         "Demo\n\nconsole.log('Hello');\n\nbody {}\n\nContent",
         htmd::convert(html).unwrap()
+    );
+    assert_eq!(
+        "<title>Demo</title>\n\n<script>console.log('Hello');</script>\n\n<style>body {}</style>\n\nContent",
+        convert_faithful(html).unwrap()
+    );
+}
+
+/// html5ever files a leading `<title>`, `<meta>`, `<link>`, `<script>` or
+/// `<style>` under a `<head>` it synthesizes, so a bare fragment opening with
+/// one of those is a head document too.
+#[test]
+fn a_synthesized_head_is_translated_like_any_other_content() {
+    for (html, expected) in [
+        ("<title>t</title><p>a</p>", "<title>t</title>\n\na"),
+        (
+            "<style>body {}</style><p>a</p>",
+            "<style>body {}</style>\n\na",
+        ),
+        (
+            "<script>console.log('x');</script><p>a</p>",
+            "<script>console.log('x');</script>\n\na",
+        ),
+    ] {
+        assert_eq!(
+            expected,
+            convert_faithful(html).unwrap(),
+            "faithful mode: {html}"
+        );
+    }
+
+    // Once flow content has opened the `<body>`, the same tags come out
+    // exactly as they do from the head.
+    assert_eq!(
+        "a\n\n<style>body {}</style>",
+        convert_faithful("<p>a</p><style>body {}</style>").unwrap()
     );
 }
 
@@ -576,7 +614,9 @@ fn html_entities() {
 
 #[test]
 fn scripting_option() {
-    let html = r#"<noscript><p>Hello</p></noscript>"#;
+    // Without the `<body>`, html5ever files the `<noscript>` under the
+    // `<head>`, whose content is dropped.
+    let html = r#"<body><noscript><p>Hello</p></noscript></body>"#;
     let md = HtmlToMarkdown::builder()
         .scripting_enabled(true)
         .build()

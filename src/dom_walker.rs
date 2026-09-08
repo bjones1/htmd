@@ -157,9 +157,7 @@ fn walk_element(
     let Some(result) = handlers.handle(node, tag, attrs, true, 0, state.context) else {
         return true;
     };
-    if !result.content.is_empty() || tag != "head" {
-        append_normalized_content(output, result.content, state.is_pre);
-    }
+    append_normalized_content(output, result.content, state.is_pre);
     result.markdown_translated
 }
 

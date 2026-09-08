@@ -90,6 +90,44 @@ fn raw_text_at_the_document_root_is_left_alone() {
     assert_eq!("foo", convert_faithful("foo").unwrap());
 }
 
+/// The `<html>`, `<head>` and `<body>` tags do not survive translation, but the
+/// `<!DOCTYPE html>` declaration is the only thing dropped outright: what the
+/// head holds is a type 1 or type 6 node in a block context, which the
+/// "Translating HTML nodes" table of `unsupported_html.md` writes as a block.
+#[test]
+fn only_the_body_of_a_document_is_translated() {
+    assert_eq!(
+        "<title>t</title>\n\na",
+        convert_faithful(
+            "<!DOCTYPE html><html><head><title>t</title></head>\
+             <body><p>a</p></body></html>"
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        "<meta charset=\"utf-8\">\n\n<style>x</style>\n\na",
+        convert_faithful(
+            r#"<html><head><meta charset="utf-8"><style>x</style></head><body><p>a</p></body></html>"#
+        )
+        .unwrap()
+    );
+    // html5ever files a `<title>`, `<meta>`, `<link>`, `<script>` or `<style>`
+    // which precedes all flow content under the `<head>` it synthesizes.
+    assert_eq!(
+        "<title>t</title>\n\na",
+        convert_faithful("<title>t</title><p>a</p>").unwrap()
+    );
+    assert_eq!(
+        "<style>x</style>",
+        convert_faithful("<style>x</style>").unwrap()
+    );
+    // An element the parser leaves in the body is translated as it stands.
+    assert_eq!(
+        r"# <title>a\*b\*c</title>",
+        convert_faithful("<h1><title>a*b*c</title></h1>").unwrap()
+    );
+}
+
 #[test]
 fn html_in_a_paragraph_is_a_raw_inline() {
     assert_eq!("<br><br>", convert_faithful("<p><br><br></p>").unwrap());
