@@ -796,6 +796,15 @@ fn round_trip_in_a_block_context() {
     assert_eq!("<br>", round_trip("<br>"));
 }
 
+/// An empty `<code>` has no code span to be written as: the delimiters meet,
+/// and the backtick string they make closes nothing. An empty code block does
+/// have a spelling, so long as no content line is written between its fences.
+#[test]
+fn round_trip_of_an_empty_code_element() {
+    assert_round_trips("<p>a<code></code>b</p>");
+    assert_round_trips("<pre><code></code></pre>");
+}
+
 /// A heading is a leaf block, so each element below is written as a raw HTML
 /// inline. Only its tags are HTML; what sits between them is CommonMark text,
 /// which is what makes the escape of `a\*b` work here — the CommonMark parser

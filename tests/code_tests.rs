@@ -3,14 +3,14 @@ use std::rc::Rc;
 use htmd::{
     Element, HtmlToMarkdown, Node,
     element_handler::Handlers,
-    options::{CodeBlockFence, Options},
+    options::{CodeBlockFence, CodeBlockStyle, Options},
 };
 use indoc::indoc;
 use markup5ever_rcdom::NodeData;
 use pretty_assertions::assert_eq;
 
 mod common;
-use common::convert_faithful;
+use common::{convert_faithful, convert_with, faithful_options};
 
 fn find_element(node: &Rc<Node>, tag: &str) -> Option<Rc<Node>> {
     if let NodeData::Element { name, .. } = &node.data
@@ -186,6 +186,112 @@ fn tilde_fenced_code_uses_a_fence_longer_than_any_run_in_its_content() {
         .unwrap();
 
     assert_eq!("~~~~~~\n~~~~~\nlet parsed = true;\n~~~~~\n~~~~~~", markdown);
+}
+
+/// A line ending in a code span cannot be encoded or escaped away, and a blank
+/// one ends the paragraph holding the span. Hence the HTML in every row of the
+/// code section of `unsupported_html.md`.
+#[test]
+fn a_code_span_holding_a_line_ending_is_written_as_html() {
+    assert_eq!(
+        "a<code>x y</code>b",
+        convert_faithful("<p>a<code>x\ny</code>b</p>").unwrap()
+    );
+    assert_eq!(
+        "<code>a b</code>",
+        convert_faithful("<p><code>a\n\nb</code></p>").unwrap()
+    );
+    assert_eq!(
+        "<code>a === b</code>",
+        convert_faithful("<p><code>a\n===\nb</code></p>").unwrap()
+    );
+    assert_eq!(
+        "# <code>a b</code>",
+        convert_faithful("<h1><code>a\n\nb</code></h1>").unwrap()
+    );
+    assert_eq!(
+        "> <code>a b</code>",
+        convert_faithful("<blockquote><p><code>a\n\nb</code></p></blockquote>").unwrap()
+    );
+    assert_eq!(
+        "a`xy`b",
+        convert_faithful("<p>a<code>xy</code>b</p>").unwrap()
+    );
+    // A `<code>` inside a `<pre>` is a code block, which keeps its line
+    // endings.
+    assert_eq!(
+        "```\na\nb\n```",
+        convert_faithful("<pre><code>a\nb</code></pre>").unwrap()
+    );
+}
+
+/// CommonMark cannot spell an empty code span: with nothing between them the
+/// delimiters meet, and a backtick string closed by no other is literal text.
+#[test]
+fn an_empty_code_span_is_written_as_html() {
+    assert_eq!(
+        "a<code></code>b",
+        convert_faithful("<p>a<code></code>b</p>").unwrap()
+    );
+    assert_eq!("<code></code>", convert_faithful("<code></code>").unwrap());
+    assert_eq!(
+        "# a<code></code>b",
+        convert_faithful("<h1>a<code></code>b</h1>").unwrap()
+    );
+    // Whitespace-only content is trimmed away, leaving the same empty span.
+    assert_eq!(
+        "a<code> </code>b",
+        convert_faithful("<p>a<code>  </code>b</p>").unwrap()
+    );
+    // Pure mode has no HTML to fall back on, so the span writes nothing.
+    assert_eq!("ab", htmd::convert("<p>a<code></code>b</p>").unwrap());
+}
+
+/// A content line in an empty code block would give it a blank line the
+/// `<code>` never held.
+#[test]
+fn an_empty_code_block_has_no_content_line() {
+    assert_eq!(
+        "```\n```",
+        convert_faithful("<pre><code></code></pre>").unwrap()
+    );
+    assert_eq!(
+        "```rust\n```",
+        convert_faithful(r#"<pre><code class="language-rust"></code></pre>"#).unwrap()
+    );
+}
+
+/// A `<code>` holding one line ending is not empty: that line ending is the
+/// whole of its content, and the block needs a content line to carry it.
+#[test]
+fn a_code_block_holding_only_a_line_ending_keeps_its_blank_line() {
+    assert_eq!(
+        "```\n\n```",
+        convert_faithful("<pre><code>\n</code></pre>").unwrap()
+    );
+    assert_eq!(
+        "```\na\n\n```",
+        convert_faithful("<pre><code>a\n\n</code></pre>").unwrap()
+    );
+}
+
+/// Indented code cannot spell an empty block — a line of nothing but the four
+/// spaces is blank — so without the HTML fallback the `<pre>` would vanish.
+#[test]
+fn an_empty_indented_code_block_is_written_as_html() {
+    let indented = || Options {
+        code_block_style: CodeBlockStyle::Indented,
+        ..faithful_options()
+    };
+    assert_eq!(
+        "x\n\n<pre><code></code></pre>\n\ny",
+        convert_with(indented(), "<p>x</p><pre><code></code></pre><p>y</p>").unwrap()
+    );
+    // A `<code>` holding one line ending has no content line either.
+    assert_eq!(
+        "x\n\n<pre><code>\n</code></pre>\n\ny",
+        convert_with(indented(), "<p>x</p><pre><code>\n</code></pre><p>y</p>").unwrap()
+    );
 }
 
 #[test]

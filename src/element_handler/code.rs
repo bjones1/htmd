@@ -12,7 +12,7 @@ use crate::{
     },
     node_util::{get_node_tag_name, get_parent_node},
     options::{CodeBlockFence, CodeBlockStyle, TranslationMode},
-    text_util::{JoinOnStringIterator, TrimDocumentWhitespace, concat_strings},
+    text_util::{JoinOnStringIterator, TrimDocumentWhitespace, concat_strings, has_line_ending},
 };
 
 pub(super) fn code_handler(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
@@ -52,6 +52,10 @@ fn handle_code_block(
     // `<code>` begins no block of its own, so it passes on its context: the
     // inline context begun by the `<pre>` this is the code block of.
     let content = handlers.walk_children_content(element.node, element.context);
+    // Taken before the strip below: the one line ending of
+    // `<pre><code>\n</code></pre>` is the whole of its content, and stripping
+    // it leaves the same empty string an empty `<code>` leaves.
+    let is_empty = content.is_empty();
     let content = content.strip_suffix('\n').unwrap_or(&content);
     if handlers.options().code_block_style == CodeBlockStyle::Fenced {
         let fence = if handlers.options().code_block_fence == CodeBlockFence::Tildes {
@@ -72,8 +76,12 @@ fn handle_code_block(
             result.push_str(lang);
         }
         result.push('\n');
-        result.push_str(content);
-        result.push('\n');
+        // A content line here would give the block a blank line the `<code>`
+        // never held.
+        if !is_empty {
+            result.push_str(content);
+            result.push('\n');
+        }
         result.push_str(&fence);
         Some(result.into())
     } else {
@@ -82,6 +90,10 @@ fn handle_code_block(
             .lines()
             .map(|line| concat_strings!("    ", line))
             .join("\n");
+        // [Indented code](https://spec.commonmark.org/0.31.2/#indented-code-blocks)
+        // cannot spell an empty block: a line of nothing but the four spaces is
+        // blank, so the block would vanish along with the `<pre>` around it.
+        serialize_element_when_faithful!(handlers, element, code.is_empty());
         Some(code.into())
     }
 }
@@ -134,6 +146,24 @@ fn handle_inline_code(handlers: &dyn Handlers, element: Element) -> Option<Handl
     } else {
         content.trim_document_whitespace().to_string()
     };
+
+    // CommonMark cannot spell an empty code span: with nothing between them the
+    // delimiters meet, and a backtick string closed by no other is literal
+    // text. `` ` ` `` is no help, the stripping rule keeping the space of an
+    // all-space content.
+    serialize_element_when_faithful!(handlers, element, content.is_empty());
+    if content.is_empty() {
+        // Only pure mode reaches here, with no HTML to fall back on.
+        return Some(String::new().into());
+    }
+
+    // A line ending in a code span cannot be encoded or escaped away — no
+    // character reference is decoded there — and a blank one ends the paragraph
+    // holding the span. Hence the HTML in every row of the code section of
+    // `unsupported_html.md`. Testing the rewritten content leaves
+    // `Options::preformatted_code`, whose whole purpose is turning a line
+    // ending into a space, with the last word.
+    serialize_element_when_faithful!(handlers, element, has_line_ending(&content));
 
     let delimiter = get_inline_code_delimiter(&content);
     let needs_padding =
