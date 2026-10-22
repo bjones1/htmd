@@ -442,6 +442,193 @@ Approach:
       begins with `<p>`, serialize it as HTML. Otherwise, leave it as
       CommonMark. Combine each list item with an intervening newline.
 
+### Definition Lists
+
+**Proposed; not yet implemented.** This draft follows Consolidated Technical
+Design v0.3 for `jit45`. The parser behavior attributed to prior investigations
+below is not implementation verification. Exact experiment records are not
+available in the repository; reproduce those observations during implementation.
+
+An HTML [description list](https://html.spec.whatwg.org/multipage/grouping-content.html#the-dl-element)
+(`<dl>`) associates names or terms (`<dt>`) with descriptions or values
+(`<dd>`). HTML permits groups with multiple names and descriptions; the initial
+translation deliberately supports less. Definition Lists are not core
+CommonMark. The target reader is pulldown-cmark 0.13.4, as resolved by
+`Cargo.lock`, with
+[`Options::ENABLE_DEFINITION_LIST`](https://docs.rs/pulldown-cmark/0.13.4/pulldown_cmark/struct.Options.html#associatedconstant.ENABLE_DEFINITION_LIST)
+enabled. Without that extension, the proposed syntax reads as ordinary text.
+
+For example, given this HTML as the body's sole meaningful child:
+
+```html
+<dl><dt>Rust</dt><dd>A systems programming language.</dd></dl>
+```
+
+The proposed output is:
+
+```markdown
+Rust
+:   A systems programming language.
+```
+
+Prior investigations reported that this basic marker form produces one `<dl>`,
+one `<dt>`, and one `<dd>` without a paragraph wrapper in the definition.
+Reproduce this with the locked parser and verify the proposed converter through
+implementation tests.
+
+Approach:
+
+1. Preserve normal handler precedence, skipped-handler counts, and the existing
+   event envelope. Place validation and rendering in a private
+   `definition_list.rs` module. Register the specialized `dl` handler after the
+   generic block handler, retaining the chain from a later user override through
+   the specialized handler to generic fallback. Recognize the selected built-in
+   slot inside `ElementHandlers` and invoke a crate-private entry point with
+   access to effective registration and subscription metadata. Do not intercept
+   every `dl` before handler selection or extend the public `Handlers` trait.
+2. Check the conversion context before walking children. Initially require an
+   HTML-namespace `dl` in nonliteral block context, directly inside an
+   HTML-namespace `body` under the document's HTML-namespace `html`. It must be
+   the body's sole child except for permitted structural whitespace, reached
+   through the standard document-wrapper conversion path. Enforce this using
+   private tracking of the actual conversion root or traversal provenance;
+   existing DOM ancestry and `Context` checks alone cannot distinguish standard
+   document conversion from entry at a subtree retaining that ancestry. Refuse
+   wrapper overrides or subscriptions that invalidate this guarantee. Generic
+   wrappers, nested lists, blockquotes, table cells, headings, inline contexts,
+   and detached
+   subtree entry points are outside the initial supported context.
+3. Check the current effective handler configuration. Leave existing `dt` and
+   `dd` handlers unchanged. Refuse specialization when consuming their contents
+   would bypass custom handlers, `skip_tags`, structural-child entry/leave
+   listeners, or other relevant descendant customizations. Distinguish custom
+   registrations from existing generic handlers; testing only whether a handler
+   exists would reject every candidate. Planning must invoke no child handlers.
+4. Validate the parsed DOM: require exactly one direct `dt` followed by exactly
+   one direct `dd`, with no attributes on any of the three structural elements.
+   Reject comments, foreign namespaces, unexpected children, meaningful direct
+   text, and unsupported ordering. Ignore structural text between children, or
+   beside the sole body child, only when it consists entirely of HTML ASCII
+   whitespace: tab, LF, form feed, CR, or space. A nonbreaking space is not
+   structural whitespace. These checks describe the repaired DOM, not original
+   HTML tokens.
+5. Require exactly one nonempty text node in each term and definition. Refuse
+   child elements, paragraph wrappers, empty content, leading/trailing ASCII
+   whitespace, repeated internal ASCII spaces, and all ASCII controls including
+   tabs, line endings, form feed, vertical tab, NUL, and DEL. Single internal
+   spaces are accepted. Refuse non-ASCII whitespace until exact-version parser
+   and DOM tests establish preservation; do not apply Unicode-wide trimming.
+6. Construct a complete rendering plan before conversion. Reuse established
+   Markdown escaping through a controlled private utility, without duplicating
+   it or silently applying lossy whitespace compression. Escape punctuation that
+   could introduce inline or block syntax. The accepted whitespace restrictions
+   avoid relying on normalization to make the text representable.
+7. Render once: escaped term, newline, generated `:   ` marker, escaped
+   definition. Frame the result using existing block conventions and return it
+   through the current dispatch. Never send generated markers through ordinary
+   text escaping. Do not render alternative candidates or re-dispatch the same
+   element to choose a representation.
+8. On any failed pre-render check, delegate through existing fallback with the
+   current element and skip count. In Faithful block context this generally
+   serializes the whole container. Faithful inline serialization may walk
+   descendants; Pure fallback generally translates them while dropping wrappers.
+   Preserve these distinctions rather than promising identical callbacks in all
+   modes. Unsupported Pure lists must not acquire invented associations by
+   joining consecutive terms.
+
+Escaping is a prerequisite beyond the new handler. Prior investigations reported
+that `<p>A</p><p>:literal</p>` yields `A⏎⏎:literal`, which the enabled extension
+reads as a Definition List even without a following space. Reproduce this
+observation during implementation. The proposed policy escapes every literal
+ASCII colon in ordinary nonliteral text, including text outside `dl`: `a:b`
+becomes `a\:b`. Update both the special-character
+fast path and the replacement logic after existing normalization decisions.
+[Backslash escapes](https://spec.commonmark.org/0.31.2/#backslash-escapes)
+preserve the rendered colon with or without the extension. Do not escape the
+final assembled document. Code, math, link destinations, and raw serialized HTML
+blocks retain their existing paths; arbitrary custom-handler strings remain the
+handler's responsibility. Inline serialization may still translate text inside
+its tags.
+
+The following rows are proposed expectations, not verified converter output.
+Each positive list example assumes the context and configuration checks above.
+
+| Description | HTML in | Proposed Faithful expected |
+| ----------- | ------- | -------------------------- |
+| Basic list | `<dl><dt>Rust</dt><dd>A language.</dd></dl>` | `Rust⏎:␣␣␣A language.` |
+| Literal punctuation | `<dl><dt>*Rust*</dt><dd>:literal</dd></dl>` | `\*Rust\*⏎:␣␣␣\:literal` |
+| Attribute requires fallback | `<dl id="x"><dt>T</dt><dd>D</dd></dl>` | `<dl id="x"><dt>T</dt><dd>D</dd></dl>` |
+| Multiple terms require fallback | `<dl><dt>A</dt><dt>B</dt><dd>D</dd></dl>` | `<dl><dt>A</dt><dt>B</dt><dd>D</dd></dl>` |
+| Ordinary paragraphs remain paragraphs | `<p>A</p><p>:literal</p>` | `A⏎⏎\:literal` |
+
+Both modes would attempt the same specialized subset. On refusal, Pure retains
+existing generic behavior; it does not preserve the unsupported list structure.
+Faithful fallback preserves supported parsed structure subject to the document's
+HTML serialization limitations. In particular, blank-line encoding inside a
+serialized `dl` can change script or comment contents because character
+references are not decoded there. Fallback is neither byte-for-byte source
+preservation nor a repair of all existing serializer limitations. Keep block
+framing: a closing `</dl>` alone does not stop a raw HTML block from absorbing
+following Markdown.
+
+The text-only subset admits no anchors and requires no speculative child
+conversion or reference rollback. Prior investigations reported unused link
+references after speculative rendering followed by fallback; reproduce this
+observation before inline expansion. Inline expansion must establish state-safe
+handling before admitting links; adding `dl` to anchor
+rollback subscriptions alone cannot reverse arbitrary callbacks. The initial
+increment should not modify `anchor.rs`. Preserve a single `dl` event envelope,
+no speculative descendant events, and existing orphan `dt`/`dd` behavior.
+
+Deferred expansion includes multiple definitions and groups, inline formatting,
+empty definitions, paragraph structure, nested blocks, and general composition.
+Prior investigations reported the following constraints; reproduce them with
+the locked parser during implementation:
+
+* `A⏎B⏎:␣␣␣D` produces one term, not two consecutive `dt` elements.
+* `T⏎:` produces an empty definition, but `T⏎:⏎⏎:␣␣␣D` ends the list before
+  the second marker. Empty definitions and empty paragraphs need distinct rules.
+* Loose-list syntax can add paragraph wrappers throughout a container. Future
+  tight/loose selection must examine the whole list, not each definition alone.
+* Separate lists can merge even across blank lines. The sole-body restriction
+  excludes adjacent lists from initial specialization. Streaming conversion
+  trims fragment-edge newlines and cannot inspect future independent trees;
+  callers needing distinct containers must retain HTML or supply a
+  parser-verified structural boundary. The initial strategy does not guarantee
+  arbitrary streamed composition, and must not insert synthetic comments merely
+  to force separation.
+
+Verification proposed for a later implementation:
+
+1. Assert exact Markdown, parser events, and meaningful parsed-DOM equivalence
+   for admitted examples. Render with explicit `ENABLE_DEFINITION_LIST` using
+   the locked parser, then reparse HTML. Compare namespaces, parents, order,
+   attributes, term/definition/container counts, paragraph wrappers, significant
+   empty elements, text, whitespace, and supported comments. Ignore only the
+   explicitly permitted structural formatting whitespace.
+2. Assert fallback for every rejected structure, whitespace form, context, and
+   custom configuration. Exercise user `dl` overrides and delegation, `dt`/`dd`
+   overrides, entry-only and leave-only listeners, `skip_tags`, wrapper changes,
+   and actual conversion roots, including subtree entry retaining document
+   ancestry. Check skip counts, translation status, and absence of duplicate
+   events or unused references. Do not treat `markdown_translated` as proof of
+   DOM equivalence.
+3. Add ordinary colon-text regressions after paragraphs, inline markup, and
+   `<br>`, including no-space markers, interior colons, and Unicode whitespace.
+   Verify code, link destinations, generated markers, and extension-disabled
+   rendering. Review intentional exact-Markdown changes. Do not globally enable
+   the extension in existing test helpers.
+4. Parse complete documents and concatenated streaming fragments to test adjacent
+   containers, disappearing siblings, raw HTML boundaries, and detached
+   structural children. Record serializer limitations without normalization that
+   hides them. Keep unsupported cases as fallback tests until separately approved.
+5. Plan feature cases in `tests/definition_list_tests.rs`, escaping regressions in
+   `tests/basic_tests.rs`, context/event cases in their existing suites, and
+   documentation examples in `tests/translation_approach_tests.rs`. After future
+   implementation, run `cargo build`, `cargo clippy -- --deny warnings`, and
+   `cargo test`, distinguishing baseline failures from new ones. This draft adds
+   no executable tests and claims no implementation verification.
+
 Inlines
 -------
 
