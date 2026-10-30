@@ -33,13 +33,53 @@ pub(crate) fn walk_node(
             trim_output_end(output);
             true
         }
-        NodeData::Text { contents } => walk_text(
-            contents.borrow().as_ref(),
-            output,
-            parent_tag,
-            trim_leading_spaces,
-            context,
-        ),
+        NodeData::Text { contents } => {
+            let text = contents.borrow();
+            if !context.literal
+                && crate::element_handler::preserves_definition_whitespace(
+                    node,
+                    handlers.options.translation_mode,
+                )
+            {
+                let text = if text.contains('\r') {
+                    Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+                } else {
+                    Cow::Borrowed(text.as_ref())
+                };
+                let after_hard_break = ends_with_hard_break(output);
+                let text = if handlers.options.translation_mode == TranslationMode::Pure
+                    && after_hard_break
+                {
+                    text.trim_start_document_whitespace()
+                } else {
+                    text.as_ref()
+                };
+                for (index, line) in text.split('\n').enumerate() {
+                    if index > 0 {
+                        output.truncate(output.trim_end_matches([' ', '\t']).len());
+                        output.push('\n');
+                    }
+                    walk_text(
+                        line,
+                        output,
+                        parent_tag,
+                        trim_leading_spaces || index > 0,
+                        context,
+                        true,
+                    );
+                }
+                true
+            } else {
+                walk_text(
+                    &text,
+                    output,
+                    parent_tag,
+                    trim_leading_spaces,
+                    context,
+                    false,
+                )
+            }
+        }
         NodeData::Element { name, attrs, .. } => walk_element(
             node,
             name.local.as_ref(),
@@ -83,6 +123,7 @@ fn walk_text(
     parent_tag: Option<&str>,
     trim_leading_spaces: bool,
     context: Context,
+    preserve_whitespace: bool,
 ) -> bool {
     if context.literal {
         let text = if parent_tag == Some("pre") {
@@ -105,13 +146,24 @@ fn walk_text(
     // is what a clear flag usually means, but wrong after an inline construct
     // which ends the line -- `<br>` outside faithful mode -- where such a
     // marker is left unescaped.
-    let text = compress_whitespace(text);
+    let text = if preserve_whitespace {
+        Cow::Borrowed(text)
+    } else {
+        compress_whitespace(text)
+    };
     let text = if trim_leading_spaces {
         text.trim_start_matches(' ')
     } else {
         text.as_ref()
     };
-    let text = escape_if_needed(Cow::Borrowed(text));
+    let mut text = escape_if_needed(Cow::Borrowed(text));
+    let line = output.rsplit('\n').next().unwrap_or("");
+    if line.trim_matches([' ', '\t']).is_empty() {
+        let start = text.len() - text.trim_start_matches([' ', '\t']).len();
+        if text[start..].starts_with(':') {
+            text.to_mut().insert(start, '\\');
+        }
+    }
     let text = if !trim_leading_spaces && output.ends_with(' ') && text.starts_with(' ') {
         &text[1..]
     } else {
@@ -119,6 +171,12 @@ fn walk_text(
     };
     output.push_str(text);
     true
+}
+
+fn ends_with_hard_break(output: &str) -> bool {
+    output.strip_suffix('\n').is_some_and(|line| {
+        line.ends_with("  ") || (line.len() - line.trim_end_matches('\\').len()) % 2 == 1
+    })
 }
 
 fn walk_element(
@@ -129,6 +187,23 @@ fn walk_element(
     handlers: &ElementHandlers,
     context: Context,
 ) -> bool {
+    let mut append_content = |mut content: String| {
+        if !context.literal
+            && handlers.options.translation_mode == TranslationMode::Pure
+            && !is_block_element(tag)
+            && ends_with_hard_break(output)
+            && crate::element_handler::preserves_definition_whitespace(
+                node,
+                handlers.options.translation_mode,
+            )
+        {
+            let start = content.len() - content.trim_start_document_whitespace().len();
+            if start < content.len() {
+                content.drain(..start);
+            }
+        }
+        append_normalized_content(output, content, context.literal);
+    };
     if is_passthrough_span(tag, attrs, handlers) {
         let mut content = String::new();
         // A span holds inline content, so its children keep this context.
@@ -136,7 +211,7 @@ fn walk_element(
         if !context.literal {
             trim_newlines(&mut content);
         }
-        append_normalized_content(output, content, context.literal);
+        append_content(content);
         return markdown_translated;
     }
 
@@ -146,7 +221,7 @@ fn walk_element(
         let mut content = String::new();
         let is_block = is_block_element(tag);
         let markdown_translated = walk_children(node, &mut content, handlers, is_block, context);
-        append_normalized_content(output, content, context.literal);
+        append_content(content);
         return markdown_translated;
     }
 
@@ -154,7 +229,7 @@ fn walk_element(
         return true;
     };
     if !result.content.is_empty() || tag != "head" {
-        append_normalized_content(output, result.content, context.literal);
+        append_content(result.content);
     }
     result.markdown_translated
 }
