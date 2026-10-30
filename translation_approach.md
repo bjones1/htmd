@@ -444,7 +444,7 @@ Approach:
 
 ### Definition Lists
 
-**Proposed; not yet implemented.** Target pulldown-cmark 0.13.4 with
+ Target pulldown-cmark 0.13.4 with
 `ENABLE_DEFINITION_LIST`; this syntax is not part of core CommonMark.
 
 Approach:
