@@ -385,8 +385,8 @@ fn faithful_mode_blockquote() {
 #[test]
 fn faithful_mode_h1() {
     assert_eq!(
-        convert_faithful(indoc!(r#"<h1 class="foo">Heading</h1>"#)).unwrap(),
-        indoc!(r#"<h1 class="foo">Heading</h1>"#)
+        convert_faithful(indoc!(r#"<h1 style="color: red">Heading</h1>"#)).unwrap(),
+        indoc!(r#"<h1 style="color: red">Heading</h1>"#)
     );
 }
 

@@ -18,6 +18,10 @@ driven by [CommonMark](https://spec.commonmark.org/0.31.2/) rules:
    [raw HTML inlines](https://spec.commonmark.org/0.31.2/#raw-html) necessary in
    these cases.
 
+Beyond CommonMark and GFM, the output relies on two pulldown-cmark extensions:
+math expressions (see the math section) and, in Faithful mode only, heading
+attributes (see the heading attributes section).
+
 The Faithful expected column is what a correct design should produce. Notation
 inside a cell: `⏎` is a newline; `␣` is a space; `<br><br>...<br>` stands for
 one or more `<br>` elements. Where one `<br>` and a run of them need different
@@ -340,66 +344,161 @@ line.
 pulldown-cmark's
 [heading attributes](https://pulldown-cmark.github.io/pulldown-cmark/specs/heading_attrs.html)
 extension ends a heading with an attribute block: `# a {#x .y z=1}` reads back
-as `<h1 id="x" class="y" z="1">a</h1>`. The translation assumes its reader
-enables heading attributes (`Options::ENABLE_HEADING_ATTRIBUTES`), and no option
-disables it.
+as `<h1 id="x" class="y" z="1">a</h1>`. Faithful mode writes attribute blocks,
+so it assumes a pulldown-cmark reader with
+`pulldown_cmark::Options::ENABLE_HEADING_ATTRIBUTES`; a GFM reader such as
+GitHub's shows them as literal text. `TranslationMode::Pure`, the default,
+writes no attribute block and drops every attribute.
 
-The block's contents are split on ASCII whitespace as Rust's
-[`str::split_ascii_whitespace`](https://doc.rust-lang.org/std/primitive.str.html#method.split_ascii_whitespace)
-defines it, which, unlike the whitespace of the math section, excludes a
-vertical tab. They may not contain `{`, `}`, `<`, `>`, or `\`; since no escape
-or character reference is decoded there, these characters cannot be encoded.
-Attributes are written as follows:
+The attribute block is not inline content: its tokens are separated by
+[ASCII whitespace](https://doc.rust-lang.org/std/primitive.str.html#method.split_ascii_whitespace),
+and no escape or character reference is decoded in it. In Faithful mode, an
+attribute which cannot be written in it *forces HTML*: the whole heading is
+serialized as HTML instead of CommonMark, just as a table with a cell attribute
+is serialized whole. Since the attribute block decodes nothing, it must bypass
+the text escaping and normalization applied to the heading's content.
 
-* An `id` is written `#value` and each `class` token `.token`. pulldown-cmark
-  ignores a bare `#` or `.`, so an empty `id` or a `class` with no tokens cannot
-  be written.
-* Any other attribute is written `name=value`, or `name=` when its value is
-  empty, since pulldown-cmark
-  [ignores a one-character token](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2548)
-  such as the bare `x` of `<h1 x>`. A name may not begin with `#` or `.` or
-  contain `=`.
-* No name or value may contain one of the five characters above, and no value
-  may contain whitespace. A `class` is written whole or not at all.
+Values cannot be quoted: `{title="a b"}` is two tokens, `title="a` and `b"`.
+A value holding whitespace therefore forces HTML, so common attributes such as
+`style="color: red"` or a multi-word `title` send the whole heading to HTML.
 
-pulldown-cmark writes the ID, then the classes, then the other attributes, and
-separates class tokens with single spaces; attribute order and `class`
-whitespace, which carry no meaning in HTML, are lost.
+* pulldown-cmark
+  [ignores a one-byte token](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2548),
+  so a bare `#` or `.` is lost on read-back, as is a one-byte name such as `x`
+  written alone.
+* A non-empty `id` is written `#value` and each `class` token `.token`; only
+  the first byte of such a token is stripped, so `id="#a"` is written `{##a}`
+  and `class=".a"` is written `{..a}`. Any other attribute is written
+  `name=value`, or `name=` when its value is empty: a bare `{hidden}` works too,
+  but `name=` is the one form that also keeps a one-byte name. An empty `id` or
+  a `class` with no tokens is written like any other attribute, as `id=` or
+  `class=`.
+* A name or value holding `{`, `}`, `<`, `>`, or `\` forces HTML, since each
+  breaks the attribute block's scan described below. So does ASCII
+  whitespace in an `id` or other value. A `class` is split into tokens instead,
+  which loses nothing meaningful, since HTML splits `class` on the same five
+  characters (space, tab, line feed, form feed, and carriage return). A
+  vertical tab or a no-break space is not ASCII whitespace and is written as
+  is.
+* A name beginning with `#`, `.`, or `=`, or holding `&`, `"`, or `'`, forces
+  HTML. A leading `#` or `.` makes the token an ID or a class, and
+  pulldown-cmark splits a token at its first `=`. (The HTML tokenizer admits
+  `=` in a name only as its first character.) pulldown-cmark escapes `&`, `"`,
+  and `'`, and an HTML parser decodes character references only in values, so
+  `a&b` in a name would read back as `a&amp;b`. In a value, `=`, `&`, `"`, and
+  `'` are written as is.
 
-In Faithful mode, a heading with any attribute that cannot be written is
-serialized whole as an HTML block, as with tables. Pure mode drops those
-attributes and writes the rest.
+pulldown-cmark renders the ID, then the classes joined by single spaces, then
+the other attributes, so attribute order and `class` whitespace, which carry no
+meaning in HTML, are lost. Faithful mode writes the attribute block in the same
+order, with the other attributes in DOM order. An `id=` or `class=` is one of
+the other attributes, so `<h1 id="" class="a">` is written `{.a id=}`.
 
-When no block is written, a `}` ending the heading's content is escaped as `\}`,
-so `<h1>Price {USD}</h1>` does not read back as `<h1 USD="">Price</h1>`. Like
-the `\$` of the math section, this is an ordinary CommonMark escape. When a
-block is written, pulldown-cmark reads only the last block on the line, so no
-escape is needed.
+A heading written as CommonMark with no attribute block (every Pure heading, and
+each Faithful heading without attributes), ATX or setext, escapes a final `}`
+as `\}`; otherwise `<h1>Price {USD}</h1>` would read back as
+`<h1 USD="">Price</h1>`. When an attribute block is written, only the last one
+on the line is read, so no escape is needed.
 
-A block does not change the setext fallbacks in the headings section; a setext
-underline spans the whole line, block included.
+pulldown-cmark finds an attribute block by
+[scanning back](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2491-L2516)
+from the last `}` for a `{`, and a `\` stops the scan. The scan reads the raw
+line before any inline parsing, so a `{` inside a code span counts too: without
+the escape, `<h1><code>{</code>b}</h1>` would lose its code span. A final `}`
+is always plain text — every other inline ends in a different character, such
+as a backtick, `*`, `)`, or `>` — so the escape is always available.
 
-**Special case**: pulldown-cmark removes the block before looking for an ATX
-[closing sequence](https://spec.commonmark.org/0.31.2/#atx-headings), so
-`# a # {#x}` reads back as `<h1 id="x">a</h1>`. Until the headings section
-handles closing sequences, the translation of an ATX heading whose content ends
-in one is unspecified.
+Without heading attributes, `\}` is an ordinary CommonMark escape, so Pure
+writes it too: it costs a GFM reader nothing and protects a reader with heading
+attributes. For example, Pure writes `<h1 id="x">Price {USD}</h1>` as
+`# Price {USD\}`.
 
-The rows use ATX `<h1>`, except the setext row, which uses
-`HeadingStyle::Setex`.
+The headings section's three setext-to-ATX fallbacks (empty content, a lone type
+7 tag, and content starting with a type 1-6 tag) are kept for simplicity, though
+an attribute block makes the first two unnecessary: `{#x}` is not blank, and
+`<br> {#x}` opens no HTML block. `<div>a</div> {#x}⏎===` still opens one.
 
-| Description                   | HTML in                                  | Faithful expected        |
-| ----------------------------- | ---------------------------------------- | ------------------------ |
-| ID                            | `<h1 id="x">a</h1>`                      | `#␣a␣{#x}`               |
-| Classes with extra whitespace | `<h1 class="␣b␣␣a␣">a</h1>`              | `#␣a␣{.b␣.a}`            |
-| Attributes reordered          | `<h1 data-x="1" class="b" id="i">a</h1>` | `#␣a␣{#i␣.b␣data-x=1}`   |
-| Valueless attribute           | `<h1 hidden>a</h1>`                      | `#␣a␣{hidden=}`          |
-| Empty heading                 | `<h1 id="x"></h1>`                       | `#␣{#x}`                 |
-| Setext heading                | `<h1 id="x">a</h1>`                      | `a␣{#x}⏎======`          |
-| Whitespace in a value         | `<h1 title="a␣b">a</h1>`                 | `<h1 title="a␣b">a</h1>` |
-| Empty ID                      | `<h1 id="">a</h1>`                       | `<h1 id="">a</h1>`       |
-| Text ending in `}`            | `<h1>Price {USD}</h1>`                   | `#␣Price␣{USD\}`         |
+**Special case**: ATX
+[closing sequences](https://spec.commonmark.org/0.31.2/#atx-headings) belong to
+the headings section: `# a #` reads back as `<h1>a</h1>`. An attribute block
+does not help, since pulldown-cmark removes it first; `# a # {#x}` reads back
+as `<h1 id="x">a</h1>`. A `#` with no space before it is kept: `# a# {#x}` reads
+back as `<h1 id="x">a#</h1>`. Setext headings have no closing sequence.
+Until the headings section handles closing sequences, the translation of an ATX
+heading whose content ends in a space followed by `#`s, or consists only of
+`#`s, is unspecified. Escaping the first `#` of such a run, as in `# a \#`,
+would fix this the same way `\}` fixes a final `}`.
 
+The rows use `<h1>`. A row whose description begins with *Setext* uses
+`HeadingStyle::Setex`, and the rest use ATX; an underline spans the whole line,
+attribute block included. A row whose description begins with *Pure* uses
+`TranslationMode::Pure`, and the rest use Faithful. `⍽` is a no-break space
+(U+00A0), `␋` a vertical tab (U+000B), and `␌` a form feed (U+000C). Round-trip
+tests must read the Markdown back with `ENABLE_HEADING_ATTRIBUTES`, for example
+through `render_markdown` in `tests/common/mod.rs`, since `round_trip` enables
+no options.
+
+Each heading below is written with an attribute block:
+
+| Description                    | HTML in                                  | Faithful expected      |
+| ------------------------------ | ---------------------------------------- | ---------------------- |
+| ID                             | `<h1 id="x">a</h1>`                      | `#␣a␣{#x}`             |
+| ID starting with `#`           | `<h1 id="#a">a</h1>`                     | `#␣a␣{##a}`            |
+| Class starting with `.`        | `<h1 class=".a">a</h1>`                  | `#␣a␣{..a}`            |
+| Classes with extra whitespace  | `<h1 class="␣b␣␣a␣">a</h1>`              | `#␣a␣{.b␣.a}`          |
+| Attributes reordered           | `<h1 data-x="1" class="b" id="i">a</h1>` | `#␣a␣{#i␣.b␣data-x=1}` |
+| Valueless attribute            | `<h1 hidden>a</h1>`                      | `#␣a␣{hidden=}`        |
+| One-byte name                  | `<h1 x>a</h1>`                           | `#␣a␣{x=}`             |
+| `&` in a value                 | `<h1 title="a&amp;b">a</h1>`             | `#␣a␣{title=a&b}`      |
+| Character reference in a value | `<h1 title="&amp;amp;">a</h1>`           | `#␣a␣{title=&amp;}`    |
+| `=` in a value                 | `<h1 title="a=b">a</h1>`                 | `#␣a␣{title=a=b}`      |
+| `"` in a value                 | `<h1 title="a&quot;b">a</h1>`            | `#␣a␣{title=a"b}`      |
+| `'` in a value                 | `<h1 title="a'b">a</h1>`                 | `#␣a␣{title=a'b}`      |
+| No-break space in a value      | `<h1 id="a&nbsp;b">a</h1>`               | `#␣a␣{#a⍽b}`           |
+| Vertical tab in a value        | `<h1 id="a&#11;b">a</h1>`                | `#␣a␣{#a␋b}`           |
+| Empty ID                       | `<h1 id="">a</h1>`                       | `#␣a␣{id=}`            |
+| Empty ID with a class          | `<h1 id="" class="a">a</h1>`             | `#␣a␣{.a␣id=}`         |
+| Class with no tokens           | `<h1 class="">a</h1>`                    | `#␣a␣{class=}`         |
+| Whitespace-only class          | `<h1 class="␣">a</h1>`                   | `#␣a␣{class=}`         |
+| Empty heading                  | `<h1 id="x"></h1>`                       | `#␣{#x}`               |
+| Setext heading                 | `<h1 id="x">a</h1>`                      | `a␣{#x}⏎======`        |
+| Setext fallback, empty heading | `<h1 id="x"></h1>`                       | `#␣{#x}`               |
+| Setext fallback, lone `<br>`   | `<h1 id="x"><br></h1>`                   | `#␣<br>␣{#x}`          |
+| Setext fallback, type 6 tag    | `<h1 id="x"><div>a</div></h1>`           | `#␣<div>a</div>␣{#x}`  |
+
+In an inline context every heading is already raw HTML inlines, so its
+attributes are written as is. Each attribute below forces HTML in a block
+context, where the heading becomes a type 6 HTML block, so a blank line inside
+it is encoded as the translating HTML nodes section describes:
+
+| Description            | HTML in                   | Faithful expected             |
+| ---------------------- | ------------------------- | ----------------------------- |
+| Whitespace in a value  | `<h1 title="a␣b">a</h1>`  | `<h1 title="a␣b">a</h1>`      |
+| Blank line in a value  | `<h1 title="a⏎⏎b">a</h1>` | `<h1 title="a⏎&#10;b">a</h1>` |
+| Form feed in an ID     | `<h1 id="a&#12;b">a</h1>` | `<h1 id="a␌b">a</h1>`         |
+| `}` in a value         | `<h1 title="a}">a</h1>`   | `<h1 title="a}">a</h1>`       |
+| `{` in a value         | `<h1 title="a{b">a</h1>`  | `<h1 title="a{b">a</h1>`      |
+| `}` in a class token   | `<h1 class="a b}">a</h1>` | `<h1 class="a b}">a</h1>`     |
+| Backslash in a value   | `<h1 title="a\b">a</h1>`  | `<h1 title="a\b">a</h1>`      |
+| `<` in a value         | `<h1 title="a<b">a</h1>`  | `<h1 title="a&lt;b">a</h1>`   |
+| `>` in a value         | `<h1 title="a>b">a</h1>`  | `<h1 title="a&gt;b">a</h1>`   |
+| Name starting with `#` | `<h1 #a="1">a</h1>`       | `<h1 #a="1">a</h1>`           |
+| Name starting with `.` | `<h1 .a="1">a</h1>`       | `<h1 .a="1">a</h1>`           |
+| Name starting with `=` | `<h1 =a="1">a</h1>`       | `<h1 =a="1">a</h1>`           |
+| Name holding `&`       | `<h1 a&b="1">a</h1>`      | `<h1 a&b="1">a</h1>`          |
+| Name holding `"`       | `<h1 a"b="1">a</h1>`      | `<h1 a"b="1">a</h1>`          |
+| Name holding `'`       | `<h1 a'b="1">a</h1>`      | `<h1 a'b="1">a</h1>`          |
+| `{` in a name          | `<h1 a{b="1">a</h1>`      | `<h1 a{b="1">a</h1>`          |
+
+A final `}` is escaped only where no attribute block is written:
+
+| Description                                | HTML in                       | Expected                    |
+| ------------------------------------------ | ----------------------------- | --------------------------- |
+| Text ending in `}`                         | `<h1>Price {USD}</h1>`        | `#␣Price␣{USD\}`            |
+| Pure, attribute block dropped              | `<h1 id="x">Price {USD}</h1>` | `#␣Price␣{USD\}`            |
+| Setext, text ending in `}`                 | `<h1>Price {USD}</h1>`        | `Price␣{USD\}⏎============` |
+| Code span holding `{`                      | `<h1><code>{</code>b}</h1>`   | `` #␣`{`b\} ``              |
+| Text ending in `}` with an attribute block | `<h1 id="x">Price {USD}</h1>` | `#␣Price␣{USD}␣{#x}`        |
 
 Paragraphs
 ----------

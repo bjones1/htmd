@@ -8,7 +8,8 @@
 use pretty_assertions::assert_eq;
 
 mod common;
-use common::{convert_faithful, convert_faithful_setext};
+use common::{convert_faithful, convert_faithful_setext, convert_pure, render_markdown};
+use pulldown_cmark::Options as CommonMarkOptions;
 
 /// The "Translating HTML nodes" table: a CommonMark block may only process its
 /// content in a block context.
@@ -395,6 +396,201 @@ fn atx_headings() {
         "# *a*<br>",
         convert_faithful("<h1><em>a</em><br></h1>").unwrap()
     );
+}
+
+/// Reads `markdown` back as pulldown-cmark does with heading attributes, the
+/// reader the "Heading attributes" section assumes.
+fn render_with_heading_attributes(markdown: &str) -> String {
+    render_markdown(markdown, CommonMarkOptions::ENABLE_HEADING_ATTRIBUTES)
+}
+
+/// The first "Heading attributes" table: each heading is written with an
+/// attribute block.
+#[test]
+fn heading_attribute_blocks() {
+    for (html, expected) in [
+        (r#"<h1 id="x">a</h1>"#, "# a {#x}"),
+        (r##"<h1 id="#a">a</h1>"##, "# a {##a}"),
+        (r#"<h1 class=".a">a</h1>"#, "# a {..a}"),
+        (r#"<h1 class=" b  a ">a</h1>"#, "# a {.b .a}"),
+        (
+            r#"<h1 data-x="1" class="b" id="i">a</h1>"#,
+            "# a {#i .b data-x=1}",
+        ),
+        ("<h1 hidden>a</h1>", "# a {hidden=}"),
+        ("<h1 x>a</h1>", "# a {x=}"),
+        (r#"<h1 title="a&amp;b">a</h1>"#, "# a {title=a&b}"),
+        (r#"<h1 title="&amp;amp;">a</h1>"#, "# a {title=&amp;}"),
+        (r#"<h1 title="a=b">a</h1>"#, "# a {title=a=b}"),
+        (r#"<h1 title="a&quot;b">a</h1>"#, r#"# a {title=a"b}"#),
+        (r#"<h1 title="a'b">a</h1>"#, "# a {title=a'b}"),
+        (r#"<h1 id="a&nbsp;b">a</h1>"#, "# a {#a\u{A0}b}"),
+        (r#"<h1 id="a&#11;b">a</h1>"#, "# a {#a\u{B}b}"),
+        (r#"<h1 id="">a</h1>"#, "# a {id=}"),
+        (r#"<h1 id="" class="a">a</h1>"#, "# a {.a id=}"),
+        (r#"<h1 class="">a</h1>"#, "# a {class=}"),
+        (r#"<h1 class=" ">a</h1>"#, "# a {class=}"),
+        (r#"<h1 id="x"></h1>"#, "# {#x}"),
+    ] {
+        assert_eq!(expected, convert_faithful(html).unwrap(), "{html}");
+    }
+
+    assert_eq!(
+        "a {#x}\n======",
+        convert_faithful_setext(r#"<h1 id="x">a</h1>"#).unwrap()
+    );
+    assert_eq!(
+        "# {#x}",
+        convert_faithful_setext(r#"<h1 id="x"></h1>"#).unwrap()
+    );
+    assert_eq!(
+        "# <br> {#x}",
+        convert_faithful_setext(r#"<h1 id="x"><br></h1>"#).unwrap()
+    );
+    assert_eq!(
+        "# <div>a</div> {#x}",
+        convert_faithful_setext(r#"<h1 id="x"><div>a</div></h1>"#).unwrap()
+    );
+}
+
+/// The rows of the first "Heading attributes" table whose HTML is already in
+/// the order pulldown-cmark renders, read back with heading attributes.
+#[test]
+fn round_trip_of_heading_attribute_blocks() {
+    for html in [
+        r#"<h1 id="x">a</h1>"#,
+        r##"<h1 id="#a">a</h1>"##,
+        r#"<h1 class=".a">a</h1>"#,
+        r#"<h1 title="a&amp;b">a</h1>"#,
+        r#"<h1 title="a=b">a</h1>"#,
+        r#"<h1 id="">a</h1>"#,
+        r#"<h1 class="">a</h1>"#,
+        r#"<h1 id="x"></h1>"#,
+        r#"<h1 id="x"><br></h1>"#,
+        r#"<h1 id="x"><div>a</div></h1>"#,
+    ] {
+        assert_eq!(
+            format!("{html}\n"),
+            render_with_heading_attributes(&convert_faithful(html).unwrap()),
+            "{html}"
+        );
+    }
+
+    // Order and `class` whitespace, which carry no meaning in HTML, are lost;
+    // so is the difference between a valueless attribute and an empty value.
+    for (html, expected) in [
+        (r#"<h1 class=" b  a ">a</h1>"#, r#"<h1 class="b a">a</h1>"#),
+        (
+            r#"<h1 data-x="1" class="b" id="i">a</h1>"#,
+            r#"<h1 id="i" class="b" data-x="1">a</h1>"#,
+        ),
+        ("<h1 hidden>a</h1>", r#"<h1 hidden="">a</h1>"#),
+        ("<h1 x>a</h1>", r#"<h1 x="">a</h1>"#),
+        (
+            r#"<h1 id="" class="a">a</h1>"#,
+            r#"<h1 class="a" id="">a</h1>"#,
+        ),
+    ] {
+        assert_eq!(
+            format!("{expected}\n"),
+            render_with_heading_attributes(&convert_faithful(html).unwrap()),
+            "{html}"
+        );
+    }
+
+    assert_eq!(
+        "<h1 id=\"x\">a</h1>\n",
+        render_with_heading_attributes(
+            &convert_faithful_setext(r#"<h1 id="x">a</h1>"#).unwrap()
+        )
+    );
+}
+
+/// The second "Heading attributes" table: each attribute forces HTML in a
+/// block context, where the heading becomes a type 6 HTML block.
+#[test]
+fn heading_attributes_which_force_html() {
+    for html in [
+        r#"<h1 title="a b">a</h1>"#,
+        r#"<h1 title="a}">a</h1>"#,
+        r#"<h1 title="a{b">a</h1>"#,
+        r#"<h1 class="a b}">a</h1>"#,
+        r#"<h1 title="a\b">a</h1>"#,
+        r##"<h1 #a="1">a</h1>"##,
+        r#"<h1 .a="1">a</h1>"#,
+        r#"<h1 =a="1">a</h1>"#,
+        r#"<h1 a&b="1">a</h1>"#,
+        r#"<h1 a"b="1">a</h1>"#,
+        r#"<h1 a'b="1">a</h1>"#,
+        r#"<h1 a{b="1">a</h1>"#,
+    ] {
+        assert_eq!(html, convert_faithful(html).unwrap());
+    }
+
+    assert_eq!(
+        "<h1 title=\"a\n&#10;b\">a</h1>",
+        convert_faithful("<h1 title=\"a\n\nb\">a</h1>").unwrap()
+    );
+    assert_eq!(
+        "<h1 id=\"a\u{C}b\">a</h1>",
+        convert_faithful(r#"<h1 id="a&#12;b">a</h1>"#).unwrap()
+    );
+    assert_eq!(
+        r#"<h1 title="a&lt;b">a</h1>"#,
+        convert_faithful(r#"<h1 title="a<b">a</h1>"#).unwrap()
+    );
+    assert_eq!(
+        r#"<h1 title="a&gt;b">a</h1>"#,
+        convert_faithful(r#"<h1 title="a>b">a</h1>"#).unwrap()
+    );
+
+    // In an inline context the heading is already raw HTML inlines, so an
+    // attribute which could be written in a block is written as is.
+    assert_eq!(
+        r#"a[<h2 id="x">b</h2>](u)c"#,
+        convert_faithful(r#"a<a href="u"><h2 id="x">b</h2></a>c"#).unwrap()
+    );
+}
+
+/// The third "Heading attributes" table: a final `}` is escaped only where no
+/// attribute block is written.
+#[test]
+fn final_brace_of_a_heading() {
+    assert_eq!(
+        r"# Price {USD\}",
+        convert_faithful("<h1>Price {USD}</h1>").unwrap()
+    );
+    assert_eq!(
+        r"# Price {USD\}",
+        convert_pure(r#"<h1 id="x">Price {USD}</h1>"#).unwrap()
+    );
+    assert_eq!(
+        "Price {USD\\}\n============",
+        convert_faithful_setext("<h1>Price {USD}</h1>").unwrap()
+    );
+    assert_eq!(
+        r"# `{`b\}",
+        convert_faithful("<h1><code>{</code>b}</h1>").unwrap()
+    );
+    assert_eq!(
+        "# Price {USD} {#x}",
+        convert_faithful(r#"<h1 id="x">Price {USD}</h1>"#).unwrap()
+    );
+
+    for (html, expected) in [
+        ("<h1>Price {USD}</h1>", "<h1>Price {USD}</h1>"),
+        ("<h1><code>{</code>b}</h1>", "<h1><code>{</code>b}</h1>"),
+        (
+            r#"<h1 id="x">Price {USD}</h1>"#,
+            r#"<h1 id="x">Price {USD}</h1>"#,
+        ),
+    ] {
+        assert_eq!(
+            format!("{expected}\n"),
+            render_with_heading_attributes(&convert_faithful(html).unwrap()),
+            "{html}"
+        );
+    }
 }
 
 /// The "Paragraphs" table. Row 1 is the "Special case for paragraphs" rule: a
