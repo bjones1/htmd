@@ -85,7 +85,7 @@ HTML node to examine the current context to be correctly translated.
   context; they begin a (new) block context.
 * Thematic breaks (`<hr>`) must occur in a block context to be translated to
   CommonMark. They have no content.
-* Leaf blocks, which are headings (`<h1>`-`<h6>`), paragraphs (`<p>`), and
+* Leaf blocks, which are headings (`<h1>`\-`<h6>`), paragraphs (`<p>`), and
   tables (`<table>`, `<thead>`, `<tbody>`, `<tr>`), can only be translated as
   CommonMark/GFM when they appear in a block context. Headings, paragraphs, and
   table cells (`<td>`/`<th>`) begin an inline context.
@@ -345,7 +345,8 @@ a blank `>` line, since a truly blank line would end the blockquote instead.
 
 ### Lists
 
-**Important**: This section is under development. Ignore it.
+**Important**: This section, but not its subsections, is under development.
+Ignore the following text until the "Task list items" subsection.
 
 | Description                          | HTML in                                    | Faithful expected     |
 | ------------------------------------ | ------------------------------------------ | --------------------- |
@@ -441,6 +442,175 @@ Approach:
       direct children of each list item. If the child is a paragraph whose DOM
       begins with `<p>`, serialize it as HTML. Otherwise, leave it as
       CommonMark. Combine each list item with an intervening newline.
+
+#### Task list items
+
+A list item which begins with a checkbox is translated as a
+[task list item](https://github.github.com/gfm/#task-list-items-extension-),
+assuming the reader enables task lists (pulldown-cmark's
+`Options::ENABLE_TASKLISTS`). Each item is examined on its own, so a list may
+mix task list items and ordinary items.
+
+pulldown-cmark writes a marker as `<input disabled="" type="checkbox">`, adding
+`checked=""` for a checked box, as the first child of the `<li>` in a tight list
+or when the marker stands alone on its line, and otherwise of a `<p>` which is
+the `<li>`'s first child. Faithful mode translates an `<input>` as a marker only
+when:
+
+1. its parsed attributes are `disabled=""`, `type="checkbox"`, and optionally
+   `checked=""`;
+2. it is the first child of the `<li>`, or of a `<p>` which is the `<li>`'s
+   first child, ignoring whitespace-only text, since pulldown-cmark looks for a
+   marker only immediately after the list item's marker;
+3. the translated output which follows it on its line begins with whitespace,
+   since `[x]a` is ordinary text and adding a space would change the text, and
+   contains a non-whitespace character, since a marker alone on its line reads
+   back differently (see the "A task list marker alone on its line" section);
+   and
+4. its `<li>` is written as a list item: the `<li>` is in a block context and,
+   like its `<p>` if it has one, is not serialized.
+
+Whitespace in these conditions is a space, tab, line feed or carriage return.
+
+Condition 3 depends on what the `<input>`'s siblings translate to, so an
+`<input>` handler cannot decide it; the decision belongs in the `<li>` handler
+after it walks its children, or in a later pass. For example, a comment
+following the `<input>` translates to a separate block, leaving the marker alone
+on its line even though the DOM has a following node.
+
+Any other `<input>` is serialized as a raw HTML inline. `TranslationMode::Pure`
+applies only condition 2, condition 3's requirement for a non-whitespace
+character, and condition 4. It writes a marker for any `<input type="checkbox">`
+which meets them, matching the `type` without regard to case as HTML does. The
+marker is checked when the input has a `checked` attribute, and a space is added
+after it when none follows. Pure drops every other `<input>`.
+
+Ordinary text escaping writes every `[` as `\[` and every `]` as `\]`, so text
+which begins an item with `[␣]`, `[x]`, etc. does not read back as a marker.
+Links are not ordinary text: link reference styles other than
+`LinkReferenceStyle::Full` are deprecated (see the links section) and can
+produce output identical to a checkbox. With `LinkReferenceStyle::Shortcut`,
+`<li><a href="u">x</a>␣b</li>` becomes `*␣␣␣[x]␣b⏎⏎[x]:␣u`, which reads back as
+a checked box followed by `b`.
+
+In the tables below, the enclosing `<ul>` is omitted from a row whose HTML
+begins with `<li>`, and in both columns `☐` stands for
+`<input disabled="" type="checkbox">`, `☑` for
+`<input disabled="" type="checkbox" checked="">`, and `⍽` for a no-break space
+(U+00A0).
+
+| Description                         | HTML in                                          | Faithful expected                          |
+| ----------------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| Checked, tight                      | `<li>☑␣a</li>`                                   | `*␣␣␣[x]␣a`                                |
+| Loose                               | `<li><p>☑␣a</p></li><li><p>☐␣b</p></li>`         | `*␣␣␣[x]␣a⏎⏎*␣␣␣[␣]␣b`                     |
+| Mixed items                         | `<li>☐␣a</li><li>b</li>`                         | `*␣␣␣[␣]␣a⏎*␣␣␣b`                          |
+| Ordered list                        | `<ol><li>☐␣a</li></ol>`                          | `1.␣␣[␣]␣a`                                |
+| Nested task list item               | `<li>a<ul><li>☐␣b</li></ul></li>`                | `*␣␣␣a⏎␣␣␣␣*␣␣␣[␣]␣b`                      |
+| Task list item in a blockquote      | `<blockquote><ul><li>☐␣a</li></ul></blockquote>` | `>␣*␣␣␣[␣]␣a`                              |
+| Empty task list item                | `<li>☐</li>`                                     | `*␣␣␣☐`                                    |
+| Unquoted attributes                 | `<li><input type=checkbox disabled>␣a</li>`      | `*␣␣␣[␣]␣a`                                |
+| Checkbox after a heading            | `<li><h1>a</h1><p>☐␣b</p></li>`                  | `*␣␣␣#␣a⏎⏎␣␣␣␣☐␣b`                         |
+| Checkbox without `disabled`         | `<li><input type="checkbox" checked="">␣a</li>`  | `*␣␣␣<input type="checkbox" checked="">␣a` |
+| Attribute on the `<li>`             | `<ul><li class="x">☐␣a</li></ul>`                | `<ul><li class="x">☐␣a</li></ul>`          |
+| Attribute on the `<p>`              | `<li><p class="x">☐␣a</p></li>`                  | `*␣␣␣<p class="x">☐␣a</p>`                 |
+| No whitespace after checkbox        | `<li>☐a</li>`                                    | `*␣␣␣☐a`                                   |
+| No-break space after checkbox       | `<li>☐&nbsp;a</li>`                              | `*␣␣␣☐⍽a`                                  |
+| No-break space before checkbox      | `<li>&nbsp;☐␣a</li>`                             | `*␣␣␣⍽☐␣a`                                 |
+| Whitespace moved out of emphasis    | `<li>☐<em>␣a</em></li>`                          | `*␣␣␣[␣]␣*a*`                              |
+| Checkbox alone before a block       | `<li><p>☐</p><p>b</p></li>`                      | `*␣␣␣<p>☐</p>⏎⏎␣␣␣␣b`                      |
+| Checkbox alone before a nested list | `<li>☐⏎<ul><li>x</li></ul></li>`                 | `*␣␣␣☐⏎⏎␣␣␣␣*␣␣␣x`                         |
+| Checkbox not at the start           | `<li>a␣☐</li>`                                   | `*␣␣␣a␣☐`                                  |
+| Text which looks like a marker      | `<li>[x]␣a</li>`                                 | `*␣␣␣\[x\]␣a`                              |
+
+The table entires in this section do not define list tight/loose behavior, but
+only touch on how task list items are translated.
+
+The "Checkbox alone before a nested list" row is the HTML pulldown-cmark writes
+for `*␣[␣]⏎␣␣*␣x`. The blank line after the serialized `☐` is required: a lone
+`<input>` opens a type 7 HTML block (see the analysis section), and without the
+blank line, that block runs on and swallows the nested list as text.
+
+Pure mode differs from the table above wherever Faithful writes an `<input>`.
+For example:
+
+| Description                  | HTML in                                         | Pure expected |
+| ---------------------------- | ----------------------------------------------- | ------------- |
+| Checkbox without `disabled`  | `<li><input type="checkbox" checked="">␣a</li>` | `*␣␣␣[x]␣a`   |
+| Upper-case `type`            | `<li><input type="CHECKBOX">␣a</li>`            | `*␣␣␣[␣]␣a`   |
+| No whitespace after checkbox | `<li>☐a</li>`                                   | `*␣␣␣[␣]␣a`   |
+| Empty task list item         | `<li>☐</li>`                                    | `*`           |
+| Checkbox not at the start    | `<li>a␣☐</li>`                                  | `*␣␣␣a`       |
+
+##### A task list marker alone on its line
+
+When nothing but whitespace follows `[␣]`, `[x]` or `[X]` on an item's first
+line, pulldown-cmark 0.13.4 appends the marker to the item and opens no
+paragraph
+([`firstpass.rs:150-153`](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L150-L153)).
+From then on it treats the item as one whose first line was blank (the same path
+as
+[`firstpass.rs:138-141`](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L138-L141)),
+not as one whose first paragraph is `[␣]`. Each result below comes from that
+version with `ENABLE_TASKLISTS`, compared with the same Markdown read with task
+lists off. The whitespace in the HTML shown is normalized.
+
+* **At the end of the input, the marker isn't recognized.** A marker must be
+  followed by a whitespace byte
+  ([`scanners.rs:404-412`](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/scanners.rs#L404-L412)),
+  so `*␣[␣]` with nothing after it reads back as `<li>[ ]</li>`. A trailing
+  space, tab or line ending fixes this.
+
+* **A blank line ends the item.** CommonMark says
+  "[a list item can begin with at most one blank line](https://spec.commonmark.org/0.31.2/#list-items)",
+  so
+
+  ```markdown
+  * [ ]
+
+    b
+  ```
+
+  reads back as
+
+  ```html
+  <ul><li><input disabled="" type="checkbox"/> </li></ul>
+  <p>b</p>
+  ```
+
+  With task lists off, `b` is the item's second paragraph. Trailing whitespace
+  after `]` doesn't help. Ordered lists and block quotes behave the same way. In
+  a nested list, `b` moves to the enclosing item and makes the outer list loose.
+
+* **There is no lazy continuation.** With no paragraph open, an unindented next
+  line can't continue one: `*␣[␣]⏎b` puts `b` in a `<p>` after the list.
+
+* **An indented next line becomes code.** `*␣[␣]⏎␣␣␣␣␣␣b` reads back as
+  `<li><input …/><pre><code>b</code></pre></li>`. With task lists off, `b`
+  continues the paragraph.
+
+* **The marker is never wrapped in a `<p>`,** even in a loose list:
+
+  ```markdown
+  * [ ]
+
+  * [ ] a
+  ```
+
+  reads back as
+
+  ```html
+  <ul>
+    <li><input disabled="" type="checkbox"/> </li>
+    <li><p><input disabled="" type="checkbox"/> a</p></li>
+  </ul>
+  ```
+
+  The item's position doesn't matter: `*␣[␣]␣a⏎⏎*␣[␣]` and `*␣[␣]⏎⏎*␣b` lose the
+  `<p>` the same way.
+
+For simplicity, htmd therefore never writes a marker alone on its line, even
+where it would read back correctly, as in a tight item followed by another item
+or by a nested list.
 
 Inlines
 -------
