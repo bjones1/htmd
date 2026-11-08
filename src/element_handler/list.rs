@@ -12,6 +12,11 @@ use crate::{
 };
 
 pub(super) fn list_handler(handlers: &dyn Handlers, element: &Element) -> Option<HandlerResult> {
+    if handlers.options().translation_mode == TranslationMode::Faithful
+        && crate::smart_punctuation::has_isolated_em_dash_descendant(element.node)
+    {
+        return Some(serialize_element_result(handlers, element));
+    }
     // In faithful mode, ...
     if handlers.options().translation_mode == TranslationMode::Faithful {
         // ...a list is a CommonMark block, so it needs a block context, and

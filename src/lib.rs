@@ -2,6 +2,7 @@ mod dom_walker;
 pub mod element_handler;
 mod html_block;
 pub mod options;
+mod smart_punctuation;
 pub(crate) mod util;
 
 use std::rc::Rc;

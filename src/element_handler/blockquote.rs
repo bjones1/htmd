@@ -2,6 +2,7 @@ use crate::{
     Context, Element,
     element_handler::element_util::serialize_if_extra_attrs_or_inline,
     element_handler::{HandlerResult, Handlers},
+    options::TranslationMode,
     util::text::{JoinOnStringIterator, TrimDocumentWhitespace, concat_strings, frame_as_block},
 };
 
@@ -10,6 +11,13 @@ pub(super) fn blockquote_handler(
     element: &Element,
 ) -> Option<HandlerResult> {
     serialize_if_extra_attrs_or_inline!(handlers, element, 0);
+    if handlers.options().translation_mode == TranslationMode::Faithful
+        && crate::smart_punctuation::has_isolated_em_dash_descendant(element.node)
+    {
+        return Some(
+            crate::element_handler::element_util::serialize_element_result(handlers, element),
+        );
+    }
     // A blockquote is a container block: its children begin a block context.
     let content = handlers.walk_children_content(element.node, Context::BLOCK);
     let content = content.trim_start_matches('\n');

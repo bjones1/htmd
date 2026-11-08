@@ -37,7 +37,7 @@ console.log(
     let expected = r#"Turndown Demo
 =============
 
-This demonstrates [turndown](https://github.com/mixmark-io/turndown) – an HTML to Markdown converter in JavaScript.
+This demonstrates [turndown](https://github.com/mixmark-io/turndown) -- an HTML to Markdown converter in JavaScript.
 
 Usage
 -----

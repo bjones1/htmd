@@ -721,7 +721,7 @@ Another div</pre>
   <pre class="expected">*   Indented li with leading/trailing newlines
 *   **Strong with trailing space inside li with leading/trailing whitespace**
 *   li without whitespace
-*   Leading space, text, lots of whitespace … text</pre>
+*   Leading space, text, lots of whitespace ... text</pre>
 </div>
 
 <div class="case" data-name="whitespace between inline elements">
@@ -752,14 +752,14 @@ before continuation</pre>
   <div class="input">
     Text before blank em … <em></em> text after blank em
   </div>
-  <pre class="expected">Text before blank em … text after blank em</pre>
+  <pre class="expected">Text before blank em ... text after blank em</pre>
 </div>
 
 <div class="case" data-name="blank block elements" data-options='{"translationMode": "Pure"}'>
   <div class="input">
     Text before blank div … <div></div> text after blank div
   </div>
-  <pre class="expected">Text before blank div …
+  <pre class="expected">Text before blank div ...
 
 text after blank div</pre>
 </div>

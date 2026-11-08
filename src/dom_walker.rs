@@ -111,7 +111,8 @@ fn walk_text(
     } else {
         text.as_ref()
     };
-    let text = escape_if_needed(Cow::Borrowed(text));
+    let text = crate::smart_punctuation::reverse(text);
+    let text = escape_if_needed(Cow::Borrowed(&text));
     let text = if !trim_leading_spaces && output.ends_with(' ') && text.starts_with(' ') {
         &text[1..]
     } else {

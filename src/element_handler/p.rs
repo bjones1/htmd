@@ -5,11 +5,28 @@ use crate::{
     },
     element_handler::{HandlerResult, Handlers},
     html_block::starts_html_block,
+    options::TranslationMode,
+    smart_punctuation::{has_leading_open_quote_mismatch, is_isolated_em_dash},
     util::text::frame_as_block,
 };
 
 pub(super) fn p_handler(handlers: &dyn Handlers, element: &Element) -> Option<HandlerResult> {
     serialize_if_extra_attrs_or_inline!(handlers, element, 0);
+    if handlers.options().translation_mode == TranslationMode::Faithful {
+        let children = element.node.children.borrow();
+        if children.len() == 1
+            && let markup5ever_rcdom::NodeData::Text { contents } = &children[0].data
+        {
+            let text = contents.borrow();
+            if is_isolated_em_dash(&text) || has_leading_open_quote_mismatch(&text) {
+                return Some(
+                    crate::element_handler::element_util::serialize_element_result(
+                        handlers, element,
+                    ),
+                );
+            }
+        }
+    }
     // A paragraph is a leaf block: its children begin an inline context.
     let content = handlers.walk_children_content(element.node, Context::INLINE);
     // An HTML block opening at the start of the content dissolves the paragraph

@@ -156,6 +156,8 @@ fn serialize_block_element(element: &Element) -> io::Result<String> {
     Ok(frame_as_block(&html))
 }
 
+// Raw HTML blocks bypass Markdown smart-punctuation processing, so preserve
+// their original typography when Faithful mode retains the HTML element.
 fn serialize_subtree(element: &Element) -> io::Result<String> {
     let mut bytes = Vec::new();
     let handle = SerializableHandle::from(element.node.clone());
