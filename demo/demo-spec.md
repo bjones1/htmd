@@ -2,25 +2,24 @@
 
 ## 1. Purpose
 
-Build a browser-based, bidirectional conversion demo for the `htmd` and
-`pulldown-cmark` Rust crates, modeled on the
-[CommonMark dingus](https://spec.commonmark.org/dingus/). The demo converts
+An interactive, client-side web tool that converts CommonMark Markdown (with
+the `pulldown-cmark` extensions) to HTML using `pulldown-cmark`, and HTML back
+to Markdown using `htmd`. It lets developers compare both conversion
+directions via a toggle, see how each crate's options change the output, and
+inspect `htmd`'s faithfulness with an HTML → Markdown → HTML round-trip diff.
 
-- **Markdown → HTML** with [`pulldown-cmark`](https://crates.io/crates/pulldown-cmark), and
-- **HTML → Markdown** with [`htmd`](https://crates.io/crates/htmd).
-
-The application runs entirely in the browser: Rust is compiled to WebAssembly
-and executed client-side, with no server round-trip.
+The layout is inspired by the CommonMark dingus, but the tool is not a strict
+conformance checker. The application, including `htmd` and `pulldown-cmark`,
+compiles to `wasm32-unknown-unknown`, running entirely in the browser with no
+backend (deployable as static files). Conversion is live but debounced, and inputs over 100 KB require a manual "Convert" action.
 
 ## 2. Goals
 
-- Let a user type or paste content on one side and see the converted result
-  live on the other.
-- Support both conversion directions from the same page.
-- Expose the options that the underlying crates support, so users can see how
-  each option changes the output.
-- Demonstrate that `htmd` output is faithful by offering a round-trip check
-  (HTML → Markdown → HTML) and showing the differences.
+- Let a user type or paste content in one pane and see the converted result update as they type in the other, debounced, with a manual Convert action for inputs over 100 KB.
+- Support both conversion directions, selected with a toggle; two-way synchronization is optional.
+- Expose the conversion options that materially change the output (the subset in FR-5 for the first release), with a reset to defaults.
+- Let users inspect htmd's fidelity with an HTML → Markdown → HTML round trip that shows the original, the round-tripped HTML, and their differences; treat the diff as diagnostic, not proof.
+- Show conversion errors and empty input in the UI instead of panicking.
 - Be deployable as static files (no backend).
 
 ## 3. Non-goals
@@ -32,26 +31,41 @@ and executed client-side, with no server round-trip.
 
 ## 4. Target users
 
-- Developers evaluating `htmd` or `pulldown-cmark`.
-- Contributors who want to inspect conversions for edge cases.
-- Students comparing Markdown and HTML semantics.
+### Primary
+- **`htmd` evaluators** — Rust developers deciding whether to adopt `htmd` for HTML → Markdown conversion. They need to paste representative HTML, see faithful Markdown quickly, inspect how options change the output, and check a round-trip diff.
+
+### Secondary
+- **`pulldown-cmark` evaluators** — developers checking Markdown → HTML output and extension flags.
+- **`htmd` contributors** — maintainers and contributors reproducing edge cases and capturing before/after output.
+
+### Tertiary (v1 scope: samples and side-by-side views only)
+- **Students and technical writers** comparing Markdown and HTML semantics. v1 does not include tutorials or guided explanations.
+
+---
+
+### General Prerequisites & Scope Boundary
+* **Prior Knowledge:** All audiences are assumed to know Markdown and HTML. No Rust or WASM knowledge is required to use the demo.
+* **Accessibility:** All audiences include keyboard and assistive-technology users.
+* **Non-Users / Out of Scope:** The tool is not intended for non-technical authors, production conversion pipelines, or CommonMark conformance testing.
 
 ## 5. Functional requirements
 
 ### FR-1 — Markdown → HTML
 
-Given Markdown input, render HTML with `pulldown-cmark`:
+Given Markdown input, render HTML with `pulldown-cmark` (`default-features = false`, `features = ["html"]`):
 
 ```rust
+let mut options = pulldown_cmark::Options::empty();
+options.insert(pulldown_cmark::Options::ENABLE_TABLES | pulldown_cmark::Options::ENABLE_MATH);
+
 let mut html = String::new();
-pulldown_cmark::html::push_html(
-    &mut html,
-    pulldown_cmark::Parser::new_ext(markdown, options),
-);
+pulldown_cmark::html::push_html(&mut html, pulldown_cmark::Parser::new_ext(markdown, options));
 ```
 
-The result is shown both as rendered HTML (in a preview pane) and as HTML
-source.
+**Constraints:**
+* **Source View:** Rendered strictly via `textContent`.
+* **Preview Pane:** Injected via `srcdoc` into a sandboxed `<iframe>` (`sandbox=""`), wrapped in a full HTML document enforcing CSP: `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';">`.
+
 
 ### FR-2 — HTML → Markdown
 
@@ -115,10 +129,8 @@ action.
 ### FR-8 — Error and empty-state handling
 
 - Empty input produces empty output without errors.
-- Conversion errors are displayed inline with the failing input highlighted
-  where practical.
-- Very large inputs (for example, a 1 MB page) do not freeze the UI; show a
-  progress or busy indicator if conversion takes noticeable time.
+- 100 KB Threshold: To stop the browser thread from locking up, auto-conversion only works on inputs under 100 KB.
+- If an input exceeds 100 KB, disable auto-sync, show a clear warning banner, and require the user to hit a manual "Convert" button.
 
 ## 6. Architecture
 
