@@ -96,7 +96,7 @@ fn try_serialize_element(handlers: &dyn Handlers, element: &Element) -> io::Resu
     if element.context.is_block() && is_block_element(element.tag) {
         serialize_block_element(element)
     } else {
-        serialize_inline_element(handlers, element)
+        serialize_inline_element(handlers, element, false)
     }
 }
 
@@ -107,7 +107,19 @@ fn serialize_opts() -> SerializeOpts {
     }
 }
 
-fn serialize_inline_element(handlers: &dyn Handlers, element: &Element) -> io::Result<String> {
+/// Serialize raw children while keeping the opening tag safe in inline Markdown.
+pub(crate) fn serialize_inline_subtree(
+    handlers: &dyn Handlers,
+    element: &Element,
+) -> io::Result<String> {
+    serialize_inline_element(handlers, element, true)
+}
+
+fn serialize_inline_element(
+    handlers: &dyn Handlers,
+    element: &Element,
+    preserve_children: bool,
+) -> io::Result<String> {
     let NodeData::Element { name, attrs, .. } = &element.node.data else {
         return Err(io::Error::other("expected an element node"));
     };
@@ -124,11 +136,18 @@ fn serialize_inline_element(handlers: &dyn Handlers, element: &Element) -> io::R
     // Everything written so far is the open tag, whose attribute values hold
     // the only whitespace of this element the walk below does not reach.
     let open_tag_len = serializer.writer.len();
-    serializer.writer.write_all(
-        handlers
-            .walk_children_content(element.node, Context::INLINE)
-            .as_bytes(),
-    )?;
+    if preserve_children {
+        for child in element.node.children.borrow().iter() {
+            let handle = SerializableHandle::from(child.clone());
+            serialize(&mut serializer.writer, &handle, serialize_opts())?;
+        }
+    } else {
+        serializer.writer.write_all(
+            handlers
+                .walk_children_content(element.node, Context::INLINE)
+                .as_bytes(),
+        )?;
+    }
     serializer.end_elem(name.clone())?;
     let mut html = String::from_utf8(bytes).map_err(io::Error::other)?;
     let open_tag = &html[..open_tag_len];

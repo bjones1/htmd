@@ -4,7 +4,9 @@ use std::{borrow::Cow, rc::Rc};
 
 use crate::{
     Context, Element,
-    element_handler::{ElementHandlers, element_util::serialize_element},
+    element_handler::{
+        ElementHandlers, element_util::serialize_element, footnote::escape_colon_after_reference,
+    },
 };
 
 use super::{
@@ -117,6 +119,7 @@ fn walk_text(
     } else {
         text.as_ref()
     };
+    escape_colon_after_reference(output, text);
     output.push_str(text);
     true
 }
@@ -405,6 +408,7 @@ fn append_normalized_content(output: &mut String, mut content: String, preserve_
     };
 
     escape_image_marker(output, content);
+    escape_colon_after_reference(output, content);
     output.push_str(content);
 }
 

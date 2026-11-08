@@ -5,6 +5,7 @@ mod caption;
 mod code;
 pub(crate) mod element_util;
 mod emphasis;
+pub(crate) mod footnote;
 mod head_body;
 mod headings;
 mod hr;
@@ -34,6 +35,7 @@ use br::br_handler;
 use caption::caption_handler;
 use code::code_handler;
 use emphasis::emphasis_handler;
+use footnote::footnote_handler;
 use head_body::head_body_handler;
 use headings::headings_handler;
 use hr::hr_handler;
@@ -389,6 +391,8 @@ impl ElementHandlers {
             .copied()
             .collect();
         handlers.add_handler(unhandled_block_elements, block_handler);
+
+        handlers.add_handler(vec!["sup", "div"], footnote_handler);
 
         handlers
     }
