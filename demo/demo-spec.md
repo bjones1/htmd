@@ -130,7 +130,7 @@ Sample actions:
     * Wrap `localStorage.getItem` and `JSON.parse` in `try/catch`.
     * Fall back to in-memory state without crashing if storage is blocked (Incognito).
     * Validate `version == 1`, data types, and enum variants for all fields.
-    * Wipe storage and reset to Demo Default Preset with empty inputs if the version is not 1, the JSON is corrupt, fields are invalid, or spacing is outside the 1–4 range.
+    * Wipe storage and reset to Demo Preset with empty inputs if the version is not 1, the JSON is corrupt, fields are invalid, or spacing is outside the 1–4 range.
 - **Persisted-state schema:** the stored JSON object contains exactly these fields (unknown fields are ignored on read):
     * `version`: `1` (global)
     * `mode`: `"md-to-html"` or `"html-to-md"` (global)
@@ -194,7 +194,7 @@ Sample actions:
 
 1. `demo/` — a standalone crate (not a workspace member) containing the Leptos CSR application, depending on the root `htmd` crate via `path = "../"`.
 2. `demo/README.md` with development and build instructions (native and wasm targets).
-3. `.github/workflows/demo-ci.yaml` running on the demo crate: clippy for `wasm32-unknown-unknown` with `--locked -- -D warnings`; native `cargo test --locked`; the `wasm-bindgen-test` suite against headless Chromium; `trunk build --release`; the gzip size check (fails at ≥ 1,572,864 bytes); a small malformed-input fuzz corpus; and the Playwright end-to-end matrix (Chromium, Firefox, WebKit). The root-repo gates (`cargo build`, `cargo clippy -- --deny warnings`, `cargo test`) continue to cover the library and are unaffected by `demo/`.
+3. `.github/workflows/demo-ci.yaml` running on the demo crate: clippy for `wasm32-unknown-unknown` with `--locked -- -D warnings`; native `cargo test --locked`; the `wasm-bindgen-test` suite against headless Chromium; `trunk build --release`; the gzip size check (fails at ≥ 1,572,864 bytes); a small malformed-input fuzz corpus; the Playwright end-to-end matrix (Chromium, Firefox, WebKit); and an axe-core accessibility scan of the built page driven by Playwright, failing CI on violations. The root-repo gates (`cargo build`, `cargo clippy -- --deny warnings`, `cargo test`) continue to cover the library and are unaffected by `demo/`.
 4. Static-host deployment of `dist/` (GitHub Pages) via the same workflow.
 5. This specification, updated to match the implemented behavior.
 
@@ -243,7 +243,7 @@ Sample actions:
 - [ ] **Malformed JSON:** a non-parseable storage string triggers a clean fallback to defaults without panics.
 - [ ] **Type & enum mismatch:** wrong field types or invalid enum variants are rejected, causing a reset to defaults.
 - [ ] **Out-of-bound values:** spacing parameters outside the 1–4 range are detected and rejected.
-- [ ] **Future version:** storage containing `"version": 2` or higher is dropped and the app boots with the Demo Default Preset and empty inputs (same rule as corrupt or invalid payloads).
+- [ ] **Future version:** storage containing `"version": 2` or higher is dropped and the app boots with the Demo Preset and empty inputs (same rule as corrupt or invalid payloads).
 - [ ] **Data loss prevention:** type text, immediately toggle a sidebar option within 500 ms, and refresh — the freshly typed text is fully preserved.
 
 ### 8.7. Semantic HTML Diff Validation

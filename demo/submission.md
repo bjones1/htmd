@@ -88,6 +88,7 @@ The following table summarizes the design and review iterations for the `htmd / 
 | **4** | **38** | Verified all settings against `htmd 0.5.5` and `pulldown-cmark 0.13.4`, expanded the option mapping to 15 flags, resolved reset semantics, and added deep DOM nesting bounds. |
 | **5** | **12** | Made performance and size budgets measurable (artifact, command, profile), defined the demo build contract and CI workflow, normalized `skip_tags`, hardened the iframe/panic-hook/debounce contracts, and renumbered sections; then reconciled long-task vs compute budgets, unified storage version handling, added the persisted-state schema, moved the nesting guard to a streaming pre-scan, and pinned the 2 KB threshold. |
 | **6** | **11** | Open, awaiting processing: six LLM findings (missing axe-core CI step, underspecified nesting pre-scan, unadjudicable forced-tick latency rule, `&nbsp;` exemption inconsistency, missing acceptance criteria for "Use Output as Input"/"Reload Sample", preset naming variance) plus five spec-quality checklist findings (word tokenizer definition, code-point vs locale sorting, NFC normalization, first-run state, banner byte units). |
+| **7** | **8** | Addressed some findings from the previous round. A follow-up review identified 8 new non-critical issues, some of which I fixed while dismissing the rest as not applicable |
 
 ---
  
@@ -99,7 +100,8 @@ The following table summarizes the design and review iterations for the `htmd / 
 4. **Round 4 (Crate Alignment & Edge Cases):** Expanded the UI flags to match all 15 bitflags available in `pulldown-cmark 0.13.4`, protected the recursive WASM stack walker against deeply nested elements, and separated "Reset Options" from "Reset Sample" logic.
 5. **Round 5 (Measurability & Buildout):** Tied every budget to an artifact and CI command (`gzip -6` size check, `performance.measure` latency), defined the standalone-crate build contract with a `path` dependency on `htmd`, added the persisted-state schema and a streaming nesting guard, and reconciled the 100 ms compute vs 350–400 ms end-to-end latency criteria.
 6. **Round 6 (Open):** A fresh-context review produced six findings (axe-core missing from the CI step list, underspecified nesting pre-scan, unadjudicable forced-tick latency rule, `&nbsp;` exemption inconsistency, missing acceptance bullets for "Use Output as Input"/"Reload Sample", preset naming variance); a specification-quality checklist pass added five more (word tokenization for the diff, code-point vs locale-aware sorting, NFC normalization, first-run state, banner byte units). All 11 remain open for processing.
-7. **Round 7 (Various issues):** Clarified typing protection and added an acceptance coverage, corrected nesting-limit explanation
+7. **Round 7 (Various issues):** Fixed some of the issues in previous round review (Preset naming variance, omitted axe-core from CI, first run state), improved typing protection wording and added coverage.
+
 
 ### Last LLM review
 
