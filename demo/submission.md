@@ -13,7 +13,7 @@ Draft submission
 Completed the specification analysis and performance audit up to and including point B6, made the corresponding edits to the `review.md` file, and moved the irrelevant points into the specification. Round 1-4 review.
 * Danial Baitakov: Finished the review work from B7 through L10, applying each finding to the spec and marking it resolved in review.md. Added the artifacts the professor asked for (contribution list, review history, compile verification output) and ran the round-5 review cycle until nothing was left open. Also ran the round-6 review and added five more findings from a spec-quality checklist, then left round 6 open so a teammate could take it.
 * Justin Gray: (Victoria's contributions)
-* Nurlybek Aimagambetov: Clarified typing protection and added acceptance coverage case, initial workspace state, corrected the nesting-limit explanation
+* Nurlybek Aimagambetov: Reviewed and addressed some of the round 6 review findings, clarified typing protection and added acceptance coverage case, corrected the nesting-limit explanation
 
 ### Compiler test
 
