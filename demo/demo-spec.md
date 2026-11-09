@@ -1,182 +1,119 @@
 # htmd / pulldown-cmark live demo — specification
 
-## 1. Purpose
-
-An interactive, client-side web tool that converts CommonMark Markdown (with
-the `pulldown-cmark` extensions) to HTML using `pulldown-cmark`, and HTML back
-to Markdown using `htmd`. It lets developers compare both conversion
-directions via a toggle, see how each crate's options change the output, and
-inspect `htmd`'s faithfulness with an HTML → Markdown → HTML round-trip diff.
-
-The layout is inspired by the CommonMark dingus, but the tool is not a strict
-conformance checker. The application, including `htmd` and `pulldown-cmark`,
-compiles to `wasm32-unknown-unknown`, running entirely in the browser with no
-backend (deployable as static files). Conversion is live but debounced, and inputs are strictly capped at 100 KB to guarantee UI responsiveness.
+## 1. Purpose & Target Audience
+An interactive, client-side web tool to convert CommonMark Markdown to HTML (via `pulldown-cmark`) and back (via `htmd`). It enables Rust developers and library maintainers to test edge cases, tweak crate options, and inspect translation fidelity in real-time within the browser. 
 
 ## 2. Goals
 
-- Let a user type or paste content in one pane and see the converted result update as they type in the other, debounced, with a strict size ceiling of 100 KB.
-- Support both conversion directions, selected strictly with a direction toggle (one-way conversion per mode).
-- Expose the conversion options that materially change the output (the subset in FR-5 for the first release), with a dedicated reset action.
-- **Session Protection (UX-Guard):** Prevent accidental data loss from browser reloads by temporarily storing the active workspace layout and input text in the browser's local context, adhering to the boundary in Section 3.
-- Let users inspect htmd's fidelity with an HTML → Markdown → HTML round trip that shows the original, the round-tripped HTML, and their differences; treat the diff as diagnostic, not proof.
-- Show conversion errors and empty input in the UI instead of panicking.
-- Be deployable as static files (no backend).
+*   **Convert input automatically** as the user types, enforcing a strict 100 KB ceiling.
+*   **Support strict one-way conversion** per mode (Markdown → HTML or HTML → Markdown).
+*   **Expose core configuration flags** with a global "Reset to Defaults" action.
+*   **Persist the active workspace** state in localStorage to prevent data loss.
+*   **Provide a clear pipeline diff** (HTML → Markdown → HTML) with intermediate views.
+*   **Surface conversion errors** gracefully in the UI without crashing the WASM runtime.
 
 ## 3. Non-goals
 
-- User accounts, cloud persistence, database storage, or remote document sharing link generation. (Note: Transient, client-side session auto-recovery is included strictly for user experience validation).
-- Server-side rendering or server-side conversion.
-- Editing features beyond plain text input (syntax highlighting is optional).
-- Replacing the CommonMark dingus or the crates' own test suites.
+- User accounts, cloud storage, databases, or shareable link generation.
+- Server-side rendering (SSR) or remote backend conversion.
+- Advanced rich-text WYSIWYG editor features.
 
-## 4. Target users
+## 4. Functional requirements
 
-### Primary
-- **`htmd` evaluators** — Rust developers deciding whether to adopt `htmd` for HTML → Markdown conversion. They need to paste representative HTML, see faithful Markdown quickly, inspect how options change the output, and check a round-trip diff.
+### FR-1 — Conversion Modes
+- **Markdown → HTML:** Uses `pulldown-cmark`. The preview pane is injected via `srcdoc` into a sandboxed `<iframe>` with a strict CSP (`default-src 'none'; img-src data:; style-src 'unsafe-inline';`).
+- **HTML → Markdown:** Uses `htmd`. Malformed HTML must be handled permissively via `html5ever` without crashing.
 
-### Secondary
-- **`pulldown-cmark` evaluators** — developers checking Markdown → HTML output and extension flags.
-- **`htmd` contributors** — maintainers and contributors reproducing edge cases and capturing before/after output.
-
-### Tertiary (v1 scope: samples and side-by-side views only)
-- **Students and technical writers** comparing Markdown and HTML semantics. v1 does not include tutorials or guided explanations.
-
----
-
-### General Prerequisites & Scope Boundary
-* **Prior Knowledge:** All audiences are assumed to know Markdown and HTML. No Rust or WASM knowledge is required to use the demo.
-* **Accessibility:** All audiences include keyboard and assistive-technology users.
-* **Non-Users / Out of Scope:** The tool is not intended for non-technical authors, production conversion pipelines, or CommonMark conformance testing.
-
-## 5. Functional requirements
-
-### FR-1 — Markdown → HTML
-
-Given Markdown input, render HTML with `pulldown-cmark` (`default-features = false`, `features = ["html"]`):
-
-```rust
-let mut options = pulldown_cmark::Options::empty();
-options.insert(pulldown_cmark::Options::ENABLE_TABLES | pulldown_cmark::Options::ENABLE_MATH);
-
-let mut html = String::new();
-pulldown_cmark::html::push_html(&mut html, pulldown_cmark::Parser::new_ext(markdown, options));
-```
-
-**Constraints:**
-* **Source View:** Rendered strictly via `textContent`.
-* **Preview Pane:** Injected via `srcdoc` into a sandboxed `<iframe>` (`sandbox=""`), wrapped in a full HTML document enforcing CSP: `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';">`.
-
-### FR-2 — HTML → Markdown
-
-Given HTML input, convert with `htmd`:
-
-```rust
-htmd::HtmlToMarkdown::builder()
-    .options(options)
-    .build()
-    .convert(html) // -> io::Result<String>
-```
-
-Errors are surfaced in the UI rather than causing a panic.
-
-### FR-3 — Live conversion
-
-- **Adaptive Debounce:** Conversion runs automatically on every input change. To ensure optimal UX:
-  - For small inputs (under 2 KB), conversion triggers **immediately** without delay.
-  - For inputs between 2 KB and 100 KB, updates are **debounced** (target 150–300 ms) to prevent UI stuttering.
-- The direction is selected with a toggle (Markdown → HTML / HTML → Markdown). One pane acts as a fixed input text area, and the other acts as the output view based on the active mode. Two-way simultaneous sync is explicitly excluded from the scope.
-
-### FR-4 — Views
-
-Each output pane offers:
-
-- **Rendered** view (HTML rendered in the browser), and
-- **Source** view (raw HTML or raw Markdown text).
-
-### FR-5 — Options
-
-Expose a subset of options for each crate, with sensible defaults:
-
-- `htmd`: `heading_style`, `translation_mode` (`Faithful` vs. pure), `bullet_list_marker`, `code_block_style`, `skip_tags`, `use_html_blocks`, and any other options the crate exposes.
-- `pulldown-cmark`: tables, footnotes, strikethrough, task lists, smart punctuation, heading attributes, math, and the other extension flags.
-
-**Reset Scope:** Options are visually grouped by conversion direction. The "Reset to Defaults" action is global: it resets the configuration flags for **both** directions simultaneously to prevent hidden side effects during mode switches.
-
-### FR-6 — Round-trip check
-
-For HTML → Markdown mode, provide a "Round trip" action that:
-
-1. converts HTML to Markdown with `htmd`, then
-2. converts that Markdown back to HTML with `pulldown-cmark`, ensuring it uses the **exact same extension flags** (tables, strikethrough, etc.) currently enabled for `htmd` in the options panel, and
-3. compares the original HTML with the round-tripped HTML.
-
-To prevent raw text "noise" caused by insignificant variations (such as whitespace, attribute ordering, entity encoding, or equivalent tags like `<b>` vs `<strong>`), the comparison engine must:
-* **Normalize both HTML outputs** by parsing them into DOM trees (via browser APIs or a lightweight parser) and re-serializing them to a canonical string format before diffing.
-* **Compute the diff using the `similar` crate** based on a line-by-line or token-based text comparison of the normalized outputs.
-
-The round-trip diff is presented strictly as a diagnostic tool for visibility into crate alignment, not as strict proof of compliance.
-
-### FR-7 — Samples
-- The application ships a built-in set of click-to-load example documents representing standard and complex formatting elements.
-- **Regression Test Assertions:** To ensure stability, these samples function as regression benchmarks with strictly defined expected outputs:
-  - **Inline HTML:** Elements like `<div>content</div>` in Markdown must render as raw block/inline HTML in `pulldown-cmark`, and convert back to valid HTML blocks or pass-through strings via `htmd`.
-  - **Math Blocks:** Mathematical formulas enclosed in `$` (inline) or `$$` (block) require the `pulldown-cmark` math extension to be active. Since `htmd` passes unrecognized or raw structures down, math elements must explicitly output as text-wrapped mathematical content (e.g., preserving `$` anchors) without stripping or corrupting formulas during the HTML → Markdown conversion.
-- A single-click "Reset to Default Sample" action is provided to restore the initial text area state.
-
-### FR-8 — Error and empty-state handling
-- Empty input produces empty output without errors.
-- **Malformed HTML Behavior:** Since `html5ever` (via `htmd`) is highly permissive, malformed HTML will not explicitly fail; the UI will gracefully display the resulting parsed/converted layout (even if visually distorted) without breaking the application state.
-- **WASM Panic Recovery & Hook:** To prevent silent failures in production, the application must register `console_error_panic_hook` at initialization. In the event of an unhandled Rust panic—which leaves the WASM instance unusable—the UI must catch the failure at the root level, halt further operations, and display a fullscreen fallback overlay instructing the user to reload the page ("Critical Application Error. Please reload the page.").
-- 100 KB Input Cap: To prevent browser main thread blocking, the application enforces a strict input size limit of 100 KB.
-
-## 6. Architecture
-
-- **Framework:** [Leptos](https://leptos.dev/) with client-side rendering
-  (CSR). No `ssr` feature, no server functions.
-- **Target:** `wasm32-unknown-unknown`.
-- **Build tool:** [Trunk](https://trunkrs.dev/) (`trunk serve` for development, `trunk build --release` for deployment).
-- **State:** Leptos signals (`RwSignal`/`Signal`) for input text, direction, options, and output.
-- **Crates:**
-  - `leptos`
-  - `htmd` (path dependency to the workspace root or a published version)
-  - `pulldown-cmark`
-  - `wasm-bindgen`, `web-sys` (as needed)
-- **Suggested layout:**
-
-```
-demo/
-  demo-spec.md          # this document
-  Cargo.toml
-  Trunk.toml
-  index.html
-  src/
-    main.rs             # mounts the Leptos app
-    app.rs              # layout, direction toggle, panes
-    convert.rs          # thin wrappers around htmd and pulldown-cmark
-    options.rs          # option state and UI
-    components/
-      editor.rs         # textarea + toolbar
-      preview.rs        # rendered/source output
-      diff.rs           # round-trip diff
-  styles/
-    main.css
-```
-- **Dependency direction & Workspace:** The project is organized as a Cargo Workspace within a single repository to satisfy the acceptance criteria (allowing a unified `cargo build` for both the library and the demo). The `demo` crate depends on the local `htmd` library crate strictly via a path dependency (`path = "../"` or relative to the workspace root). The library must not depend on the demo.
+### FR-2 — Live Adaptive Debounce
+Conversion triggers automatically on input changes:
+- **Inputs < 2 KB:** Immediate execution (0 ms delay) on every keystroke.
+- **Inputs 2 KB – 100 KB:** Debounced with a 250 ms delay after typing stops.
+- **Typing Lock Protection:** Forced conversion triggered every 900 ms during continuous typing.
+- **Input Isolation:** Preserves a separate text input buffer per conversion mode. Switching modes does not auto-convert or overwrite the opposite buffer.
+- **State Preservation:** Sidebar configurations, active tabs, and scroll positions remain unaffected by mode switches.
+- **Explicit Action:** A manual "Use Output as Input" button promotes generated results for reverse editing.
 
 
-## 7. UI sketch
+### FR-3 — Output Views
+The output pane features two tabs (`Rendered` and `Source`):
+
+| Conversion Mode | **Source** Tab | **Rendered** Tab |
+| :--- | :--- | :--- |
+| **Markdown → HTML** | Displays the raw, generated HTML string as plain text. | Displays the generated HTML rendered inside a sandboxed `<iframe>`. |
+| **HTML → Markdown** | Displays the raw, generated Markdown markup text. | Displays the Markdown re-rendered back into HTML via `pulldown-cmark` inside a sandboxed `<iframe>`. |
+
+### FR-4 — Configuration & Reset
+- **`pulldown-cmark` Options:** Tables, footnotes, strikethrough, task lists, smart punctuation, heading attributes, math.
+- **`htmd` Core Options:** Exposes official crate options with exact variants and defaults:
+    *   `heading_style`: `Atx` (Default), `Setex`
+    *   `hr_style`: `Asterisks` (Default), `Dashes`, `Underscores`
+    *   `br_style`: `TwoSpaces` (Default), `Backslash`
+    *   `link_style`: `Inlined` (Default), `InlinedPreferAutolinks`, `Referenced`
+    *   `link_reference_style`: `Full` (Default), `Collapsed`, `Shortcut`
+    *   `code_block_style`: `Fenced` (Default), `Indented`
+    *   `code_block_fence`: `Backticks` (Default), `Tildes`
+    *   `bullet_list_marker`: `Asterisk` (Default), `Dash`
+    *   `ul_bullet_spacing`: 1–4 (Default: 3)
+    *   `ol_number_spacing`: 1–4 (Default: 2)
+    *   `preformatted_code`: `bool` (Default: `false`)
+    *   `translation_mode`: `Pure` (Default), `Faithful`
+- **`htmd` Tag Skipping:** Dedicated comma-separated text input field maps to `HtmlToMarkdownBuilder::skip_tags`.
+- **Reset Action:** A "Reset to Defaults" button applies the **Demo Default Preset** (All 7 `pulldown-cmark` options Enabled, `translation_mode` set to `Pure`, all other options to table defaults, `skip_tags` cleared). It does **not** clear input text, change the active mode, or alter active tabs.
+
+### FR-5 — Pipeline Fidelity Check (HTML Mode Only)
+Implement a deterministic HTML canonicalization pipeline to clean both HTML outputs *before* passing them to the text diffing engine:
+
+1. **Parse & Normalize:** Parse both HTML fragments into a structured DOM tree using `html5ever`.
+2. **Standardize Components:** 
+   * Convert all tag names and attribute keys to lowercase.
+   * Sort all element attributes alphabetically by name.
+   * Normalize text nodes by collapsing consecutive whitespaces and standardizing HTML entities.
+   * Serialize void elements using standard lowercase syntax without trailing slashes (`<br>`).
+3. **Deterministic Serialization:** Serialize the normalized DOM tree back into a clean string.
+4. **Word-Level Diff:** Run a word-level `similar::TextDiff` engine exclusively on the canonicalized strings to generate the UI diff.
+
+
+### FR-6 — Sample Documents
+- **Inline HTML:** Validates block preservation.
+- **Math Blocks:** Validates `$` and `$$` formulas. Renders as raw text without warnings if `ENABLE_MATH` is disabled.
+- **Reset Sample:** Provides a quick action button to restore the default sample layout.
+
+### FR-7 — Error Boundaries & Limits
+- **Size Limit:** Inputs > 100 KB halt processing and trigger an `aria-live="assertive"` banner: *"Input exceeds the 100 KB maximum limit for client-side processing."*
+- **Malformed HTML:** Permissively parsed via `html5ever` without breaking application state.
+- **Standard Conversion Failures:** Any io::Result<String> error from htmd::convert must be caught, mapped to a non-fatal UI banner, and cleared on the next input change. WASM runtime and inputs must remain interactive.
+- **Critical Panic Hook:** The application must register a custom panic hook that complements console_error_panic_hook. Because a WASM panic triggers a panic = "abort" state that poisons the Leptos reactive engine, the hook must interact directly with the DOM outside the WASM-controlled tree. It must un-hide a pre-existing static overlay elements in index.html ("Critical Application Error. Please reload the page."), permanently disable all converter inputs, and log the trace to the browser console. Recovery requires a manual page reload.
+
+
+### FR-8 — Storage & Persistence
+- **Storage Key:** Use exactly `htmd_cmark_live_workspace`.
+- **Safe Reads (Validation):**
+    * Wrap `localStorage.getItem` and `JSON.parse` in `try/catch`. 
+    * If storage is blocked (Incognito), switch to in-memory state without crashing.
+    * Check `version == 1` and validate types/ranges for every field.
+    * If version is mismatch/missing, JSON is broken, enums are wrong, or spacing is out of 1–4 range: drop storage and reset to Demo Default Preset with empty inputs.
+- **Unified Writes (Controller):**
+    * **Instant sync write:** For mode switches, active tabs, sidebar options, and `skip_tags`.
+    * **Debounced text write:** 500 ms delay for input text areas.
+    * **Timer clear:** Any instant write cancels any pending debounced text timer.
+    * **Guaranteed flush:** Force-flush text buffers on `pagehide` and `visibilitychange` events.
+    * **Quota Guard:** Wrap writes in `try/catch` to safely ignore `QuotaExceededError`.
+
+## 6. UI sketch
 
 ```
 +---------------------------------------------------------------+
+
 | htmd <-> pulldown-cmark demo                                  |
 | [Markdown -> HTML]  [HTML -> Markdown]     [Options] [Reset]  |
 +---------------------------+-----------------------------------+
+
 | Input                     | Output                            |
 | (textarea)                | [Rendered] [Source]               |
 |                           |                                   |
-|                           |                                   |
+| [Use Output as Input]     |                                   |
 +---------------------------+-----------------------------------+
+
 | Round trip: [Run]   Original | Round-tripped | Diff           |
 +---------------------------------------------------------------+
 ```
@@ -185,74 +122,66 @@ demo/
 - Keyboard accessible: toggle and tabs reachable by keyboard, labels on controls.
 - Light and dark theme optional.
 
-## 8. Non-functional requirements
-- **Performance:** First input-to-output conversion under 100 ms for documents up to 100 KB; no visible lag while typing.
-- **Performance Measurement:** Verification must be performed using the browser's Performance API (measuring total blocking time between input events and DOM update commits).
-- **Size & Build Profile:** The release production `.wasm` payload must maintain a strict size budget **under 1.5 MB (gzipped)**. To meet this target and catch size regressions, the release build must enforce aggressive optimization flags.
-- **Compatibility:** Latest stable versions of Chrome (v120+), Firefox (v120+), and Safari (v17+) with WebAssembly enabled, verified via automated headless testing and manual checklists.
+## 7. Non-functional requirements
 
-## 9. Deliverables
+### Performance & WASM
+- **Compute Budget:** Pure processing and rendering time must remain under 100 ms for documents up to 100 KB.
+- **WASM Initialization:** Cold start must complete within 1500 ms.
+- **Measurement:** Audited via the browser's Performance API (Total Blocking Time).
+- **Size Profile:** The final `.wasm` file must remain under **1.5 MB (gzipped)** using default level 6 compression.
+- **Dependency Constraints:** `pulldown-cmark` must be configured with `default-features = false, features = ["html"]` to prune CLI bloat. All dependencies (`leptos`, `pulldown-cmark`, `htmd`, `similar`, `wasm-bindgen`, `web-sys`, `console_error_panic_hook`) must be strictly version-pinned.
+
+### Accessibility & Compatibility
+- **WCAG 2.1 AA Compliance:** Full keyboard focusability, explicit labels, and a minimum contrast ratio of 4.5:1 (text) / 3:1 (UI components).
+- **Compatibility:** Latest stable versions of Chrome (v120+), Firefox (v120+), and Safari (v17+).
+
+## 8. Deliverables
 
 1. `demo/` crate with the Leptos CSR application.
 2. `demo/README.md` with development and build instructions.
 3. Deployment workflow or documented manual deployment (static hosting).
 4. This specification, updated to match the implemented behavior.
 
-## 10. Acceptance criteria
+## 9. Acceptance criteria
 
-### 10.1. Build & Deployment
-- [ ] `cargo build` succeeds for the library and the demo workspace without errors.
-- [ ] `cargo clippy -- --deny warnings` and `cargo test` pass for the library.
+### 9.1. Build & Deployment
+- [ ] `cargo build`, `cargo clippy -- --deny warnings`, and `cargo test` pass successfully.
 - [ ] `trunk build --release` produces a static `dist/` directory deployable on any static host, with the final compiled `.wasm` file falling strictly within the 1.5 MB gzipped size budget.
+- [ ] В CI настроен автоматический шаг проверки размера (Size Check GitHub Action или скрипт), который падает (fails), если размер gzipped `.wasm` превышает 1.5 МБ.
 
-### 10.2. Cross-Browser Compatibility (Headless & Manual)
+### 9.2. Cross-Browser Compatibility (Headless & Manual)
 - [ ] Automated tests pass in headless Chromium, Firefox, and WebKit via `wasm-bindgen-test`.
 - [ ] Manual smoke-test checklist passes in latest stable versions of Chrome, Firefox, and Safari (macOS/iOS).
 
-### 10.3. Performance Benchmarks
+### 9.3. Performance Benchmarks
 - [ ] First input-to-output conversion takes under 100 ms, measured via the browser's Performance API.
-- [ ] Benchmark text document (exactly 95 KB complex Markdown/HTML) causes no visible lag or main-thread blocking during continuous typing.
+- [ ] No visible input lag when typing large documents (up to 100 KB).
 
-### 10.4. Accessibility (WCAG 2.1 AA)
-- [ ] Full keyboard navigation: all interactive elements (toggles, tabs, checkboxes) are focusable using the `Tab` key.
-- [ ] Focus order is logical, moving sequentially from inputs to options and outputs, with high-visibility focus indicators.
+### 9.4. Accessibility (WCAG 2.1 AA)
+- [ ] Full keyboard navigation (Tab-focusable controls with visible focus indicators).
 - [ ] Accessible labeling: all inputs and option checkboxes have explicitly associated `<label>` or `aria-label` tags.
 - [ ] Color contrast meets a minimum ratio of 4.5:1 for standard text and 3:1 for UI components.
 - [ ] Error messages and size limit banners use `aria-live="assertive"` to be instantly announced by screen readers.
 
-### 10.5. Functional Happy Paths
-- [ ] Markdown → HTML and HTML → Markdown convert live within 150–300 ms after typing stops.
+### 9.5. Functional Happy Paths
+- [ ] Markdown → HTML and HTML → Markdown conversions visually update the output pane within 350–400 ms End-to-End after the last keystroke (calculating a fixed 250 ms debounce delay + maximum 100 ms compute and render budget).
 - [ ] Options panel dynamically updates the active conversion output and resets completely to defaults via a single click.
-- [ ] Round-trip view successfully renders original HTML, round-tripped HTML, and a line-by-line diff generated by the `similar` crate after DOM tree normalization.
+- [ ] Round-trip view successfully renders original HTML, round-tripped HTML, and a word- or character-level diff generated by the similar crate directly on the raw HTML outputs.
 - [ ] Clickable sample documents load immediately into the input pane and update the output state.
 
-### 10.6. Negative & Edge Cases
+### 9.6. Negative & Edge Cases
 - [ ] Empty input clears the output pane immediately without throwing console errors or application panics.
 - [ ] Malformed HTML input (e.g., unclosed tags, unescaped scripts) is handled safely by `htmd` without crashing the WASM runtime.
 - [ ] Input exceeding 100 KB immediately halts conversion, clears the output, and renders the standard error banner: "Input exceeds the 100 KB maximum limit for client-side processing."
-- [ ] Conflicting option combinations (e.g., specific combinations of `translation_mode` and `heading_style`) resolve gracefully without freezing the UI.
+- [ ] Conflicting option combinations resolve gracefully without freezing the UI.
+- [ ] Switching between conversion modes preserves separate text states for each mode without data loss, layout corruption, or accidental re-conversion.
+- [ ] Closing or refreshing the browser tab retains the user's typed inputs, selected mode, preview tabs, and custom sidebar configuration settings.
+- [ ] **Blocked Storage:** The app runs and converts text normally if `localStorage` is blocked or throws security exceptions.
+- [ ] **Malformed JSON:** Non-parseable string in storage triggers a clean fallback to defaults without panics.
+- [ ] **Type & Enum Mismatch:** Wrong field types or invalid enum variants in JSON are rejected, causing a reset to defaults.
+- [ ] **Out-of-Bound Values:** Spacing parameters outside the 1–4 range are detected and clamped/rejected.
+- [ ] **Future Version:** If storage contains `"version": 2` or higher, the app safely ignores it and boots with the current Version 1 defaults.
 
-## 11. Milestones
-0. **M0 — WASM Spike (Verification):** Create a minimal standalone target or test to compile the 
-1. **M1 — Scaffold:** Leptos CSR app builds to WASM and renders a static page.
-2. **M2 — Conversion:** both directions work with hard-coded sample text.
-3. **M3 — Live UI:** panes, direction toggle, debounced updates, rendered and source views.
-4. **M4 — Options and errors:** options panel, error states, reset.
-5. **M5 — Round trip and samples:** diff view and sample documents.
-6. **M6 — Polish and deploy:** styling, accessibility, static deployment, and final documentation.
-### Milestone Review Process
-The milestone review occurs at the end of M6 (Polish and deploy) before final release acceptance. The project team compiles internal findings and resolutions into a temporary `review.md` process artifact to log code quality and spec alignment. Final verification and closure of the review findings are resolved and signed off by the Project Lead / Course Instructor (or External Auditor) to prevent a conflict of interest.
-
-## 12. Open questions
-
-- Which static host should the team use (GitHub Pages, Netlify, Cloudflare Pages)?
-- Which options must be exposed in the first release?
-
-## 13. References
-
-- CommonMark dingus: <https://spec.commonmark.org/dingus/>
-- `htmd` translation approach: [`translation_approach.md`](../translation_approach.md)
-- `htmd` on crates.io: <https://crates.io/crates/htmd>
-- `pulldown-cmark` on crates.io: <https://crates.io/crates/pulldown-cmark>
-- Leptos book: <https://book.leptos.dev/>
-- Trunk: <https://trunkrs.dev/>
+### 9.7. Semantic HTML Diff Validation
+- [ ] **False-Positive Avoidance:** The pipeline fidelity diff remains completely empty (asserts zero changes) when comparing HTML inputs that differ *only* by:
+- [ ] **Automated Regression Suite:** A dedicated suite of automated "golden tests" is executed in the test pipeline to guarantee these safe variations never trigger visual diff errors.
