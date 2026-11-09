@@ -6,7 +6,7 @@ Contributions
 
 * Miras Shaltayev: wrote the initial draft of this document.
 * Armanzhan Onggarbay: 
-* Nurlybek Orynbassar:
+* Nurlybek Orynbassar: wrote the "Whitespace" section.
 * Aidyn Tazhibay:
 
 Every test of a translation checks two things: the Markdown which htmd writes, and that this Markdown renders as the HTML it came from. The second check is a round trip, and `round_trip` in `tests/common/mod.rs` performs it. Today most tests make only the first check, so a test can pass while the Markdown means something else to pulldown-cmark.
@@ -41,3 +41,37 @@ A case whose trip is lossy by design (property 2) still uses `assert_faithful`, 
 2. Convert `table_tests.rs`, `list_tests.rs`, `code_tests.rs`, `context_tests.rs` and `event_tests.rs`, which never call it.
 3. Convert `translation_approach_tests.rs`: each table row gets the three properties.
 4. Record each failure found as a known failure, or as a bug to fix.
+
+
+
+### Whitespace
+
+A test states whether whitespace is significant. This section applies to `TranslationMode::Faithful`.
+
+HTML whitespace is U+0020, tab, line feed, form feed and carriage return. Every other space, such as U+00A0, is text: HTML never collapses it, and a test never treats it as HTML whitespace.
+
+#### Where whitespace matters
+
+1. **Preformatted text.** `<pre>` keeps its spaces, tabs and line endings, except that the HTML parser drops one line feed directly after `<pre>`. Code spans keep their content the same way. Tests use runs of spaces, tabs and blank lines.
+2. **Indentation.** Four leading spaces start an indented code block. A paragraph whose HTML text begins with whitespace (`<p>    a</p>`) must not come back as code, so a test checks the round trip. Indentation inside list items decides nesting, and a test with several blocks in one item gives the indentation exactly.
+3. **Hard breaks.** `<br>` becomes a hard break. The test states exactly how htmd writes it, and the round trip shows `<br />` again. A line ending written for any other reason is never a hard break.
+4. **Line endings in text.** In HTML text a line ending is whitespace, so it collapses. In Markdown, one line ending inside a paragraph is a soft break and a blank line ends the paragraph. A test states which one htmd writes for a given input.
+5. **Delimiters.** Emphasis, strong emphasis and links cannot start or end next to whitespace inside their delimiters. A test with whitespace at the edge of such an element states where the whitespace ends up (see `a_link_keeps_the_whitespace_around_its_text` and `blank_emphasis_leaves_its_whitespace_behind`).
+6. **Table cells.** A Markdown table row is one line, so a cell cannot hold a line ending. A test states what htmd writes for a cell which has one.
+7. **Unicode spaces.** U+00A0 and other Unicode spaces are kept as text in the output. CommonMark counts Unicode whitespace when it decides whether a delimiter run can open or close emphasis, so tests cover U+00A0 next to a delimiter.
+
+#### Where whitespace does not matter
+
+In HTML input, outside `<pre>`:
+
+1. A run of HTML whitespace is equivalent to one space.
+2. Whitespace between block elements is ignored.
+3. Leading and trailing whitespace of a block is dropped.
+4. `\r\n`, `\r` and `\n` are the same.
+
+#### Rules for tests
+
+1. Write expected Markdown and expected round-trip HTML with the exact whitespace the code produces. Never trim or normalize an expected string to make a test pass.
+2. For each item under "does not matter", add two inputs which differ only in that whitespace. Both call `assert_faithful` with the same expected Markdown and the same expected round-trip HTML.
+3. Write invisible characters as escapes (`\t`, `\r\n`, `\u{00A0}`), so a reader sees them.
+4. A whitespace case which fails a property is recorded as described in "Known failures".
