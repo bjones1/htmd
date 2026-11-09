@@ -83,28 +83,27 @@ Whitespace between inline elements does matter (`<em>a</em> <em>b</em>` is not `
 
 ### Escaping
 
-htmd writes a backslash where the text of an HTML text node would otherwise read as Markdown syntax. An escape test checks that the text comes back as the same text in the same block. This section applies to text nodes in `TranslationMode::Faithful`. Escapes in link destinations, link titles and image descriptions, and line endings written as character references, follow the sections of `translation_approach.md` for those constructs.
+htmd writes a backslash where the text of an HTML text node would otherwise read as Markdown syntax. An escape test checks that the text comes back as the same text in the same block. This section applies to text nodes in `TranslationMode::Faithful`. Text which htmd writes as an HTML block (`<div>`, raw `<pre>`, a table without a header row) is not escaped, since a backslash would be literal there. Escapes in link destinations, link titles and image descriptions, and line endings written as character references, follow the sections of `translation_approach.md` for those constructs.
 
 #### What htmd escapes
 
-1. **Inline specials.** `\`, `&`, `*`, `_`, `` ` ``, `[`, `]` and `$` are escaped wherever they appear in a text node. `$` has a meaning only to pulldown-cmark's math extension. Through this rule `*` and `_` are also kept from opening a list or a thematic break (`\* a`, `\_\_\_`).
+1. **Inline specials.** `\`, `&`, `*`, `_`, `` ` ``, `[`, `]` and `$` are escaped wherever they appear in a text node, including text inside a raw HTML inline (`<p>a <u>*b*</u></p>` gives `a <u>\*b\*</u>`). `$` has a meaning only to pulldown-cmark's math extension. Through this rule `*` and `_` are also kept from opening a list or a thematic break (`\* a`, `\_\_\_`).
 2. **Block markers.** At the start of a text node, `=`, `~` and `>` are always escaped. `-`, `+`, `#` and an ordered item's `.` or `)` are escaped when a space or the end of the text node closes them (`\# a`, `\-`, `1\. a`). A `-` run is escaped when it could be a thematic break or a setext underline (`\---`, `\- - -`), but `--foo` is not. A line ending or a tab after a marker is first compressed to a space, so `#\nfoo` is escaped like `# foo`.
-3. **HTML-like text.** A `<` which could open raw HTML or an autolink is escaped (`<p>&lt;pre</p>` gives `\<pre`).
-4. **Table cells.** A `|` in a cell is written as `\|`.
-5. **Context.** A `#` which ends the text of an ATX heading is escaped (`<h1>a #</h1>` gives `# a \#`), and so is a `!` which a link follows (`\![a](x)`).
-6. **Code.** Text in `<code>` and `<pre><code>` is not escaped. Instead, a code span or a code fence uses a delimiter run longer than any run in its content (`<code>a`b</code>` gives ``` ``a`b`` ```).
+3. **HTML-like text.** A `<` followed by a letter, `/`, `!`, `?` or the end of the text node is escaped, whether or not a `>` follows (`<p>&lt;pre</p>` gives `\<pre`).
+4. **Pipe-table cells.** A `|` in a cell of a table with a header row is written as `\|`, even inside a code span (`` `a\|b` ``), since GFM splits the cell at any unescaped `|`.
+5. **Context.** A `#` run which ends the text of an ATX heading is escaped (`<h1>a #</h1>` gives `# a \#`), and so is a `!` which a link follows (`\![a](x)`).
+6. **Code.** Apart from item 4, text in `<code>` and `<pre><code>` is not escaped. Instead, a code span or a code fence uses a delimiter run longer than any run in its content (`<code>a`b</code>` gives ``` ``a`b`` ```).
 
 #### Over- and under-escaping
 
-The escapes above are expected. An escape beyond them is an over-escape. htmd decides on block markers one text node at a time, and a text node cannot see what follows it on the line, so the known over-escapes are:
+An over-escape is an escape which the rules above produce but which CommonMark does not need at that position: removing the backslash leaves the round trip unchanged. A backslash reads back as the character it escapes, so an over-escape never breaks the round trip. htmd decides on block markers one text node at a time, treating the start of a text node as the start of a line and its end as the end of a line. That gives the over-escapes which need a reason in their tests:
 
-* `#######` (seven `#` open no heading), and a marker at the end of a text node which an inline sibling continues: `<p>a <em>b</em>#</p>` and `<p>a <em>b</em>- c</p>` (`a *b*\- c`);
-* a lone `=` or `~`, which opens no setext underline or fence;
-* an ordered marker of ten or more digits (`1234567890\.`);
-* a block marker in a table cell, where no block can start;
-* `<p>&lt;<span>div</span></p>` (`\<<span>div</span>`), an escape which matters only in Pure mode.
+* a marker after an inline sibling, which is mid-line: `<p>a <em>b</em>- c</p>` gives `a *b*\- c`;
+* a marker which an inline sibling follows, so no space closes it: `<p>#<em>b</em></p>` gives `\#*b*`;
+* a `#` run longer than six, or an ordered marker of ten or more digits (`\#######`, `1234567890\.`);
+* a block marker in a pipe-table cell, where no block can start.
 
-A backslash reads back as the character it escapes, so the round trip still holds.
+The always-escaped characters of items 1–3 (such as `a \& b`, `\=foo` or `a \<b`) are expected even where the position does not need them, and their tests need no reason.
 
 * An **under-escape** is a missing escape which lets text open any Markdown construct: a heading, a list, emphasis, a link, an entity reference, a math span, raw HTML and so on. It changes the round-trip HTML, and it is a bug.
 * An **over-escape** changes only the Markdown. It is not a failure: the test asserts the escaped Markdown and gives a one-line reason, as "Known failures" describes.
@@ -112,8 +111,8 @@ A backslash reads back as the character it escapes, so the round trip still hold
 #### Rules for tests
 
 1. Each escape case calls `assert_faithful`, which checks the round trip first, so a broken escape reports the block it opened rather than a different string. The expected round trip is the same text in the same block, after the equivalences of the Whitespace section, spelled as pulldown-cmark writes it: `<p>#</p>` gives `<p>#</p>\n`, `<p>-\tfoo</p>` gives `<p>- foo</p>\n`, and `<p>a & b</p>` gives `<p>a &amp; b</p>\n`.
-2. Pair each escaped case with a near miss which needs no escape: `#x` beside `#`, `--foo` beside `---`, `1.)` beside `1.`, and `2½.` beside `2.`. Pair `a <em>b</em> - c`, which needs no escape, with the over-escape `a <em>b</em>- c`.
+2. Pair each escaped case with a near miss which needs no escape: `#x` beside `#`, `--foo` beside `---`, `1.)` beside `1.`, and `2½.` beside `2.`. Pair each over-escape with the case where the escape is needed: `a <em>b</em>- c` with `- c`, and `#<em>b</em>` with `# <em>b</em>`.
 3. For `-`, `+`, `#` and an ordered item's delimiter, cover each way to close the marker: a space, a tab, a line ending and the end of the text. Also cover the marker behind leading whitespace (`<p> 1. foo</p>`). `=`, `~`, `>` and a `-` run need one case each, because what follows them does not change the escape.
-4. Cover each place where a text node can start a line: a paragraph, a list item, a blockquote, a setext heading (`HeadingStyle::Setex`), and a text node after a block sibling (`<li><p>a</p> - b</li>`). Also cover a table cell, where a block marker's escape is an over-escape.
-5. Read the round trip with plain CommonMark, plus the pulldown-cmark option which gives a character its meaning, or the trip cannot catch a missing escape: `ENABLE_MATH` for `$`, and `ENABLE_TABLES` for `|`. These tests call `assert_faithful_options`. Other extensions, such as strikethrough, are out of scope: htmd does not escape `~~`, so a strikethrough found in such a trip is not an under-escape.
-6. An escape case which fails idempotency is a bug. Escaping depends only on the text node, and a round trip keeps the text node, so converting the round-trip HTML gives the same Markdown.
+4. Cover each place where a text node can start a line: a paragraph, a list item, a blockquote, a setext heading (`HeadingStyle::Setex`), and a text node after a block sibling (`<li><p>a</p> - b</li>`). Also cover a raw HTML inline (item 1) and a pipe-table cell, including a code span in a cell (item 4).
+5. Read the round trip with plain CommonMark, plus the pulldown-cmark option which gives a character its meaning, or the trip cannot catch a missing escape: `ENABLE_MATH` for `$`, and `ENABLE_TABLES` for `|`. These tests call `assert_faithful_options`. Other extensions, such as strikethrough, are out of scope: htmd does not escape `~~` after the start of a text node, so a strikethrough found in such a trip is not an under-escape.
+6. An escape case which fails idempotency is a bug: a backslash reads back as the character it escapes, in the same context, so the second conversion meets the same text and should write the same escape.
