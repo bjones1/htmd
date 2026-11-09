@@ -770,3 +770,112 @@ to rule out an iterative DOM-depth validation strategy when resolving R6-M2.
 Validation: repository and dependency-source inspection only. No Rust source or
 specification was changed; build, clippy, and test commands were not run for
 this review-document update.
+
+---
+
+## Round 9 — Round-8 regressions and carried-over findings
+
+Reviewed by **Claude Opus 5.5** (Claude Code), prompted with *"review
+@demo/demo-spec.md"*, then *"fix all the medium issues and also any that are
+easy fixes or would be solved by the same fix. then append to review.md as
+round 9"*.
+
+Reviewed the post-round-8 specification against the repository source and
+against the open findings recorded for rounds 6–8 in this file and in
+`demo/submission.md`. Cargo is not installed on the reviewing machine, so the
+`html5ever`, `markup5ever_rcdom`, and `similar` sources were not opened; claims
+about those crates rest on round 7's citations or are marked as unverified.
+Unlike earlier rounds, the fixes were applied to the specification in the same
+pass, so each finding below records its status.
+
+### What checks out
+
+- FR-4's 12 `htmd` options, their variants, and their defaults still match `src/options.rs`; the empty-`skip_tags` guard is still the `assert!` at `src/element_handler/mod.rs:400`.
+- Round 8's escape-set rationale holds: `is_markdown_inline_special` (`src/dom_walker.rs:196–198`) is exactly `` \ & * _ ` [ ] $ ``, and `'`, `"`, `{`, and mid-text `~` are never escaped, so smart punctuation, strikethrough, and heading attributes would rewrite ordinary text in the round trip (wording overstated; see R9-L6).
+- `HtmlToMarkdown` exposes `html_to_tree` and `tree_to_markdown` publicly, and `convert` is exactly their composition (`src/lib.rs:148–214`). The demo can therefore parse once, inspect the tree, and convert that same tree — the basis for this round's fix of R6-M2.
+- R6-M1, R6-M3, R6-L3, R6-L5, R7-M7, and R7-L1 remain resolved, as round 8 recorded.
+
+### Blocking issues
+
+None new. The closest was carried-over R7-M1: read literally, the serialization rule panics, and `panic = "abort"` turns that into the crash overlay on the first Faithful-mode conversion. It is fixed this round.
+
+### Medium-severity issues
+
+### R9-M1. A stale run can still paint the preview (FR-2, execution model)
+Round 8 defined a run as in flight "until its output is committed, including the async iframe `srcdoc` load". The `srcdoc` must therefore be assigned before the run ends. If newer input arrives during the load, the stale preview is already on screen and "discarded" cannot retract it. The spec also never said whether the Source text and fidelity panel are written in the same step as `srcdoc`, so the three views could disagree.
+**Fix:** define commit as one synchronous step that checks the sequence number and then writes `srcdoc`, Source text, and fidelity panel together, or writes nothing. The run stays in flight until the iframe's `load` for that commit, and the iframe loads even while its tabpanel is hidden.
+**Status:** fixed (FR-2 "Execution model").
+
+### R9-M2. Mode switches do not advance the sequence number (FR-2)
+Round 8's list of sequence-advancing events is newer input, an option change, or entering an FR-7 limit. A mode switch is absent. A 250/900 ms batch pending in mode A therefore dispatches after a switch to mode B and commits A's output into B's pane. Sample load, Reload Sample, Undo, and Reset are not named either. This is a concrete race inside R7-M5.
+**Fix:** advance the sequence number on every buffer change (including sample loads, Reload Sample, Undo, and "Use Output as Input"), every option change including Reset, every mode switch, and entering a limit. A mode switch also cancels both timers of the pending batch.
+**Status:** fixed (FR-2 "Sequence numbers"; 8.6 concurrency criterion extended).
+
+### R9-M3. Preview stripping has no specified mechanism, and a recursive walk can crash (FR-1)
+FR-1 says `<base>`, `<meta http-equiv="refresh">`, `target`, and prefetch `<link>`s are stripped, but not how. String or regex matching is bypassable (`<BASE`, `<base\n…`), so stripping needs a parse. That parse covers Markdown → HTML output, which is exempt from the nesting limit: 50,000 `>` characters produce 50,000 nested `<blockquote>` elements (`pulldown-cmark` is iterative), so a recursive strip pass overflows the wasm stack and shows the crash overlay. The denylist is also incomplete: `<meta http-equiv="x-dns-prefetch-control" content="on">` re-enables anchor DNS prefetching, so attacker-chosen hostnames can be resolved without a click.
+**Fix:** parse with `html5ever` and walk iteratively; remove whole element types (`<base>`, `<meta>`, `<link>`) and every `target` attribute instead of enumerating `rel`/`http-equiv` values; the Source tab keeps the unstripped output.
+**Status:** fixed (FR-1; new 8.6 "Preview stripping" criterion).
+
+### R9-M4. The "changed in another tab" banner re-announces every ~500 ms (FR-8)
+Round 8 shows the banner "once per external write". While the other tab is in use, its 500 ms debounced saves fire a `storage` event about twice a second, so an assertive banner is re-announced continuously. That contradicts §6 and 8.4 ("announced once per state transition"). Nothing said when the banner clears.
+**Fix:** show it once per transition into the externally-modified state; clear it on this tab's next successful write, which overwrites the external change.
+**Status:** fixed (FR-8 "Multiple tabs"; 8.6 criterion updated).
+
+### Low-severity / editorial
+
+### R9-L1. Reload Sample lost its Undo (FR-6)
+The round-4 team note in this file says Reload Sample "shares the 'Undo' affordance", but the FR-6 text did not say so. Reload Sample could discard user edits with no recovery.
+**Status:** fixed (FR-6 rewritten together with R7-M6; 8.5 criterion added).
+
+### R9-L2. In-page anchors cannot work in the preview (FR-1)
+`ENABLE_FOOTNOTES` is on in the Demo Preset, but footnote references and back-links (`#fn-1`) become blocked popups under the injected `<base target="_blank">`. Without it, relative URLs in an `about:srcdoc` document resolve against the embedding page's URL, so `#fn-1` would load the demo page itself into the iframe.
+**Status:** fixed by documenting the behavior as accepted (FR-1).
+
+### R9-L3. The panic hook may re-enter Leptos (FR-7)
+Disabling controls through Leptos signals from inside the hook can re-borrow reactive state held at the panic site, panic again, and abort before the overlay shows. Separately, `strip = true` removes the wasm name section, so the "trace" the hook logs has no function names; and "verified with deliberate panics in release builds" needs a panic trigger in the shipped build, which is undefined.
+**Status:** partly fixed — the hook now uses only raw `web-sys` calls and disables controls with `inert` on the application root (FR-7). Open: the `strip = true` trade-off and the release-build panic trigger.
+
+### R9-L4. Live regions "hidden when empty" are not reliably announced (§5)
+If the banner region is `display: none` or `hidden` while empty, revealing it and inserting text in the same step is often not announced. The same applies to the toast's polite region. How concurrent banners display was undefined.
+**Status:** fixed (§5 "Live regions"; the sketch says "collapsed when empty").
+
+### R9-L5. Nesting rejection does not clear output (FR-7)
+The size limit clears output and diff; the nesting limit did not, so stale output from earlier input could sit beside rejected input and be copied by "Use Output as Input".
+**Status:** fixed (FR-7 nesting limit now mirrors the size limit; 8.6 criterion updated).
+
+### R9-L6. The escape-set claim is overstated (FR-5)
+"`htmd` escapes only `` \ & * _ ` [ ] $ ``" omits the line-start escapes of `= ~ > - + #`, ordered-list delimiters, and HTML-like `<` (`src/dom_walker.rs:187–189`, `480–516`). The conclusion is unaffected.
+**Status:** fixed (FR-5 "Round-trip rendering" reworded).
+
+### R9-L7. "Neither hangs" has no time ceiling (§6, 8.3)
+The 5,000-token cap still allows on the order of 10⁸ Myers steps, run synchronously on the main thread, and `from_words` counts whitespace runs as tokens, so the cap is about 2,500 words.
+**Status:** open — choose a ceiling (e.g., under 1 s on the reference environment) after measuring `similar` at the cap in wasm.
+
+### R9-L8. Build and dependency gaps (§6, Deliverable 4)
+GitHub Pages serves project sites under `/<repo>/`, but Trunk's default public URL is `/`. The demo's direct `html5ever`/`markup5ever_rcdom` were not tied to `htmd`'s 0.39, risking two copies against the size budget. `leptos` needs its `csr` feature. Units mix conventions: 1.5 MB is 1,572,864 bytes (binary) while 100 KB and 2 MB are decimal.
+**Status:** fixed except the unit convention, which is left open because every limit already states its exact byte count.
+
+### R9-L9. The fidelity check is hidden by default (FR-4, FR-5)
+The Demo Preset (and every Reset) sets `Pure`, so the pipeline fidelity check, a §2 goal, is hidden on first run.
+**Status:** open — product decision; confirm that this is intended.
+
+### Earlier findings resolved this round
+
+- **R6-M2** (nesting pre-scan): replaced the raw-tag scan. The demo parses once with `html_to_tree`, measures depth with an iterative walk, and passes the same tree to `tree_to_markdown`, so void elements, optional end tags, and misnesting need no rules. This also resolves round 8's "optional end tags in the nesting scan".
+- **R6-M4** (tokenization): pinned `from_words` as whitespace-run splitting compared by code point, and noted that identical tokenizers on both sides cannot create a change. R6-M4's premise is inaccurate: Unicode word boundaries belong to `from_unicode_words` (the `unicode` feature), not `from_words` (not re-verified against the `similar` source this round). CJK and combining-mark goldens added to 8.7.
+- **R6-M5** (collation): all canonicalization sorting is by Unicode code point.
+- **R6-L1** (`&nbsp;` exemption): the U+00A0 rule now uses the same preserved-subtree list as whitespace collapsing. This also resolves round 8's `&nbsp;` finding.
+- **R6-L2** (acceptance criteria): 8.5 bullets added for "Use Output as Input" and Reload Sample.
+- **R6-L4** (NFC): resolved by deciding not to normalize. The diff compares an input with its own round trip, and neither `htmd` nor `pulldown-cmark` normalizes text, so both sides carry the same code points; NFC would hide a real change.
+- **R6-L6** (banner units): the banner now reads "100,000-byte maximum".
+- **R7-M1** (serialization root): serialize the synthetic `<html>` element's children with `IncludeNode` (or that element with `ChildrenOnly(None)`), never the document node; 8.7 exact-output golden added.
+- **R7-M2** (trailing newlines): whitespace at the fragment and block edges is trimmed, and "block-level" is now an explicit element list (it was previously undefined); 8.7 golden added.
+- **R7-M3** (CSS whitespace): subtrees whose inline `style` declares a non-`normal` `white-space` are preserved; stylesheet-selected whitespace is declared outside what the diff verifies; negative golden added.
+- **R7-M4** (CDATA): FR-5 now says CDATA disappears during parsing — a bogus comment in HTML content, kept text in foreign content; golden added.
+- **R7-M5** (output validity on mode switch): each mode has its own output and a validity rule. Deliberate change: switching to a mode whose output is invalid converts that mode's own buffer; the former "never auto-converts" rule is narrowed to "never reads, converts, or overwrites the other mode's buffer". Startup conversion is defined, and "Use Output as Input" is disabled while the output is empty or invalid.
+- **R7-M6** (mode-bound samples): samples have per-mode variants; clicking an HTML-only sample in Markdown mode switches mode and replaces only the HTML buffer; the selection is per mode and persisted through two new FR-8 fields, `sample_md_to_html` and `sample_html_to_md`.
+- **Round 8 lows:** `skip_tags` vs SVG case is documented as an accepted limitation (FR-4); Trunk/`wasm-opt` pinning is fixed (`data-wasm-opt="z"`, pinned Trunk, `Trunk.toml` `[tools]`). Untested browser floors and the editorial finding stay open; their details are not recorded in this file.
+
+**Total new findings: 13 (blocking 0, medium 4, low 9).** Fixed this round: all 4 new medium findings, 5 new low findings in full and 2 in part, all 7 open round-6/7 medium findings, all 4 open round-6 low findings, and 4 of the 6 round-8 low findings. Still open: R9-L3 (in part), R9-L7, R9-L8 (units), R9-L9, and round 8's browser-floor and editorial findings.
+
+Validation: specification and review documents only. No Rust source was changed, and build, clippy, and test were not run (Cargo is not installed on the reviewing machine).
