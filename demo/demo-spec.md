@@ -33,7 +33,6 @@ Conversion triggers automatically on input changes:
 - **State Preservation:** Sidebar configurations, active tabs, and scroll positions remain unaffected by mode switches.
 - **Explicit Action:** A manual "Use Output as Input" button promotes generated results for reverse editing.
 
-
 ### FR-3 — Output Views
 The output pane features two tabs (`Rendered` and `Source`):
 
@@ -61,17 +60,16 @@ The output pane features two tabs (`Rendered` and `Source`):
 - **Reset Action:** A "Reset to Defaults" button applies the **Demo Default Preset** (All 7 `pulldown-cmark` options Enabled, `translation_mode` set to `Pure`, all other options to table defaults, `skip_tags` cleared). It does **not** clear input text, change the active mode, or alter active tabs.
 
 ### FR-5 — Pipeline Fidelity Check (HTML Mode Only)
-Implement a deterministic HTML canonicalization pipeline to clean both HTML outputs *before* passing them to the text diffing engine:
+The pipeline diff (HTML → Markdown → HTML) runs automatically on input changes exclusively when `translation_mode` is set to `Faithful`. To prevent false-positive changes during validation, the engine must execute a word-level text diff strictly on canonicalized HTML strings:
 
-1. **Parse & Normalize:** Parse both HTML fragments into a structured DOM tree using `html5ever`.
-2. **Standardize Components:** 
-   * Convert all tag names and attribute keys to lowercase.
-   * Sort all element attributes alphabetically by name.
-   * Normalize text nodes by collapsing consecutive whitespaces and standardizing HTML entities.
-   * Serialize void elements using standard lowercase syntax without trailing slashes (`<br>`).
-3. **Deterministic Serialization:** Serialize the normalized DOM tree back into a clean string.
-4. **Word-Level Diff:** Run a word-level `similar::TextDiff` engine exclusively on the canonicalized strings to generate the UI diff.
-
+*   **Fragment Parsing:** Parse both the original HTML input and the round-tripped HTML output as fragments via `html5ever::parse_fragment` with a `<body>` or `<div>` context using `markup5ever_rcdom::RcDom`. Automated `<html>` or `<head>` wrappers are strictly prohibited.
+*   **DOM Normalization:**
+    *   **Case Folding:** Convert tag names and attribute keys to lowercase for standard HTML elements only. Foreign content namespaces (SVG and MathML) must preserve their native case-sensitivity (e.g., `viewBox`).
+    *   **Attribute Standardization:** Sort all element attributes alphabetically by `namespace` + `local_name`. For `class` attributes, collapse duplicate whitespaces and sort class tokens lexicographically.
+    *   **Whitespace Collapsing:** Collapse consecutive whitespaces and line breaks into a single space. Whitespace structures inside `<pre>`, `<code>`, `<textarea>`, `<script>`, and `<style>` blocks must remain untouched. Drop all whitespace-only text nodes located between block-level components.
+    *   **Nodes & Entities:** Discard all `Comment`, `Doctype`, `<template>`, and `CDATA` sections. Normalize non-breaking spaces (`&nbsp;` / `U+00A0`) into standard spaces (`U+0020`), except when nested inside raw-text elements.
+*   **Deterministic Serialization:** Serialize both normalized DOM trees back into clean strings using `html5ever::serialize` with `TraversalScope::IncludeNode`. Output all void elements in lowercase without any trailing self-closing slashes (e.g., `<br>`).
+*   **Word-Level Diff:** Run the `similar::TextDiff::from_words` engine (version 2.x) automatically on the canonicalized strings to generate the visual UI diff.
 
 ### FR-6 — Sample Documents
 - **Inline HTML:** Validates block preservation.
@@ -80,24 +78,25 @@ Implement a deterministic HTML canonicalization pipeline to clean both HTML outp
 
 ### FR-7 — Error Boundaries & Limits
 - **Size Limit:** Inputs > 100 KB halt processing and trigger an `aria-live="assertive"` banner: *"Input exceeds the 100 KB maximum limit for client-side processing."*
-- **Malformed HTML:** Permissively parsed via `html5ever` without breaking application state.
-- **Standard Conversion Failures:** Any io::Result<String> error from htmd::convert must be caught, mapped to a non-fatal UI banner, and cleared on the next input change. WASM runtime and inputs must remain interactive.
-- **Critical Panic Hook:** The application must register a custom panic hook that complements console_error_panic_hook. Because a WASM panic triggers a panic = "abort" state that poisons the Leptos reactive engine, the hook must interact directly with the DOM outside the WASM-controlled tree. It must un-hide a pre-existing static overlay elements in index.html ("Critical Application Error. Please reload the page."), permanently disable all converter inputs, and log the trace to the browser console. Recovery requires a manual page reload.
-
+- **Malformed HTML Handling:** HTML input with syntax errors (e.g., unclosed tags) is not treated as a runtime failure. The engine leverages `html5ever`'s permissive parsing to build a best-effort DOM tree without throwing exceptions.
+- **Runtime Error Isolation:** 
+    * *Rust Panics:* The application must register a custom panic hook complementing `console_error_panic_hook`. Since a WASM panic aborts and poisons the Leptos reactive engine, the hook must interact directly with the raw DOM outside the Leptos tree. It must un-hide a static fallback overlay in `index.html` (*"Critical Application Error. Please reload the page."*), permanently disable all converter inputs, and log the trace.
+    * *WASM Traps & OOM:* Low-level WebAssembly traps and Out-of-Memory (OOM) errors that bypass the Rust panic hook must be intercepted via a global JavaScript `window.addEventListener('error', ...)` listener in `index.html` to trigger the same static crash overlay.
+- **Future-Proof Error Interface:** To ensure forward compatibility with potential fallible APIs in future major versions of `htmd`, the internal converter wrapper must wrap execution in a `Result` type. If an `Err` variant is encountered, it must display a non-fatal UI banner that clears automatically on the next input change.
 
 ### FR-8 — Storage & Persistence
 - **Storage Key:** Use exactly `htmd_cmark_live_workspace`.
 - **Safe Reads (Validation):**
     * Wrap `localStorage.getItem` and `JSON.parse` in `try/catch`. 
-    * If storage is blocked (Incognito), switch to in-memory state without crashing.
-    * Check `version == 1` and validate types/ranges for every field.
-    * If version is mismatch/missing, JSON is broken, enums are wrong, or spacing is out of 1–4 range: drop storage and reset to Demo Default Preset with empty inputs.
+    * Fall back to in-memory state without crashing if storage is blocked (Incognito).
+    * Validate `version == 1`, data types, and enum variants for all fields.
+    * Wipe storage and reset to Demo Default Preset if JSON is corrupt, fields are invalid, or spacing is outside the 1–4 range.
 - **Unified Writes (Controller):**
-    * **Instant sync write:** For mode switches, active tabs, sidebar options, and `skip_tags`.
-    * **Debounced text write:** 500 ms delay for input text areas.
-    * **Timer clear:** Any instant write cancels any pending debounced text timer.
-    * **Guaranteed flush:** Force-flush text buffers on `pagehide` and `visibilitychange` events.
-    * **Quota Guard:** Wrap writes in `try/catch` to safely ignore `QuotaExceededError`.
+    * **State Serialization:** Save all inputs, active tabs, layout modes, and sidebar settings into a single atomic JSON object.
+    * **Debounced Text Save:** Queue a 500 ms debounced write upon text entry.
+    * **Atomic Flush-Before-Write:** Any UI interaction (mode toggle, option switch, tab change) must immediately flush the latest text buffers into the state object, cancel the pending text timer, and execute a synchronous write.
+    * **Guaranteed Flush:** Force-flush all unsaved buffers on `pagehide` and `visibilitychange` events.
+    * **Quota Guard:** Wrap all writes in `try/catch` to ignore `QuotaExceededError`.
 
 ## 6. UI sketch
 
@@ -113,8 +112,8 @@ Implement a deterministic HTML canonicalization pipeline to clean both HTML outp
 |                           |                                   |
 | [Use Output as Input]     |                                   |
 +---------------------------+-----------------------------------+
-
-| Round trip: [Run]   Original | Round-tripped | Diff           |
+| Pipeline Fidelity Check (Calculated Automatically)            |
+| Original (Canonical) | Round-tripped (Canonical) | Word Diff  |
 +---------------------------------------------------------------+
 ```
 
@@ -166,13 +165,13 @@ Implement a deterministic HTML canonicalization pipeline to clean both HTML outp
 ### 9.5. Functional Happy Paths
 - [ ] Markdown → HTML and HTML → Markdown conversions visually update the output pane within 350–400 ms End-to-End after the last keystroke (calculating a fixed 250 ms debounce delay + maximum 100 ms compute and render budget).
 - [ ] Options panel dynamically updates the active conversion output and resets completely to defaults via a single click.
-- [ ] Round-trip view successfully renders original HTML, round-tripped HTML, and a word- or character-level diff generated by the similar crate directly on the raw HTML outputs.
+- [ ] The pipeline fidelity check automatically renders the canonicalized original HTML, the canonicalized round-tripped HTML, and a word-level diff generated by the `similar` crate exclusively on those canonicalized strings.
 - [ ] Clickable sample documents load immediately into the input pane and update the output state.
 
 ### 9.6. Negative & Edge Cases
 - [ ] Empty input clears the output pane immediately without throwing console errors or application panics.
-- [ ] Malformed HTML input (e.g., unclosed tags, unescaped scripts) is handled safely by `htmd` without crashing the WASM runtime.
-- [ ] Input exceeding 100 KB immediately halts conversion, clears the output, and renders the standard error banner: "Input exceeds the 100 KB maximum limit for client-side processing."
+- [ ] **Permissive Parsing Verification:** Malformed HTML input (e.g., mismatched tags, broken attributes) compiles into a valid, best-effort Markdown representation without throwing runtime exceptions or breaking application state.
+- [ ] Input exceeding 100 KB immediately halts conversion, clears the output, and renders the standard error banner: *"Input exceeds the 100 KB maximum limit for client-side processing."*
 - [ ] Conflicting option combinations resolve gracefully without freezing the UI.
 - [ ] Switching between conversion modes preserves separate text states for each mode without data loss, layout corruption, or accidental re-conversion.
 - [ ] Closing or refreshing the browser tab retains the user's typed inputs, selected mode, preview tabs, and custom sidebar configuration settings.
@@ -181,7 +180,14 @@ Implement a deterministic HTML canonicalization pipeline to clean both HTML outp
 - [ ] **Type & Enum Mismatch:** Wrong field types or invalid enum variants in JSON are rejected, causing a reset to defaults.
 - [ ] **Out-of-Bound Values:** Spacing parameters outside the 1–4 range are detected and clamped/rejected.
 - [ ] **Future Version:** If storage contains `"version": 2` or higher, the app safely ignores it and boots with the current Version 1 defaults.
+- [ ] **Data Loss Prevention:** Type text, immediately toggle a sidebar option within 500 ms, and refresh the browser — the freshly typed text must be fully preserved.
 
 ### 9.7. Semantic HTML Diff Validation
-- [ ] **False-Positive Avoidance:** The pipeline fidelity diff remains completely empty (asserts zero changes) when comparing HTML inputs that differ *only* by:
-- [ ] **Automated Regression Suite:** A dedicated suite of automated "golden tests" is executed in the test pipeline to guarantee these safe variations never trigger visual diff errors.
+- [ ] **False-Positive Avoidance:** The pipeline fidelity diff engine yields zero changes when comparing structurally equivalent HTML fragments that differ *only* by:
+    * **Tag & Attribute Casing:** Character case variations (e.g., `<DIV ID="x">` vs `<div id="x">`).
+    * **Attribute Order:** Lexicographical sequence of keys within elements (e.g., `<a href="#" id="x">` vs `<a id="x" href="#">`).
+    * **Attribute Quoting:** Single, double, or omitted quotes compliant with HTML5 specs.
+    * **Void Element Syntax:** Self-closing slashes vs open syntax (e.g., `<br />` vs `<br>`).
+    * **Entity Representations:** Equivalent named, decimal, or hexadecimal formats (e.g., `&amp;`, `&#38;`, `&#x26;`) matching their raw character counterparts.
+    * **Insignificant Whitespace:** Collapsible spacing and line breaks between elements, excluding whitespace inside `<pre>` or `<code>` blocks.
+- [ ] **Automated Regression Suite:** A dedicated set of automated "golden tests" is executed in the test pipeline to guarantee these safe variations never trigger visual diff errors.

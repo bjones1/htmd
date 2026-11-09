@@ -39,7 +39,7 @@ These claims were verified against the pinned crates and need no change:
 
 ## Blocking issues
 
-### B1. Acceptance criterion 9.7 is unfinished (lines 185–187)
+~~### B1. Acceptance criterion 9.7 is unfinished (lines 185–187)~~
 
 The first bullet ends with "when comparing HTML inputs that differ *only* by:"
 and then the list is missing. The next bullet is a separate "Automated
@@ -54,7 +54,9 @@ are in scope. State explicitly which of these are *not* considered equivalent
 (for example, whitespace inside `<pre>`). Then make the golden-test bullet refer
 to that list.
 
-### B2. The diff requirements contradict each other (FR-5 lines 63–73; 9.5 line 169; UI line 117)
+[team note: added to spec!]
+
+~~### B2. The diff requirements contradict each other (FR-5 lines 63–73; 9.5 line 169; UI line 117)~~
 
 There are four independent conflicts:
 
@@ -77,7 +79,9 @@ round-tripped HTML; canonicalize both; run `similar::TextDiff::from_words` (or
 and update 9.5 and the UI sketch to match. State that the diff is diagnostic,
 not proof of semantic equivalence.
 
-### B3. The "standard conversion failure" path cannot occur (FR-7 line 84; goal line 13; 9.6 line 174)
+[team note: added to spec!]
+
+~~### B3. The "standard conversion failure" path cannot occur (FR-7 line 84; goal line 13; 9.6 line 174)~~
 
 In the pinned `htmd` 0.5.5, `convert` has no reachable `Err` path:
 
@@ -101,7 +105,9 @@ JS-level error listener or an explicit non-goal. Keep the `io::Result` handling
 only if the demo is allowed to depend on a future `htmd` version that can fail,
 and say so.
 
-### B4. "Instant write cancels pending text timer" can lose text (FR-8 lines 95–99)
+[team note: added to spec!]
+
+~~### B4. "Instant write cancels pending text timer" can lose text (FR-8 lines 95–99)~~
 
 If the user types and then changes an option, switches mode, or changes a tab
 within 500 ms, the instant write cancels the pending text write. The latest text
@@ -115,7 +121,9 @@ queued write. Do not cancel a write whose data has not yet been persisted.
 Acceptance should include: "type, immediately toggle an option, reload — text is
 preserved."
 
-### B5. The persisted schema is not defined (FR-8 lines 89–100; 9.6 lines 179–183)
+[team note: added to spec!]
+
+~~### B5. The persisted schema is not defined (FR-8 lines 89–100; 9.6 lines 179–183)~~
 
 "Validate types/ranges for every field" cannot be implemented or tested without
 a schema. The current text does not define:
@@ -138,7 +146,9 @@ spec. Define unsupported-version behavior as read-only/no-write or migrate, not
 `JSON.parse`: in Safari private browsing, reading the `localStorage` property
 itself and `setItem` can throw `SecurityError`, not only `QuotaExceededError`.
 
-### B6. The canonicalization pipeline is underspecified and has correctness risks (FR-5 lines 63–73)
+[teame note: not relevant!]
+
+~~### B6. The canonicalization pipeline is underspecified and has correctness risks (FR-5 lines 63–73)~~
 
 The pipeline is central to the round-trip feature, but several decisions are
 missing or wrong:
@@ -187,6 +197,8 @@ missing or wrong:
 **Fix:** turn FR-5 into an algorithm with explicit parse mode, serializer
 options, normalization rules, preserved-element list, foreign-content policy,
 comment policy, and diff tokenizer. Add golden inputs/outputs for each rule.
+
+[team note: fixed!]
 
 ### B7. Size and performance budgets are not measurable as written (section 7 lines 127–132; 9.1–9.3 lines 147–158)
 
