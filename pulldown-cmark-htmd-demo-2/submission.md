@@ -68,7 +68,11 @@ Prompting Claude Opus 5.5, Medium effort with:
 > Review a spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Find logical inconsistencies. DO not change any files yet.
 
 LLM output on last review:
-> 
+> **Repo mismatches:** ~~version 0.5.6 vs. `Cargo.toml` 0.5.5~~; `Options` does derive `Clone, PartialEq`; ~~spacing clamp 1–8 vs. library's 1–4~~; ~~deploy URL doesn't match repo~~.
+>
+> **Contradictions:** ~~clippy command missing `--`~~; ~~`deploy` waits on PR-only `check`~~; optional compression vs. mandatory deflate; "only allowed edit" vs. extra repo edits; 1 MB input vs. URL permalinks; debounce vs. single `Memo`.
+>
+> **Gaps:** no `<hr>` example; `br_style` ignored in Faithful mode; `skip_tags` default and permalink undefined; build-time version reads demo's own; "must not panic" vs. `panic = "abort"`.
 
 Final submission (Excluding implementation, as discussed at the 1-to-1 and group calls)
 ----------------
