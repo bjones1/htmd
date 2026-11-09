@@ -5,10 +5,11 @@
 Prompting **Big Pickle OpenCode (Version 2.2.6)**, standard effort, with
 `Review @demo/demo-spec.md, writing findings to @review.md` produced the
 findings below (rounds 1–4). Resolved items are struck through with team
-notes. The round-5 (last) review — a fresh-context GLM-5.3 OpenCode subagent —
-is documented with its own prompt at the end of this file, along with the LLM
-verification output for *"Verify that you can compile and run the project in
-the current git repo."*
+notes. Rounds 5 and 6 were run by d_baitakov with a fresh-context GLM-5.3
+OpenCode subagent (round 5 resolved, round 6 open at the end of this file).
+The professor's submission artifacts — contributions, compiler-test output,
+the review-round table, and the last LLM review with its prompt and model —
+live in [submission.md](submission.md).
 
 Reviewed `demo/demo-spec.md` (187 lines) against the `htmd` source in this
 repository (`htmd` 0.5.5, `src/options.rs`, `src/lib.rs`,
@@ -522,83 +523,6 @@ it changes, and state the overwrite/confirmation behavior.
   size/perf measurement (B7), cross-browser tooling (B8), and demo/workspace
   layout (B9).~~ [team note: fixed — a "Key decisions" list added at the top of
   the spec recording each resolved position and its review round.]
-
----
-
-## LLM verification output
-
-**Prompt applied:** *"Verify that you can compile and run the project in the current git repo."*
-**Environment:** Windows, `htmd` repository (contributed by k_muzanbekova).
-
-Verified. The repo builds, lints, tests, and runs cleanly.
-
-| Check | Command | Result |
-| :--- | :--- | :--- |
-| **Build** | `cargo build` | Finished dev profile |
-| **Lint** | `cargo clippy -- -deny warnings` | No warnings |
-| **Tests** | `cargo test` | 266 passed, 1 ignored (the table-generator test), 0 failed |
-| **Run (examples)** | `cargo run --example table` | Printed converted Markdown |
-| **Run (examples)** | `cargo run --example simple` | Ran after rebuild |
-
-*Environment note:* the first run of `target/debug/examples/simple.exe` was
-temporarily blocked by Windows Smart App Control ("Application Control Policy
-blocked this file", os error 4551) due to an unsigned-binary reputation check.
-A fresh `rustc` hello-world and the `table` example executed correctly.
-Rebuilding `simple` under a different debug profile resolved the signature
-prompt. No repository source files were modified during this check (`git
-status` remained clean).
-
----
-
-## Round 5 — last review
-
-Prompting GLM-5.3 (OpenCode `general` subagent, fresh context, standard
-effort), with the prompt *"You are an LLM performing a fresh, independent
-design review of a specification document. This is round 5 of an iterative
-review process… Review the file demo/demo-spec.md — the specification for a
-planned client-side Leptos (WASM, CSR) live demo that converts Markdown→HTML
-via pulldown-cmark and HTML→Markdown via htmd… Check internal consistency,
-verifiability, technical accuracy against the repo source, completeness gaps,
-and editorial problems"* produced the following output; strikethrough indicates
-LLM output that we deemed incorrect or irrelevant. All other findings were
-applied to the specification.
-
-### What checks out
-
-- FR-4's `htmd` option list matches `src/options.rs` exactly: all 12 option names, every variant, and every default (Atx, Asterisks, TwoSpaces, Inlined, Full, Fenced, Backticks, Asterisk, spacing 3/2, `preformatted_code: false`, `translation_mode: Pure`).
-- `htmd` version 0.5.5 claim matches `Cargo.toml:3`.
-- The `skip_tags` panic claim is accurate: `skip_tags` forwards to `add_handler`, which asserts `!tags.is_empty()` (`src/element_handler/mod.rs:400`, `src/lib.rs:248-250`); it takes `Vec<&str>` keyed by exact string, so the lowercase rationale (html5ever supplies lowercase tag names) is correct.
-- FR-7's "future-proof `Result` wrapper" framing is accurate: `convert` returns `io::Result<String>` (`src/lib.rs:212`) with no reachable `Err` (`html_to_tree` is always `Ok`, `tree_to_markdown` returns `String`), and the spec no longer claims a live error path.
-- pulldown-cmark 0.13.4 has exactly 15 `ENABLE_*` flags (verified on docs.rs); the seven listed exist verbatim, and `default-features = false, features = ["html"]` validly drops the optional `getopts` dependency.
-- Root `Cargo.toml` has `[profile.release] debug = true` and no `[workspace]`, so the claims "root profile does not apply to `demo/`" and "root gates unaffected" are correct; 8.1's gate commands match `AGENTS.md`.
-- The math-sample round-trip claim is grounded: `src/element_handler/span.rs:21-22` maps `math math-inline`/`math math-display` classes to `$`/`$$`.
-- Size budget is internally consistent everywhere: 1.5 MB = 1,572,864 bytes, strictly under, fail at ≥ (§6, Deliverable 3, 8.1); 100 KB = 100,000 UTF-8 bytes via `TextEncoder` with strict `>` is consistent across FR-2/FR-7/8.6.
-- `html5ever` and `markup5ever_rcdom` are real crates already used by htmd, and `parse_fragment`/`serialize`/`TraversalScope::IncludeNode` are real APIs, so FR-5's pipeline is buildable as described.
-- Reset semantics (FR-4) and the flush-before-write controller (FR-8) match their 8.5/8.6 acceptance criteria.
-
-### Blocking issues
-
-None.
-
-### Medium-severity issues
-
-- **R5-M1 — long-task criterion vs compute budget:** applied; 8.3 now scopes the long-task rule to keystroke handling and lets scheduled conversions use the full 100 ms budget.
-- **R5-M2 — version mismatch wipe vs ignore:** applied; FR-8 and 8.6 now state one rule — a payload whose version is not 1 is wiped, and the app boots with the Demo Default Preset and empty inputs.
-- **R5-M3 — persisted field set undefined / "layout modes":** applied; FR-8 now contains a persisted-state schema table and "layout modes" was replaced with the defined fields.
-- **R5-M4 — depth pre-check itself can stack-overflow:** applied; the 512-level guard is now an iterative scan of the raw input before any DOM construction, scoped to HTML → Markdown input.
-
-### Low-severity / editorial
-
-- **R5-L1 — "(round 5)" attributions without a table row:** applied; the round-5 row was added to the Review history table.
-- **R5-L2 — 2 KB threshold unpinned, boundary overlap:** applied; 2 KB pinned to 2,000 bytes and ranges made disjoint (≤ 2,000 vs 2,001–100,000).
-- **R5-L3 — sketch button label:** applied; the sketch now shows the full label.
-- **R5-L4 — samples mode-agnostic:** applied; samples are now mode-bound with mode switching on load, and the basics sample joined the golden corpus.
-- **R5-L5 — fragment context left as an "or":** applied; fixed to a `<body>` context.
-- **R5-L6 — "conflicting option combinations" unmeasurable:** applied; the criterion was dropped and FR-4 states the options are independent.
-- **R5-L7 — `br_style` inert in Faithful mode:** applied (verified against `src/element_handler/br.rs`); FR-4 discloses the behavior and disables the control while Faithful is active.
-- ~~**R5-L8 — incomplete front matter (two "(to be completed)" contributor entries):** deemed not actionable by this round — the placeholders belong to teammates who must submit their own contribution sentences; they cannot be filled by the editor.~~
-
-**Total findings: 12 (blocking 0, medium 4, low 8).**
 
 ---
 

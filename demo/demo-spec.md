@@ -1,30 +1,5 @@
 # htmd / pulldown-cmark live demo — specification
 
-## Team contributions
-
-- **k_muzanbekova:** Initiated the repository fork, created `demo/demo-spec.md` and `demo/review.md`, added teammates to the repository to enable collaboration, and processed review findings B1–B6 into the specification.
-- **d_baitakov:** Finished the review work from B7 through L10, applying each finding to the spec and marking it resolved in review.md. Added the artifacts the professor asked for (contribution list, review history, compile verification output) and ran the round-5 review cycle until nothing was left open. Also ran the round-6 review and added five more findings from a spec-quality checklist, then left round 6 open so a teammate could take it.
-- **jhg246:** (to be completed)
-- **nu_aimagambetov:** (to be completed)
-
-## Review history
-
-| Round | Findings | Main changes made |
-| :---: | :---: | :--- |
-| **1** | 18 | Narrowed the scope to strict one-way conversion modes, established a compressed WASM asset budget, and defined initial verifiable acceptance criteria. |
-| **2** | 26 | Resolved diff pipeline contradictions, added the missing UI-sketch section, formalized the localStorage validation schema, and eliminated runtime panics on empty tag inputs. |
-| **3** | 12 | Enforced total preview isolation using a sandboxed `<iframe>` with a strict Content Security Policy to eliminate XSS risks and hidden third-party network requests. |
-| **4** | 38 | Verified all settings against `htmd` 0.5.5 and `pulldown-cmark` 0.13.4, expanded the option mapping, resolved reset semantics, and added deep DOM nesting bounds. |
-| **5** | 12 | Made performance and size budgets measurable (artifact, command, profile), defined the demo build contract and CI workflow, normalized `skip_tags`, hardened the iframe/panic-hook/debounce contracts, and renumbered sections; the round-5 review then reconciled long-task vs compute budgets, unified storage version handling, added the persisted-state schema, moved the nesting guard to a streaming pre-scan, and pinned the 2 KB threshold. |
-
-### Round context & analysis
-
-1. **Round 1 (conceptual scope):** replaced unstable two-way sync ideas with a deterministic "Use Output as Input" feature, split per-mode state variables, and introduced performance budgets evaluated via the browser's Performance API.
-2. **Round 2 (pipeline logic):** designed a word-level text diff built strictly on canonicalized HTML fragments using `html5ever`, dropped unreachable library error wrappers, and fixed concurrency timers to ensure typing does not wipe pending changes.
-3. **Round 3 (browser security & sandboxing):** blocked raw HTML passthrough vulnerabilities, isolated event handling vectors (`onclick`, `onerror`), explicitly mapped the `pulldown-cmark` bitflags, and unified the 100 KB limit using UTF-8 byte arrays.
-4. **Round 4 (crate alignment & edge cases):** expanded the UI flags to match the 15 bitflags available in `pulldown-cmark` 0.13.4, protected the recursive WASM stack walker against deeply nested elements, and separated "Reset Options" from "Reset Sample" logic.
-5. **Round 5 (measurability & buildout):** tied every budget to an artifact and CI command, defined the standalone-crate build contract, added the persisted-state schema and streaming nesting guard, and reconciled the latency criteria (contributed by d_baitakov).
-
 ## Key decisions
 
 - Diff pipeline: HTML mode only, `Faithful` translation mode only, canonicalized fragments, `similar::TextDiff::from_words`, automatic (rounds 2–4).
