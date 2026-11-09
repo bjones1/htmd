@@ -3,7 +3,7 @@
 ## Team contributions
 
 - **k_muzanbekova:** Initiated the repository fork, created `demo/demo-spec.md` and `demo/review.md`, added teammates to the repository to enable collaboration, and processed review findings B1–B6 into the specification.
-- **d_baitakov:** Completed the review file from finding B7 through L10, applied the resolved findings to the specification, added the required submission artifacts (contributions, review history, verification output), and ran the round-5 LLM review cycle.
+- **d_baitakov:** Finished the review work from B7 through L10, applying each finding to the spec and marking it resolved in review.md. Added the artifacts the professor asked for (contribution list, review history, compile verification output) and ran the round-5 review cycle until nothing was left open. Also ran the round-6 review and added five more findings from a spec-quality checklist, then left round 6 open so a teammate could take it.
 - **jhg246:** (to be completed)
 - **nu_aimagambetov:** (to be completed)
 
