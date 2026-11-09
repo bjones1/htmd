@@ -1,3 +1,30 @@
+Contributions to the team's pull request
+- [k_muzanbekova]: Initiated the repository fork, created the critical demo-spec.md and review.md files, added your teammates to the repository to enable collaboration, and began the initial code review process for the project specification.
+Completed the specification analysis and performance audit up to and including point B6, made the corresponding edits to the `review.md` file, and moved the irrelevant points into the specification.
+- [d_baitakov]: (Conducted the initial audit of the performance and size specification, completed the review file up to section B7-B10, transferred completed items into the main spec, and systematically applied strikethroughs to the resolved points.) Thats example
+- [jhg246@msstate.edu]:
+- [nu_aimagambetov]:
+
+### Review History
+ 
+The following table summarizes the design and review iterations for the `htmd / pulldown-cmark live demo` specification. It tracks the document's evolution from initial conceptual sketches to a production-ready specification optimized for WebAssembly runtime stability and browser security.
+ 
+| Round | Findings | Main changes made |
+| :---: | :---: | :--- |
+| **1** | **18** | Narrowed the scope to strict one-way conversion modes, established a compressed WASM asset budget, and defined initial verifiable acceptance criteria. |
+| **2** | **26** | Resolved diff pipeline contradictions, added the missing Section 5 UI sketch, formalized the localStorage validation schema, and eliminated runtime panics on empty tag inputs. |
+| **3** | **12** | Enforced total preview isolation using a sandboxed `<iframe>` with a strict Content Security Policy to eliminate XSS risks and hidden third-party network requests. |
+| **4** | **38** | Verified all settings against `htmd 0.5.5` and `pulldown-cmark 0.13.4`, expanded the option mapping to 15 flags, resolved reset semantics, and added deep DOM nesting bounds. |
+
+---
+ 
+### Round Context & Analysis
+ 
+1. **Round 1 (Conceptual Scope):** Replaced unstable two-way sync ideas with a deterministic "Use Output as Input" feature, split per-mode state variables, and introduced performance budgets evaluated via the browser's Performance API.
+2. **Round 2 (Pipeline Logic):** Designed a word-level text diff built strictly on canonicalized HTML fragments using `html5ever`, dropped unreachable library error wrappers, and fixed concurrency timers to ensure typing does not wipe pending changes.
+3. **Round 3 (Browser Security & Sandboxing):** Blocked raw HTML passthrough vulnerabilities, isolated event handling vectors (`onclick`, `onerror`), explicitly mapped the `pulldown-cmark` bitflags, and unified the 100 KB limit using UTF-8 byte arrays.
+4. **Round 4 (Crate Alignment & Edge Cases):** Expanded the UI flags to match all 15 bitflags available in `pulldown-cmark 0.13.4`, protected the recursive WASM stack walker against deeply nested elements, and separated "Reset Options" from "Reset Sample" logic.
+
 # htmd / pulldown-cmark live demo — specification
 
 ## 1. Purpose & Target Audience

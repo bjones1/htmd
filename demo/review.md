@@ -1,3 +1,29 @@
+### 2. LLM Verification Output
+ 
+**Prompt applied:** 
+*"Verify that you can compile and run the project in the current git repo."*
+ 
+**LLM Response:**
+Verified. The repo builds, lints, tests, and runs cleanly.
+ 
+| Check | Command | Result |
+| :--- | :--- | :--- |
+| **Build** | `cargo build` |  Finished dev profile |
+| **Lint** | `cargo clippy -- -deny warnings` |  No warnings |
+| **Tests** | `cargo test` |  266 passed, 1 ignored (the table-generator test), 0 failed |
+| **Run (examples)** | `cargo run --example table` |  Printed converted Markdown |
+| **Run (examples)** | `cargo run --example simple` |  Ran after rebuild |
+ 
+*Environment Note:* 
+The first run of `target/debug/examples/simple.exe` was temporarily blocked by Windows Smart App Control ("Application Control Policy blocked this file", os error 4551) due to an unsigned binary reputation check. A fresh `rustc hello-world` and the `table` example executed correctly. Rebuilding `simple` under a different debug profile resolved the signature prompt, allowing the execution to bypass the environment restriction and successfully pass all internal code assertions. No repository source files were modified during this execution check (`git status` remained clean)
+
+### 4. Last LLM Review Documentation
+ 
+**LLM Configuration & Context:**
+Prompting Big Pickle OpenCode (Version 2.2.6), standard effort, with `Review @demo/demo-spec.md, writing findings to @review.md` produced the following output; strikethrough indicates LLM output that we deemed incorrect or irrelevant.
+ 
+**LLM Output:**
+
 # Review: htmd / pulldown-cmark live demo specification
 
 Reviewed `demo/demo-spec.md` (187 lines) against the `htmd` source in this
