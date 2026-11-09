@@ -46,7 +46,7 @@ An interactive, client-side web tool to convert CommonMark (plus selected extens
 Conversion triggers automatically on input changes:
 - **Inputs ≤ 2 KB** (2,000 UTF-8 bytes): no debounce; conversion is scheduled on the next animation frame after the keystroke.
 - **Inputs > 2 KB and ≤ 100 KB** (2,001–100,000 bytes): debounced with a 250 ms delay after typing stops.
-- **Typing Lock Protection:** while typing continues in the debounced range, a conversion runs at most once every 900 ms on the latest input. The forced tick does not apply to the ≤ 2 KB immediate path.
+- **Typing Lock Protection:** for pending edits in the debounced range, schedule conversion at the earlier of 250 ms after the latest edit or 900 ms after the first edit not yet included in a dispatched run. Further edits update the pending input and reset only the 250 ms timer; they never extend the 900 ms deadline. Dispatch clears both timers for that batch; the next edit starts a new batch. If a conversion is already in flight at the deadline, queue the latest input and dispatch it as soon as that run finishes. The forced deadline does not apply to the ≤ 2 KB immediate path.
 - **Concurrency:** latest-input-wins. At most one conversion runs at a time and at most one is queued; each run carries a sequence number and stale results are discarded. A forced tick that arrives while a conversion is in flight coalesces into the single queued run.
 - **Input Isolation:** a separate text buffer per conversion mode. Switching modes never auto-converts or overwrites the opposite buffer; only the explicit "Use Output as Input" and sample-loading actions may overwrite a buffer.
 - **State Preservation:** sidebar options, active tabs, and scroll positions remain unaffected by mode switches.
@@ -117,7 +117,7 @@ Sample actions:
 
 ### FR-7 — Error Boundaries & Limits
 - **Size limit:** the ceiling is **100,000 UTF-8 bytes** of the input string (measured via `TextEncoder`). Inputs **strictly larger** than the ceiling halt conversion, clear the output and diff, and show the `aria-live="assertive"` banner exactly once per transition into the limit: *"Input exceeds the 100 KB maximum limit for client-side processing."* The oversized text stays in the editor and is persisted; processing resumes automatically once the input is at or below the ceiling.
-- **Nesting limit:** HTML → Markdown input whose element nesting exceeds **512 levels** is rejected before conversion with the same non-fatal banner mechanism (*"Input exceeds the supported nesting depth."*). The depth is measured by an iterative scan of the raw input (counting unmatched open tags) **before** any DOM is constructed, so a deep tree is never built or torn down — `RcDom`'s recursive `Drop` would trap the wasm stack on the very input the guard exists to reject. Markdown → HTML input is exempt: `pulldown-cmark`'s parser is iterative.
+- **Nesting limit:** HTML → Markdown input whose element nesting exceeds **512 levels** is rejected before conversion with the same non-fatal banner mechanism (*"Input exceeds the supported nesting depth."*). The depth is measured by an iterative scan of the raw input (counting unmatched open tags) **before** any DOM is constructed. The limit protects the recursive conversion traversal in `src/dom_walker.rs`. Markdown → HTML input is exempt: `pulldown-cmark`'s parser is iterative.
 - **Malformed HTML:** input with syntax errors (e.g., unclosed tags) is not a runtime failure. The engine leverages `html5ever`'s permissive parsing to build a best-effort DOM tree without throwing exceptions; `<script>`/`<style>` contents are treated as raw text.
 - **Rust panics:** a single custom panic hook is installed once at startup. It first delegates to `console_error_panic_hook` (only one global hook exists, so it must chain rather than install a second), is null-safe and idempotent (guards element lookups; runs its body once), then un-hides the static fallback overlay element in `index.html` (*"Critical Application Error. Please reload the page."*), permanently disables **all** interactive controls (mode switch, tabs, samples, options, reset, "Use Output as Input"), moves focus to the overlay (`role="alertdialog"`), and logs the trace to the console. The release profile uses `panic = "abort"`; the hook runs before the abort trap and is verified with deliberate panics in debug and release builds.
 - **WASM traps & OOM:** low-level traps and out-of-memory errors bypass the Rust panic hook and are intercepted via global `window` `error` and `unhandledrejection` listeners in `index.html`, which show the same static crash overlay. Recovery requires a manual page reload.
@@ -125,6 +125,7 @@ Sample actions:
 
 ### FR-8 — Storage & Persistence
 - **Storage key:** use exactly `htmd_cmark_live_workspace`.
+- **Initial workspace:** Without a saved workspace, start in Markdown → HTML mode on the Rendered tab, with empty inputs and output, zero input scroll offsets, the Demo Preset applied, and no sample selected or preloaded.
 - **Safe reads (validation):**
     * Wrap `localStorage.getItem` and `JSON.parse` in `try/catch`.
     * Fall back to in-memory state without crashing if storage is blocked (Incognito).
@@ -234,6 +235,7 @@ Sample actions:
 - [ ] **Byte-accurate limit:** an input of exactly 100,000 UTF-8 bytes converts; 100,001 bytes halts conversion, clears output and diff, keeps and persists the text, shows the banner once, and resumes automatically back at the limit.
 - [ ] **Nesting depth:** input nested deeper than 512 levels is rejected with the banner before any conversion; input at 512 levels still converts.
 - [ ] **Concurrency:** an artificially slowed conversion (test hook adds 300 ms) that finishes after newer input does not overwrite the newer output (latest-input-wins; stale runs discarded).
+- [ ] **Forced deadline:** with controlled timers, valid input above 2,000 bytes, and edits every 100 ms for three seconds, the first conversion dispatch occurs by 900 ms. Each later pending batch has the same maximum wait while the converter is idle. With an in-flight run, the latest queued input dispatches as soon as that run finishes; no additional runs accumulate.
 - [ ] **`skip_tags` parsing:** empty, whitespace-only, mixed-case (`IMG`), duplicate, and unknown entries produce a working converter — no panic on the cleared field.
 - [ ] Switching between conversion modes preserves separate text states for each mode without data loss, layout corruption, or accidental re-conversion.
 - [ ] Closing or refreshing the browser tab retains typed inputs, selected mode, preview tabs, and sidebar configuration.

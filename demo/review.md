@@ -604,3 +604,169 @@ The user-facing banner says "100 KB", which users can reasonably read as 102,400
 **Fix:** change the banner text to "100,000 bytes", or state that the KB wording is deliberate and accept the mismatch.
 
 **Total findings: 11 (blocking 0, medium 5, low 6) — 6 from the subagent review above, 5 added from the specification-quality checklist pass.**
+
+---
+
+## Round 7 — Various issues
+
+Reviewed by **Codex** (GPT-6 Sol Extra High), using the prompt *"Review demo/demo-spec.md, write findings to demo/review.md, using the same format."*
+
+Reviewed the current 255-line specification against the repository source,
+`translation_approach.md`, and the locally cached sources for
+`html5ever` 0.39.0, `markup5ever_rcdom` 0.39.0+unofficial, and
+`pulldown-cmark` 0.13.4. This is a specification review: `demo/` contains
+Markdown documents, with no application implementation to exercise. The round-6
+findings remain open and are not counted again below. No specification changes
+have been applied.
+
+### What checks out
+
+- FR-4's option variants, defaults, and spacing bounds still agree with `src/options.rs`; the Faithful-mode `br_style` restriction agrees with `src/element_handler/br.rs`.
+- The empty-`skip_tags` guard is justified by the builder and handler-registration assertion in `src/lib.rs` and `src/element_handler/mod.rs`.
+- The standalone-crate layout correctly avoids inheriting the root release profile. The root has no workspace declaration.
+- FR-5 correctly distinguishes a diagnostic text diff from proof of semantic equivalence, and consistently limits the live pipeline to HTML input with Faithful translation.
+
+### Blocking issues
+
+None.
+
+### Medium-severity issues
+
+### R7-M1. Fragment serialization does not identify a safe serialization root (FR-5, lines 99–105)
+
+`html5ever` 0.39.0's `TreeBuilder::new_for_fragment` creates a synthetic
+`<html>` element beneath `RcDom.document`
+(`html5ever/src/tree_builder/mod.rs:179–218`). Fragment parsing alone therefore
+does not satisfy the prohibition on emitted wrappers. With the required
+`TraversalScope::IncludeNode`, serializing that element emits the wrapper;
+serializing `dom.document` instead panics
+(`markup5ever_rcdom/lib.rs:623–672`). The spec never identifies which handles
+to serialize. This is an implementation trap even for `<p>a</p>`.
+
+**Fix:** explicitly serialize each child of the synthetic root with
+`IncludeNode`, in document order, or serialize that root with
+`ChildrenOnly(None)`. Add exact-output cases for an empty fragment and
+`<p>a</p>` that prohibit an emitted wrapper and a panic. The relevant behavior
+is visible in the [RcDom serializer source](https://docs.rs/crate/markup5ever_rcdom/latest/source/lib.rs).
+
+### R7-M2. Renderer-added trailing newlines still cause false-positive diffs (FR-5, line 103; 8.7, lines 248–255)
+
+The rule removes whitespace-only text nodes only when they are *between*
+block-level components. For input `<p>a</p>`, Faithful conversion produces
+`a`, and `pulldown-cmark` renders `<p>a</p>\n`
+(`pulldown-cmark/src/html.rs:396–397`). The final newline is a trailing text
+node, not a node between blocks. Collapsing it produces a trailing space, so
+the canonical strings still differ. A minimal lossless paragraph can therefore
+show a change despite 8.7's whitespace-equivalence requirement.
+
+**Fix:** define treatment of leading and trailing fragment whitespace, including
+the all-whitespace fragment, without trimming preserved-element contents. Add
+goldens comparing `<p>a</p>`, `<p>a</p>\n`, and the actual round-trip output.
+
+### R7-M3. Tag-only whitespace exemptions hide real losses in styled inline content (FR-5, line 103)
+
+The five-tag exemption does not cover whitespace preserved through CSS. For
+example, `<p><span style="white-space: pre">a  b</span></p>` displays two spaces.
+Faithful inline serialization walks the span's text through
+`compress_whitespace` (`src/element_handler/element_util.rs`,
+`src/dom_walker.rs`), reducing it to one. The proposed canonicalizer then
+collapses the original to the same text, hiding this real rendering change.
+CSS `white-space` is inherited and can preserve spaces on ordinary elements;
+see [CSS Text, white-space](https://www.w3.org/TR/css-text-3/#white-space-property).
+This is separate from R6-L1's non-breaking-space exemption mismatch.
+
+**Fix:** define a conservative policy for CSS-dependent whitespace. Preserve
+text in affected subtrees, or explicitly mark such fragments outside the
+supported fidelity check instead of treating their whitespace as insignificant.
+Add a negative golden asserting a nonzero diff for the example's two-space
+versus one-space forms.
+
+### R7-M4. CDATA cannot be discarded as a DOM node after HTML parsing (FR-5, line 104)
+
+FR-5 places CDATA removal in DOM normalization, but `RcDom::NodeData` has no
+CDATA variant. In SVG/MathML, `html5ever` tokenizes CDATA contents as ordinary
+text, losing their source boundaries. For example,
+`<svg><text><![CDATA[a<b]]></text></svg>` and
+`<svg><text>a&lt;b</text></svg>` reach the same text representation. A DOM walk
+cannot discard the former's contents while preserving the latter's. The
+[HTML tokenizer's CDATA rules](https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-state)
+require character tokens.
+
+**Fix:** state that CDATA delimiters disappear during parsing while their
+foreign-content text is retained. Continue dropping actual comment nodes,
+including bogus comments produced by CDATA syntax in HTML content. Add a golden
+for the equivalent SVG forms above.
+
+### R7-M5. Mode switches preserve inputs but leave output validity undefined (FR-2, lines 50–53; FR-8, lines 133–142; 8.6, line 238)
+
+Plain mode switches must never convert, but no per-mode output cache or clearing
+rule is defined. Convert Markdown in mode A, convert unrelated HTML in mode B,
+then switch back to A: the spec does not say whether to restore A's output,
+clear the pane, or leave B's output visible. Global options can also change
+while a mode is inactive, invalidating any cached output. Since "Use Output as
+Input" copies the current output, displaying an unrelated or outdated result can
+then overwrite the other buffer with the wrong content. The persisted schema
+contains inputs and options but no outputs, and no initial conversion after
+restoring a valid workspace is specified either.
+
+**Fix:** define output state per mode and its validity against the input and
+options used to produce it. On switching modes, restore a valid cached result
+or show a defined empty/pending state; specify how stale results become fresh
+without violating the no-conversion-on-switch rule. Disable "Use Output as
+Input" while no valid result exists, and explicitly define initial conversion
+after workspace restoration. Test switching after both modes have results and
+after changing shared options.
+
+### R7-M6. Mode-bound samples conflict with the current-buffer and Reload Sample rules (FR-6, lines 109–116)
+
+Line 109 binds samples to intended modes and switches modes when necessary,
+while line 115 says clicking a sample replaces the current mode's buffer.
+Starting in Markdown mode and clicking the HTML-only sample therefore has two
+different destinations. A second conflict occurs after loading the HTML sample
+and manually switching to Markdown mode: Reload Sample must restore the
+selected sample into the current buffer without changing mode, which would put
+HTML-only sample content in the wrong editor. The schema also does not say
+whether sample selection is per mode or global.
+
+**Fix:** make sample selection per mode, with explicit Markdown and HTML
+variants for samples supporting both modes. Specify that an HTML-only sample
+switches to and replaces only the HTML buffer; Reload Sample uses the current
+mode's selection or a named default for that mode. Add cross-mode sample and
+reload cases, including the buffer restored by Undo. This addresses conflicting
+behavior, beyond R6-L2's missing acceptance bullets.
+
+### R7-M7. The 900 ms rule permits conversion starvation during continuous typing (FR-2, lines 48–50)
+
+"At most once every 900 ms" sets a maximum frequency, but guarantees no run at
+all. An ordinary 250 ms trailing debounce that resets on every keystroke
+satisfies that wording while never converting during uninterrupted typing.
+Neither the first forced-tick deadline nor whether edits reset it is defined,
+so the stated Typing Lock Protection can be absent in a conforming
+implementation. R6-M3 concerns attribution of long tasks; it does not establish
+this missing progress guarantee.
+
+**Fix:** specify a maximum wait of 900 ms from the first pending edit or the
+previous forced dispatch, with new edits updating the queued snapshot rather
+than resetting that deadline. Preserve the existing single-queued-run rule.
+Test input events every 100 ms for several seconds and assert conversion
+dispatches before typing stops.
+
+### Low-severity / editorial
+
+### R7-L1. The nesting-limit rationale incorrectly describes RcDom destruction (FR-7, line 120)
+
+The pinned `markup5ever_rcdom` 0.39.0+unofficial implements `Node::drop` with
+an explicit worklist (`lib.rs:268–283`), rather than recursively dropping an
+intact child tree. The claim that its recursive destructor would trap the wasm
+stack is inaccurate. The library's recursive conversion walk still justifies
+a depth limit.
+
+**Fix:** retain the limit, but base its rationale on `src/dom_walker.rs` and
+measured wasm conversion behavior. Do not use the incorrect destructor claim
+to rule out an iterative DOM-depth validation strategy when resolving R6-M2.
+
+**Total new findings: 8 (blocking 0, medium 7, low 1). The 11 round-6 findings remain open separately.**
+
+Validation: repository and dependency-source inspection only. No Rust source or
+specification was changed; build, clippy, and test commands were not run for
+this review-document update.

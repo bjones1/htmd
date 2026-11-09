@@ -13,7 +13,7 @@ Draft submission
 Completed the specification analysis and performance audit up to and including point B6, made the corresponding edits to the `review.md` file, and moved the irrelevant points into the specification. Round 1-4 review.
 * Danial Baitakov: Finished the review work from B7 through L10, applying each finding to the spec and marking it resolved in review.md. Added the artifacts the professor asked for (contribution list, review history, compile verification output) and ran the round-5 review cycle until nothing was left open. Also ran the round-6 review and added five more findings from a spec-quality checklist, then left round 6 open so a teammate could take it.
 * Justin Gray: (Victoria's contributions)
-* Nurlybek Aimagambetov: (Zara's contributions)
+* Nurlybek Aimagambetov: Clarified typing protection and added acceptance coverage case, initial workspace state, corrected the nesting-limit explanation
 
 ### Compiler test
 
@@ -62,7 +62,15 @@ Verified. The repo builds, lints, tests, and runs cleanly.
 
 #### Nurlybek Aimagambetov
 
-(Summarized LLM output)
+**Prompt applied:** 
+*"Verify that you can compile and run the project in the current git repo."*
+
+**LLM Response:**
+Verified: the library compiles and runs through its test suite.
+- cargo build — passed
+- cargo clippy -- --deny warnings — passed
+- cargo test — passed, including doctests; one test intentionally ignored
+The default target directory produced filesystem errors. All checks passed using CARGO_TARGET_DIR=$env:TEMP\htmd-verification-target. No source files changed.
 
 #### Justin Gray
 
@@ -91,6 +99,7 @@ The following table summarizes the design and review iterations for the `htmd / 
 4. **Round 4 (Crate Alignment & Edge Cases):** Expanded the UI flags to match all 15 bitflags available in `pulldown-cmark 0.13.4`, protected the recursive WASM stack walker against deeply nested elements, and separated "Reset Options" from "Reset Sample" logic.
 5. **Round 5 (Measurability & Buildout):** Tied every budget to an artifact and CI command (`gzip -6` size check, `performance.measure` latency), defined the standalone-crate build contract with a `path` dependency on `htmd`, added the persisted-state schema and a streaming nesting guard, and reconciled the 100 ms compute vs 350–400 ms end-to-end latency criteria.
 6. **Round 6 (Open):** A fresh-context review produced six findings (axe-core missing from the CI step list, underspecified nesting pre-scan, unadjudicable forced-tick latency rule, `&nbsp;` exemption inconsistency, missing acceptance bullets for "Use Output as Input"/"Reload Sample", preset naming variance); a specification-quality checklist pass added five more (word tokenization for the diff, code-point vs locale-aware sorting, NFC normalization, first-run state, banner byte units). All 11 remain open for processing.
+7. **Round 7 (Various issues):** Clarified typing protection and added an acceptance coverage, corrected nesting-limit explanation
 
 ### Last LLM review
 
