@@ -48,30 +48,33 @@ A case whose trip is lossy by design (property 2) still uses `assert_faithful`, 
 
 A test states whether whitespace is significant. This section applies to `TranslationMode::Faithful`.
 
-HTML whitespace is U+0020, tab, line feed, form feed and carriage return. Every other space, such as U+00A0, is text: HTML never collapses it, and a test never treats it as HTML whitespace.
+HTML whitespace is U+0020, tab, line feed, form feed and carriage return. Other spaces, such as U+00A0, are text to the HTML parser, which never collapses them. htmd trims the edges of emphasis more widely (item 7 below).
 
 #### Where whitespace matters
 
-1. **Preformatted text.** `<pre>` keeps its spaces, tabs and line endings, except that the HTML parser drops one line feed directly after `<pre>`. Code spans keep their content the same way. Tests use runs of spaces, tabs and blank lines.
-2. **Indentation.** Four leading spaces start an indented code block. A paragraph whose HTML text begins with whitespace (`<p>    a</p>`) must not come back as code, so a test checks the round trip. Indentation inside list items decides nesting, and a test with several blocks in one item gives the indentation exactly.
-3. **Hard breaks.** `<br>` becomes a hard break. The test states exactly how htmd writes it, and the round trip shows `<br />` again. A line ending written for any other reason is never a hard break.
-4. **Line endings in text.** In HTML text a line ending is whitespace, so it collapses. In Markdown, one line ending inside a paragraph is a soft break and a blank line ends the paragraph. A test states which one htmd writes for a given input.
-5. **Delimiters.** Emphasis, strong emphasis and links cannot start or end next to whitespace inside their delimiters. A test with whitespace at the edge of such an element states where the whitespace ends up (see `a_link_keeps_the_whitespace_around_its_text` and `blank_emphasis_leaves_its_whitespace_behind`).
-6. **Table cells.** A Markdown table row is one line, so a cell cannot hold a line ending. A test states what htmd writes for a cell which has one.
-7. **Unicode spaces.** U+00A0 and other Unicode spaces are kept as text in the output. CommonMark counts Unicode whitespace when it decides whether a delimiter run can open or close emphasis, so tests cover U+00A0 next to a delimiter.
+1. **Preformatted text.** Raw `<pre>` is written as an HTML block and keeps its spaces, tabs and blank lines. The HTML parser drops one line feed directly after `<pre>` and htmd does not write one back, so `<pre>\n\na</pre>` loses a line ending (a known failure). `<pre><code>` is written as a fenced code block, which keeps spaces and tabs but ends its content with a line ending, so `<pre><code>a</code></pre>` comes back as `<pre><code>a\n</code></pre>\n` (lossy). A `<pre>` in an inline context, such as a table cell, is written as a raw inline and its line endings become spaces (see `translation_approach.md`).
+2. **Code spans.** `<code>` is not preformatted. Runs of spaces and tabs are kept, a line ending collapses to a space (htmd then writes a raw `<code>` inline, and converting that again gives a backtick span, so the case is not idempotent), and edge spaces are dropped (lossy).
+3. **Indentation.** Four leading spaces start an indented code block, and indentation inside list items decides nesting. Tests cover a list item with several blocks, a nested list, and a code block inside a list item, each with the exact indentation. A leading run of U+00A0 is not indentation.
+4. **Line breaks.** In Faithful mode `<br>` is written as the raw tag `<br>`, and the round trip returns `<br>`. Spaces around it survive (`a <br> b`). htmd writes no CommonMark hard break, so a line ending in its output is never a hard break (see `translation_approach.md`).
+5. **Line endings in text.** Inside a block, a line ending in HTML text becomes one space. htmd writes neither a soft break nor a blank line there. A blank line appears only between blocks.
+6. **Delimiters.** Emphasis and strong emphasis cannot touch whitespace inside their delimiters, so htmd moves edge whitespace outside them, and the round-trip DOM differs from the input (lossy). Links can hold edge whitespace, and htmd keeps it inside the brackets. An emphasis holding only whitespace stays raw HTML.
+7. **Unicode spaces.** U+00A0 is kept as text. CommonMark counts Unicode whitespace for flanking, and htmd trims with Rust's `White_Space`, so an edge U+00A0 or U+2003 moves out of emphasis like an ASCII space (lossy). In a link it stays inside the brackets.
+8. **Table cells.** A cell cannot hold a line ending. Tests use `assert_faithful_options` with `ENABLE_TABLES`, because the default options do not parse tables. A line ending in a cell becomes a space, `<br>` stays raw, leading and trailing cell whitespace is dropped, and several blocks in a cell are written as raw HTML.
 
 #### Where whitespace does not matter
 
-In HTML input, outside `<pre>`:
+In text content, outside `<pre>`, `<textarea>`, `<code>`, attribute values and content written as an HTML block:
 
-1. A run of HTML whitespace is equivalent to one space.
+1. A run of HTML whitespace, form feed included, is equivalent to one space.
 2. Whitespace between block elements is ignored.
-3. Leading and trailing whitespace of a block is dropped.
-4. `\r\n`, `\r` and `\n` are the same.
+3. Leading and trailing whitespace of a block (`<p>`, `<h1>`, `<li>`, `<td>`) is dropped.
+4. `\r\n`, `\r` and `\n` are the same, inside `<pre>` too.
+
+Whitespace between inline elements does matter (`<em>a</em> <em>b</em>` is not `<em>a</em><em>b</em>`), so a pair of inputs under these rules never varies it.
 
 #### Rules for tests
 
 1. Write expected Markdown and expected round-trip HTML with the exact whitespace the code produces. Never trim or normalize an expected string to make a test pass.
 2. For each item under "does not matter", add two inputs which differ only in that whitespace. Both call `assert_faithful` with the same expected Markdown and the same expected round-trip HTML.
-3. Write invisible characters as escapes (`\t`, `\r\n`, `\u{00A0}`), so a reader sees them.
+3. Write invisible characters as escapes (`\t`, `\r\n`, `\u{a0}`), so a reader sees them.
 4. A whitespace case which fails a property is recorded as described in "Known failures".
