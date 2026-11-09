@@ -599,3 +599,84 @@ None.
 - ~~**R5-L8 — incomplete front matter (two "(to be completed)" contributor entries):** deemed not actionable by this round — the placeholders belong to teammates who must submit their own contribution sentences; they cannot be filled by the editor.~~
 
 **Total findings: 12 (blocking 0, medium 4, low 8).**
+
+---
+
+## Round 6 — open findings (awaiting processing)
+
+Prompting **GLM-5.3** (OpenCode `general` subagent, fresh context, standard
+effort), with the same review instructions as round 5 (*"review
+demo/demo-spec.md for internal consistency, verifiability, technical accuracy
+against the repo source, completeness gaps, and editorial problems; do not
+re-raise findings already recorded as resolved"*) produced the following
+output. These findings are **not yet applied** — they are left open for the
+next team member to process into the spec.
+
+### What checks out
+
+- FR-4's `htmd` option list matches `src/options.rs` exactly: all 12 names, every variant, and every default (Atx, Asterisks, TwoSpaces, Inlined, Full, Fenced, Backticks, Asterisk, spacing 3/2, `preformatted_code: false`, `translation_mode: Pure`); the 1–4 spacing ranges match the clamp bounds documented in `src/options.rs`.
+- FR-4's `br_style`-ignored-in-Faithful note is accurate (`src/element_handler/br.rs:12-17` emits literal `<br>` in Faithful mode), and disabling the control is a sound consequence.
+- The `skip_tags` panic claim is correct: `skip_tags` forwards to `add_handler`, which asserts `!tags.is_empty()` (`src/lib.rs:248-250`, `src/element_handler/mod.rs:396-400`), and it takes `Vec<&str>` keyed by exact string, so FR-4's lowercasing rationale and empty-result rule are grounded.
+- FR-7's "future-proof `Result` wrapper" framing is accurate: `convert` returns `io::Result<String>` (`src/lib.rs:212`) with no reachable `Err` (`html_to_tree` always `Ok` at `src/lib.rs:148-166`; `tree_to_markdown` returns `String`).
+- `htmd` 0.5.5 matches `Cargo.toml:3`; root `Cargo.toml` has `[profile.release] debug = true` and no `[workspace]`, so §6's "root profile does not apply" and Deliverable 1's standalone-crate/`path` claims hold.
+- 8.1's gate commands match `AGENTS.md` exactly.
+- The math-sample round-trip claim is grounded in `src/element_handler/span.rs:17-23` (`math math-inline`/`math math-display` → `$`/`$$`).
+- Numbers are internally consistent across the document: 1.5 MB = 1,572,864 bytes with strictly-under/fail-at-≥ in §6, Deliverable 3, and 8.1; 100 KB = 100,000 UTF-8 bytes with strict `>` and exact-boundary tests in FR-2/FR-7/8.6; 100 ms compute vs 100 ms e2e (≤2,000 bytes) vs 400 ms e2e (2,001–100,000 bytes) in FR-2/§6/8.3/8.5; 1500 ms cold start in §6/8.3; 512 nesting levels in FR-7/8.6; 500 ms storage debounce in FR-8/8.6.
+- The FR-8 persisted schema's `cmark` object has exactly the 7 FR-4 flags and its `htmd` object has exactly FR-4's 12 options; unknown-field and version-wipe rules are stated once and used consistently.
+- Section numbering (1–8) and all cross-references ("section 6" from §5/8.2/8.3, "section 8.3" from 8.5) resolve correctly.
+
+### Blocking issues
+
+None.
+
+### Medium-severity issues
+
+### R6-M1. CI workflow omits the axe-core step it is required to run (Deliverable 3 vs §6 Accessibility, 8.4)
+Deliverable 3 enumerates the demo CI workflow steps (clippy, native test, wasm-bindgen-test, trunk build, size check, fuzz corpus, Playwright matrix) but does not include axe-core, while §6 requires "axe-core runs in CI on the built page" and 8.4 requires "axe-core passes in CI". As specified, the workflow cannot verify the criterion.
+**Fix:** Add an explicit axe-core step to Deliverable 3's workflow list (e.g., an axe scan of the built page driven by the Playwright suite).
+
+### R6-M2. Nesting pre-scan algorithm is underspecified and can miscount both ways (FR-7)
+"The depth is measured by an iterative scan of the raw input (counting unmatched open tags)" does not define handling of void elements (513 `<br>` siblings would falsely reject), self-closing syntax, closing tags decrementing the count, `<` inside attribute values (`title="a<b"`), or `<` inside raw-text/comment content — and an under-count lets through exactly the stack-trap input the guard exists to reject. Since the demo's purpose is pasting edge-case HTML, these inputs are expected, not exotic.
+**Fix:** Specify tokenizer-aware scan rules: skip void and self-closed elements, decrement on close tags, ignore `<` inside attribute values, comments, and raw-text (`script`/`style`/`textarea`) bodies; or state that the scan reuses an incremental html5ever tokenizer driven iteratively rather than raw string counting.
+
+### R6-M3. "No visible input lag" criterion is unadjudicable for the forced tick (8.3 vs FR-2)
+8.3 requires "no long task attributable to keystroke handling" while allowing scheduled conversions the full 100 ms budget; FR-2's 900 ms forced tick fires *during continuous typing*, so it is both caused by typing and a scheduled conversion run. A tester observing a ~100 ms main-thread block mid-typing cannot decide whether it violates the criterion.
+**Fix:** State explicitly whether forced-tick conversions count as keystroke handling (e.g., "the long-task rule covers input-event handling only; forced-tick conversions are exempt but must complete within the 100 ms compute budget"), or reword the headline claim to match.
+
+### Low-severity / editorial
+
+### R6-L1. `&nbsp;` normalization exemption is inconsistent with the whitespace exemption list (FR-5)
+Whitespace collapsing exempts `<pre>`, `<code>`, `<textarea>`, `<script>`, `<style>`, but nbsp normalization exempts only "raw-text elements" — an undefined term, and `<pre>`/`<code>` are not raw-text elements. As written, `&nbsp;` inside `<pre>`/`<code>` is normalized to a space, hiding a real difference the diff should show.
+**Fix:** Apply the same preserved-element list to the nbsp rule (or define "raw-text elements" and justify the narrower scope).
+
+### R6-L2. "Use Output as Input" and "Reload Sample" lack acceptance criteria (FR-2, FR-6 vs section 8)
+FR-2's "Use Output as Input" (copy direction, mode switch, immediate conversion, Undo toast) and FR-6's "Reload Sample" are fully specified but have no corresponding test in section 8, unlike samples loading (8.5), reset (8.5), and storage (8.6).
+**Fix:** Add 8.5/8.6 bullets covering the "Use Output as Input" round-trip with Undo restore, and Reload Sample restoring original sample content without touching options/mode/tabs.
+
+### R6-L3. Preset naming variance (FR-4/§5 vs FR-8/8.6)
+The same configuration is called "Demo Preset" (button label "Reset Options to Demo Preset" in FR-4 and the sketch) and "Demo Default Preset" (FR-8 wipe rule, 8.6 future-version boot). An implementer could read these as two different presets.
+**Fix:** Pick one name and use it everywhere.
+
+### Additional findings (added to this round by d_baitakov, from a specification-quality checklist; also open for processing)
+
+### R6-M4. Word tokenization for the diff is undefined (FR-5, 8.7)
+`similar::TextDiff::from_words` splits by Unicode word boundaries only with the crate's unicode feature; the spec pins "similar 2.x" but not the feature set, and never defines what a "word" is. For CJK text (no spaces), combining marks, and ZWJ sequences, tokenization can differ between the original and round-tripped sides, producing false diffs — e.g., a Kazakh word with a combining stress mark (ма́ма, U+0301) may split differently after round-trip.
+**Fix:** pin the tokenizer (UAX #29 word boundaries via the `unicode` feature), state that tokens compare by code point, and add combining-mark and CJK cases to the golden corpus.
+
+### R6-M5. "Alphabetically" / "lexicographically" sorting is collation-undefined (FR-5)
+FR-5 sorts attributes and class tokens but never says whether order is by Unicode code point or locale-aware collation. Code point order is not alphabetical order in non-Latin scripts (Kazakh ә sorts differently by code point than in the Kazakh alphabet), and two browsers with different locale settings must produce identical canonical output, so the sort must not depend on locale.
+**Fix:** state that all sorting in canonicalization is by Unicode code point (UTF-8 byte order), never locale collation.
+
+### R6-L4. Unicode normalization of text nodes is unspecified (FR-5)
+Equivalent NFC and NFD spellings (composed á vs a + U+0301) are not normalized before diffing, so decomposed text surviving from `&#x301;`-style entities can create false positives.
+**Fix:** state that canonicalization applies NFC (not NFKC, which would also fold ligatures like ﬁ) to text nodes outside preserved elements, and add an NFC golden case.
+
+### R6-L5. First-run state is undefined (FR-8 vs FR-2/FR-4)
+FR-8 covers corrupt and future-version payloads, but a first run with no stored key at all is not addressed: the initial mode (Markdown → HTML?), the initial output tab (Rendered?), and whether any sample is preloaded are never stated.
+**Fix:** state first-run defaults explicitly (suggested: mode = Markdown → HTML, tab = Rendered, empty inputs, Demo Default Preset options, no sample auto-loaded).
+
+### R6-L6. Banner text says "100 KB" but the limit is 100,000 bytes (FR-7)
+The user-facing banner says "100 KB", which users can reasonably read as 102,400 bytes (100 KiB); the enforced limit is 100,000 bytes. An input of 100,400 bytes is rejected while the banner says the limit is "100 KB".
+**Fix:** change the banner text to "100,000 bytes", or state that the KB wording is deliberate and accept the mismatch.
+
+**Total findings: 11 (blocking 0, medium 5, low 6) — 6 from the subagent review above, 5 added from the specification-quality checklist pass.**
