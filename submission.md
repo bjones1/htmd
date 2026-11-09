@@ -11,7 +11,7 @@ Draft submission
 * Armanzhan Onggarbay: (Armanzhan's contributions)
 * Nurlybek Orynbassar: Wrote the "Whitespace" section of `testing_approach.md` and revised it over four LLM review rounds.
 * Miras Shaltayev: Wrote the initial draft of `testing_approach.md`.
-* Aidyn Tazhibay: (Aidyn's contributions)
+* Aidyn Tazhibay: Wrote the "Escaping" section of `testing_approach.md` and revised it over four LLM review rounds.
 
 ### Compiler test
 
@@ -41,6 +41,10 @@ Claude Opus 5.5 (Claude Code, medium effort) found that the project compiles and
 | Whitespace | 2 | 11 | Leading whitespace in a leading emphasis is not idempotent; code span with a line ending collapses all whitespace; `<pre>` in a cell collapses only in pipe tables; emphasis next to punctuation stays raw HTML; raw inline edges excluded from "does not matter"; rule 2 allows `ENABLE_TABLES` |
 | Whitespace | 3 | 6 | Code spans: trim before the line-ending test; headerless-table `<pre>` writes blank lines as `&#10;` and has the leading-LF bug; item 5 limited to Markdown blocks; lossy-case exception stated against "Known failures" |
 | Whitespace | 4 | 8 | Leading-emphasis bug also at the document root; raw `<code>` keeps collapsed edge whitespace; `<textarea>` and `<pre>` in a list have the leading-LF bug; htmd and pulldown-cmark share one whitespace set |
+| Escaping | 1 | 11 | Code rule limited to Faithful mode; `&lt;<span>div</span>` moved to over-escapes; round trip compared after the Whitespace equivalences and pulldown-cmark's spelling; scope narrowed to text nodes; ATX closing `#` and `!` before a link added |
+| Escaping | 2 | 11 | Over-escape redefined as an escape the position does not need, with both causes; `<` rule stated; `\|` escaped even inside code spans in pipe-table cells; text in an HTML block is not escaped, text in a raw HTML inline is; idempotency reason fixed |
+| Escaping | 3 | 9 | Over-escape after the opening markup of an ATX heading or raw inline; `<` rule points to `escape.rs`; every `\|` in a cell's Markdown is escaped; NBSP and `</ a` near misses; `ENABLE_TABLES` for every pipe-table case |
+| Escaping | 4 | 10 | Code-span delimiter rule corrected; `-` run needs `---` and `- - -` beside `--foo`; list and blockquote markup start a line; form feed added as a closer; near misses for item 5; block-separation failures filed as list bugs |
 
 ### Last LLM review
 
@@ -279,3 +283,141 @@ Findings which were not applied are struck through.
 >   list in that form (E1).
 >
 > The failures the section already lists all reproduce.
+
+#### Escaping
+
+Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Escaping" in testing_approach.md, writing findings to review.md." Each round ran in a new session.
+
+Findings which were not applied are struck through.
+
+> Review: "Escaping" section of testing_approach.md
+> ================================================
+>
+> Method: read the section against `src/dom_walker.rs` (`walk_text`,
+> `escape_if_needed`, `escape_image_marker`), `src/util/escape.rs`,
+> `src/element_handler/headings.rs`, `code.rs` and `table.rs`, then ran every
+> example in the section, plus near misses, through a scratch program which
+> converts in Faithful mode, renders with pulldown-cmark 0.13 and converts again
+> (the three properties). Every example output stated in the section matches the
+> code, except the one in finding 1.
+>
+> Findings, most important first
+> ------------------------------
+>
+> ### 1. Item 6 misstates the code-span delimiter rule (line 95)
+>
+> "a code span or a code fence uses a delimiter run longer than any run in its
+> content" is true for fences only. `get_inline_code_delimiter` picks the
+> shortest backtick run length *absent* from the content, which may be shorter:
+>
+> | HTML                          | Markdown          |
+> | ----------------------------- | ----------------- |
+> | `<p><code>a``b</code></p>`    | `` `a``b` ``      |
+> | `<p><code>a```b`</code></p>`  | ```` ```` a```b` ```` ```` (run 4, since 1 and 3 occur) |
+>
+> CommonMark only needs a run of a *different* length
+> (spec 0.31.2, "Code spans"). For fences, "run" means a run of the fence
+> character (backtick or tilde) and the minimum is three
+> (`get_code_fence_marker`): `<pre><code>~~~\na</code></pre>` gets a ```` ``` ````
+> fence, not a longer tilde one. Also unmentioned: a span whose content starts
+> or ends with a backtick is padded with a space (`<code>`a</code>` gives
+> `` `` `a `` ``). Suggested wording: "a code span uses a backtick run whose
+> length occurs nowhere in its content, padded with a space where the content
+> begins or ends with a backtick; a code fence uses a run of its character
+> longer than any such run in the content, and at least three."
+>
+> ### 2. Rule 3 contradicts item 2 and rule 2 on `-` runs (line 115)
+>
+> "`=`, `~`, `>` and a `-` run need one case each, because what follows them
+> does not change the escape." That holds for `=`, `~`, `>`, but not for a `-`
+> run: `escape_if_needed` escapes it only when the whole text node is `-` and
+> spaces, so `---` gives `\---` and `--foo` gives `--foo`. Rule 2 itself pairs
+> these two. Suggest: "`=`, `~` and `>` need one case each, because what follows
+> them does not change the escape. A `-` run needs `---` and `-- -` beside the
+> near miss `--foo`."
+>
+> ### 3. "Opening markup of its parent" is ambiguous (line 101)
+>
+> The first over-escape bullet says a marker is not at the start of its line
+> when "the opening markup of its parent comes before it". That is true of a
+> leaf block's markup (`# ` of an ATX heading) and of a raw inline's open tag
+> (`<p> <span>- a</span></p>` gives `<span>\- a</span>`), but not of a container
+> block's markup: after `> ` or `*   ` a new block *can* start, so
+> `<ul><li>- b</li></ul>` gives `*   \- b`, and without the backslash the trip
+> gives a nested list. Rule 4 rightly treats list items and blockquotes as line
+> starts, so the bullet only needs to say "the opening markup of an ATX heading
+> or a raw HTML inline". Otherwise a reader may record the needed `*   \- b` as an
+> over-escape.
+>
+> ### 4. Rule 4's "text node after a block sibling" can fail for a reason that is not escaping (line 116)
+>
+> The example `<li><p>a</p> - b</li>` works (`*   a\n\n    \- b`, trip
+> `<p>- b</p>`). With a nested list as the sibling it does not:
+>
+> | HTML                                      | Markdown              | Round trip                                       |
+> | ----------------------------------------- | --------------------- | ------------------------------------------------ |
+> | `<ul><li><ul><li>a</li></ul> - b</li></ul>` | `*   *   a\n    \- b` | `- b` moved into the inner item: `<li>a\n- b</li>` |
+> | `<ul><li><ul><li>a</li></ul>b</li></ul>`    | `*   *   a\n    b`    | same, `<li>a\nb</li>`                            |
+>
+> The second Markdown converts to `*   *   a b`, so idempotency fails too. The
+> escape is correct; htmd writes no blank line after the nested list, so the
+> text is a lazy continuation of the inner item. A test author following rule 4
+> with "any block sibling" would hit this and, by rule 6, call it an escape bug.
+> Suggest naming the siblings to cover (`<p>`, `<blockquote>`, both verified to
+> work) and saying that a failure whose cause is block separation, not a missing
+> escape, is recorded under "Known failures" as a list bug.
+>
+> ### 5. Rule 2 gives no near misses for item 5 (line 114)
+>
+> Every item of "What htmd escapes" has a near miss in rule 2 except item 5.
+> Verified pairs: `<h2>a #</h2>` (`## a \#`) beside `<h2>a#</h2>` (`## a#`,
+> no space so no closing sequence), and `!<a href="x">a</a>` (`\![a](x)`)
+> beside `!<em>a</em>` (`!*a*`). Also worth a case: `<h1>a #</h1>` in
+> `HeadingStyle::Setex` gives `a #\n===`, since a closing sequence exists only
+> in an ATX heading.
+>
+> ### 6. Rule 3's list of closers omits the form feed (line 115)
+>
+> The Whitespace section counts form feed as HTML whitespace, and
+> `compress_whitespace` turns it into a space before the check, so
+> `<p>-&#12;b</p>` gives `\- b` (verified for `-`, `#` and `1.`). Either add it
+> to "a space, a tab, a line ending and the end of the text", or say "each kind
+> of HTML whitespace". A near miss worth adding: U+000B is not HTML whitespace,
+> and `<p>-&#11;b</p>` gives `-\u{b}b`, correctly unescaped.
+>
+> ### 7. The intro's list of unescaped HTML blocks is incomplete (line 86)
+>
+> "Text which htmd writes as an HTML block (`<div>`, raw `<pre>`, a table
+> without a header row)" reads as exhaustive. A `<p>` holding a comment is also
+> written as an HTML block: `<p><!-- c -->- a</p>` comes out unchanged, with no
+> escape. Adding "for example" or "and any element htmd falls back to raw HTML
+> for" would stop a test author from expecting `\-` there.
+>
+> Minor
+> -----
+>
+> * Line 86 says the section "applies to text nodes", but items 4 and 5 act on
+>   a cell's or a heading's whole Markdown (`<h1>a <em>b</em> #</h1>` gives
+>   `# a *b* \#`, the `#` run spanning no single text node's role), and item 6
+>   on code. "applies to text, and to the Markdown htmd writes around it in
+>   Faithful mode" would be accurate.
+> * ~~"Over- and under-escaping" defines an over-escape in its first sentence and
+>   again in the last bullet. The two bullets could move to the top, replacing
+>   the first paragraph's definition, so each term is defined once.~~
+> * ~~Item 1 could add `` ` `` to the example of what its escapes also prevent:
+>   a ```` ``` ```` text node gives ```` \`\`\` ```` and opens no fence.~~
+>
+> Checked and correct
+> -------------------
+>
+> All of these match the code and round-trip with idempotency intact:
+> `a <u>\*b\*</u>`, `\* a`, `\_\_\_`, `#\nfoo` → `\# foo`, `\<pre`,
+> `# a \#`, `\![a](x)`, ``` ``a`b`` ```, `a *b*\- c`, `# \# a`, `\#*b*`,
+> `\#######`, `1234567890\.`, `<p>-\tfoo</p>` → `<p>- foo</p>\n`,
+> `a \& b` → `<p>a &amp; b</p>\n`, the near misses `1.)`, `2½.`, `-&nbsp;a`,
+> `</ a`, `<123>`, `--foo`, `<p> 1. foo</p>` → `1\. foo`,
+> `<li><p>a</p> - b</li>`, `<h2>- a</h2>` in ATX (`## \- a`) and Setext
+> (`\- a\n----`), pipe cells (`a\|b`, `` `a\|b` ``, `<u>\|</u>`, `\- a` and
+> `\# b` in cells), `$` with `ENABLE_MATH`, and `~~` after the start of a text
+> node left unescaped. Raw `<pre>`, `<div>` and header-less tables are not
+> escaped.
