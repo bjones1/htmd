@@ -50,32 +50,34 @@ A test states whether whitespace is significant. This section applies to `Transl
 
 HTML whitespace is U+0020, tab, line feed, form feed and carriage return. Other spaces, such as U+00A0, are text to the HTML parser, which never collapses them. htmd trims the edges of emphasis more widely (item 7 below).
 
+Where this section calls a case lossy and `translation_approach.md` has no section which explains the loss, the test gives the reason itself.
+
 #### Where whitespace matters
 
-1. **Preformatted text.** Raw `<pre>` is written as an HTML block and keeps its spaces, tabs and blank lines. The HTML parser drops one line feed directly after `<pre>` and htmd does not write one back, so `<pre>\n\na</pre>` loses a line ending (a known failure). `<pre><code>` is written as a fenced code block, which keeps spaces and tabs but ends its content with a line ending, so `<pre><code>a</code></pre>` comes back as `<pre><code>a\n</code></pre>\n` (lossy). A `<pre>` in an inline context, such as a table cell, is written as a raw inline and its line endings become spaces (see `translation_approach.md`).
-2. **Code spans.** `<code>` is not preformatted. Runs of spaces and tabs are kept, a line ending collapses to a space (htmd then writes a raw `<code>` inline, and converting that again gives a backtick span, so the case is not idempotent), and edge spaces are dropped (lossy).
+1. **Preformatted text.** Raw `<pre>` is written as an HTML block and keeps its spaces, tabs and blank lines, and `\r\n`, `\r` and `\n` are the same inside it. The HTML parser drops one line feed directly after `<pre>` and htmd does not write one back, so `<pre>\n\na</pre>` loses a line ending on each pass (a bug, not idempotent). `<pre><code>` is written as a fenced code block, which keeps spaces and tabs but ends its content with a line ending, so `<pre><code>a</code></pre>` comes back as `<pre><code>a\n</code></pre>\n` (lossy). A `<pre>` in a pipe-table cell or a heading is a raw inline, and all its whitespace collapses to single spaces (see `translation_approach.md`). A table without a header row is an HTML block, which keeps the `<pre>` as it is.
+2. **Code spans.** `<code>` is not preformatted. A span without a line ending keeps runs of spaces and tabs, and loses its edge spaces, tabs and line endings (lossy). A form feed or U+00A0 at the edge is kept. A span with a line ending, or holding only whitespace, is written as a raw `<code>` inline, and all its whitespace collapses to single spaces. The first of these is not idempotent, because converting the raw inline again gives a backtick span.
 3. **Indentation.** Four leading spaces start an indented code block, and indentation inside list items decides nesting. Tests cover a list item with several blocks, a nested list, and a code block inside a list item, each with the exact indentation. A leading run of U+00A0 is not indentation.
 4. **Line breaks.** In Faithful mode `<br>` is written as the raw tag `<br>`, and the round trip returns `<br>`. Spaces around it survive (`a <br> b`). htmd writes no CommonMark hard break, so a line ending in its output is never a hard break (see `translation_approach.md`).
-5. **Line endings in text.** Inside a block, a line ending in HTML text becomes one space. htmd writes neither a soft break nor a blank line there. A blank line appears only between blocks.
-6. **Delimiters.** Emphasis and strong emphasis cannot touch whitespace inside their delimiters, so htmd moves edge whitespace outside them, and the round-trip DOM differs from the input (lossy). Links can hold edge whitespace, and htmd keeps it inside the brackets. An emphasis holding only whitespace stays raw HTML.
-7. **Unicode spaces.** U+00A0 is kept as text. CommonMark counts Unicode whitespace for flanking, and htmd trims with Rust's `White_Space`, so an edge U+00A0 or U+2003 moves out of emphasis like an ASCII space (lossy). In a link it stays inside the brackets.
-8. **Table cells.** A cell cannot hold a line ending. Tests use `assert_faithful_options` with `ENABLE_TABLES`, because the default options do not parse tables. A line ending in a cell becomes a space, `<br>` stays raw, leading and trailing cell whitespace is dropped, and several blocks in a cell are written as raw HTML.
+5. **Line endings in text.** Inside a block, a line ending in HTML text becomes one space. htmd writes neither a soft break nor a blank line in text. A blank line appears only between blocks.
+6. **Delimiters.** Emphasis and strong emphasis cannot touch whitespace inside their delimiters, so htmd moves edge whitespace outside them, and the round-trip DOM differs from the input (lossy). This does not apply when the trimmed content starts or ends with punctuation: the element stays raw HTML with its whitespace inside. Leading whitespace in an emphasis which starts a `<p>` or a `<blockquote>` stays as a leading space in the Markdown, and converting the rendered HTML again drops it (`<p><em> b</em></p>` is a bug, not idempotent). Links can hold edge whitespace, and htmd keeps it inside the brackets. An emphasis holding only whitespace stays raw HTML.
+7. **Unicode spaces.** U+00A0 is kept as text. pulldown-cmark counts Unicode whitespace for flanking, and htmd trims with Rust's `White_Space` (which also has U+0085, U+2028 and U+2029), so an edge U+00A0 or U+2003 moves out of emphasis like an ASCII space (lossy). In a link it stays inside the brackets.
+8. **Table cells.** In a pipe table (one with a header row) a cell cannot hold a line ending. Tests use `assert_faithful_options` with `ENABLE_TABLES`, because the default options do not parse tables. A line ending in a cell becomes a space, `<br>` stays raw, leading and trailing cell whitespace is dropped, and several blocks in a cell are written as raw HTML. A table without a header row is an HTML block, and its cell whitespace is copied as it is.
 
 #### Where whitespace does not matter
 
-In text content, outside `<pre>`, `<textarea>`, `<code>`, attribute values and content written as an HTML block:
+In text content, outside `<pre>`, `<textarea>`, `<code>`, attribute values, content written as an HTML block, and the edges of raw HTML inlines (`a <span> b</span>` and `a <span>b</span>` give different Markdown):
 
 1. A run of HTML whitespace, form feed included, is equivalent to one space.
 2. Whitespace between block elements is ignored.
-3. Leading and trailing whitespace of a block (`<p>`, `<h1>`, `<li>`, `<td>`) is dropped.
-4. `\r\n`, `\r` and `\n` are the same, inside `<pre>` too.
+3. Leading and trailing whitespace of a block (`<p>`, `<h1>`, `<li>`, `<td>`) is dropped, except for the leading emphasis case in item 6 above.
+4. `\r\n`, `\r` and `\n` are the same.
 
 Whitespace between inline elements does matter (`<em>a</em> <em>b</em>` is not `<em>a</em><em>b</em>`), so a pair of inputs under these rules never varies it.
 
 #### Rules for tests
 
 1. Write expected Markdown and expected round-trip HTML with the exact whitespace the code produces. Never trim or normalize an expected string to make a test pass.
-2. For each item under "does not matter", add two inputs which differ only in that whitespace. Both call `assert_faithful` with the same expected Markdown and the same expected round-trip HTML.
+2. For each item under "does not matter", add two inputs which differ only in that whitespace. Both call `assert_faithful` (or `assert_faithful_options` with the same options, where item 8 requires it) with the same expected Markdown and the same expected round-trip HTML.
 3. Write invisible characters as escapes (`\t`, `\r\n`, `\u{a0}`), so a reader sees them.
 4. A whitespace case which fails a property is recorded as described in "Known failures".
 
