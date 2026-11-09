@@ -44,37 +44,41 @@ page-to-markdown: converted the saved Hacker News page in 25ms and the Wikipedia
 
 None of this changed your working tree. Your existing edits in pulldown-cmark-htmd-demo-2/ are still there and uncommitted.
 
-#### Bob
+#### Daniil
 
 (Summarized LLM output)
 
-#### Victoria
+#### Ademi
 
 (Summarized LLM output)
 
-#### Zara
+#### Aruzhan
 
 (Summarized LLM output)
 
 ### Spec review rounds
 
-(Table showing spec review rounds)
+| round | findings | main changes made |
+|---|---|---|
+| 1 | 15 | fixed version mismatch, number input clamping, deployment url, CI job mismatch|
 
 ### Last LLM review
 
-(LLM and prompt used)
+Prompting Claude Opus 5.5, Medium effort with:
+> Review a spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Find logical inconsistencies. DO not change any files yet.
 
-(LLM output, possibly with strikethrough)
+LLM output on last review:
+> 
 
-Final submission
+Final submission (Excluding implementation, as discussed at the 1-to-1 and group calls)
 ----------------
 
 ### Contributions
 
-* Andy: (Andy's contributions)
-* Bob: (Bob's contributions)
-* Victoria: (Victoria's contributions)
-* Zara: (Zara's contributions)
+* Daniil: Initial spec draft, wasm-markdown exploration, commonmark exploration, leptos exploration.
+* Ademi: (Ademi's contributions)
+* Aruzhan: (Aruzhan's contributions)
+* Alisher: (Alisher's contributions)
 
 ### Spec review rounds
 
