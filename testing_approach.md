@@ -7,7 +7,7 @@ Contributions
 * Miras Shaltayev: wrote the initial draft of this document.
 * Armanzhan Onggarbay: 
 * Nurlybek Orynbassar: wrote the "Whitespace" section.
-* Aidyn Tazhibay:
+* Aidyn Tazhibay: wrote the "Escaping" section.
 
 Every test of a translation checks two things: the Markdown which htmd writes, and that this Markdown renders as the HTML it came from. The second check is a round trip, and `round_trip` in `tests/common/mod.rs` performs it. Today most tests make only the first check, so a test can pass while the Markdown means something else to pulldown-cmark.
 
@@ -78,3 +78,31 @@ Whitespace between inline elements does matter (`<em>a</em> <em>b</em>` is not `
 2. For each item under "does not matter", add two inputs which differ only in that whitespace. Both call `assert_faithful` with the same expected Markdown and the same expected round-trip HTML.
 3. Write invisible characters as escapes (`\t`, `\r\n`, `\u{a0}`), so a reader sees them.
 4. A whitespace case which fails a property is recorded as described in "Known failures".
+
+### Escaping
+
+htmd writes a backslash, or a character reference, where text from the HTML would otherwise read as Markdown syntax. An escape test checks that the text comes back as the same text in the same block. This section applies to `TranslationMode::Faithful`.
+
+#### What htmd escapes
+
+1. **Inline specials.** `\`, `&`, `*`, `_`, `` ` ``, `[`, `]` and `$` are escaped wherever they appear in a text node. `$` has a meaning only to pulldown-cmark's math extension.
+2. **Block markers.** At the start of a text node, `=`, `~` and `>` are always escaped. `-`, `+`, `#` and an ordered item's `.` or `)` are escaped when a space or the end of the text node closes them (`\# a`, `\-`, `1\. a`). A `-` run is escaped when it could be a thematic break or a setext underline (`\---`, `\- - -`), but `--foo` is not. A line ending or a tab after a marker is first compressed to a space, so `#\nfoo` is escaped like `# foo`.
+3. **HTML-like text.** A `<` which could open raw HTML or an autolink is escaped (`\<div`), including one which an inline sibling completes (`&lt;<span>div</span>`).
+4. **Table cells.** A `|` in a cell is written as `\|`.
+5. **Code.** Text in `<code>` and `<pre><code>` is not escaped. Only a fence-like `` ` `` or `~` at the start of `<pre>` text is.
+
+#### Over- and under-escaping
+
+htmd decides on block markers one text node at a time, and a text node cannot see what follows it on the line. So htmd escapes some text which opens nothing: `#######` (seven `#` open no heading) and the `#` in `<p>a <em>b</em>#</p>`. A backslash reads back as the character it escapes, so the round trip still holds.
+
+* An **under-escape** is a missing escape which lets text open a heading, list, blockquote, emphasis, link, math span or raw HTML. It changes the round-trip HTML, and it is a bug.
+* An **over-escape** changes only the Markdown. It is not a failure: the test asserts the escaped Markdown and gives a one-line reason, as "Known failures" describes.
+
+#### Rules for tests
+
+1. Each escape case calls `assert_faithful`, which checks the round trip first, so a broken escape reports the block it opened rather than a different string. The expected round trip is the text unchanged in its block, for example `<p>#</p>\n` for `<p>#</p>`.
+2. Pair each escaped case with a near miss which needs no escape: `#x` beside `#`, `--foo` beside `---`, `1.)` beside `1.`, `2½.` beside `2.`, and `a <em>b</em> - c` beside `- c`.
+3. For each block marker, cover each way to close it: a space, a tab, a line ending and the end of the text. Also cover the marker behind leading whitespace (`<p> 1. foo</p>`).
+4. Cover each place where a text node can start a line: a paragraph, a list item, a blockquote and a setext heading (`HeadingStyle::Setex`). Also cover a table cell, where a block marker opens nothing, so its escape is an over-escape.
+5. Read the round trip with the pulldown-cmark option which gives a character its meaning, or the trip cannot catch a missing escape: `ENABLE_MATH` for `$`, and `ENABLE_TABLES` for `|`. These tests call `assert_faithful_options`.
+6. An escape case which fails idempotency is a bug, since an escaped character comes back as plain text, which htmd escapes again in the same way.
