@@ -11,6 +11,8 @@ use crate::{
     },
 };
 
+const MAX_ORDERED_MARKER: usize = 999_999_999;
+
 pub(super) fn list_handler(handlers: &dyn Handlers, element: &Element) -> Option<HandlerResult> {
     // In faithful mode, ...
     if handlers.options().translation_mode == TranslationMode::Faithful {
@@ -72,16 +74,33 @@ struct ListChildContent {
     is_li: bool,
 }
 
+fn ordered_list_start(value: &str) -> usize {
+    let digits = value.strip_prefix('+').unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return 1;
+    }
+
+    digits
+        .bytes()
+        .fold(0usize, |number, digit| {
+            number
+                .saturating_mul(10)
+                .saturating_add(usize::from(digit - b'0'))
+                .min(MAX_ORDERED_MARKER + 1)
+        })
+        .max(1)
+}
+
 fn get_ol_content(handlers: &dyn Handlers, element: &Element) -> (String, bool) {
     let mut buffer: Vec<ListChildContent> = Vec::new();
-    let mut li_count = 0;
+    let mut li_count = 0usize;
     let mut all_translated = true;
 
     let start_idx = element
         .attrs
         .iter()
         .find(|attr| &attr.name.local == "start")
-        .map(|attr| attr.value.to_string().parse::<i32>().unwrap_or(1).max(1) as usize)
+        .map(|attr| ordered_list_start(&attr.value))
         .unwrap_or(1);
 
     for child in element.node.children.borrow().iter() {
@@ -108,8 +127,21 @@ fn get_ol_content(handlers: &dyn Handlers, element: &Element) -> (String, bool) 
         }
     }
 
-    // `start_idx` is one-based, not zero-based
-    let highest_index = start_idx + li_count - 1;
+    let highest_index = start_idx.saturating_add(li_count.saturating_sub(1));
+    if highest_index > MAX_ORDERED_MARKER
+        && handlers.options().translation_mode == TranslationMode::Faithful
+    {
+        return (String::new(), false);
+    }
+
+    let start_idx = if highest_index > MAX_ORDERED_MARKER {
+        1
+    } else {
+        start_idx
+    };
+    let highest_index = start_idx
+        .saturating_add(li_count.saturating_sub(1))
+        .min(MAX_ORDERED_MARKER);
 
     let mut curr_li_idx = start_idx - 1;
 
@@ -117,7 +149,7 @@ fn get_ol_content(handlers: &dyn Handlers, element: &Element) -> (String, bool) 
     let mut contents = String::with_capacity(capacity);
     for content in buffer {
         let rendered = if content.is_li {
-            curr_li_idx += 1;
+            curr_li_idx = curr_li_idx.saturating_add(1).min(MAX_ORDERED_MARKER);
             add_ol_li_marker(
                 handlers.options(),
                 &content.text,

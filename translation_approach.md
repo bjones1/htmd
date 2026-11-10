@@ -444,6 +444,141 @@ Approach:
       begins with `<p>`, serialize it as HTML. Otherwise, leave it as
       CommonMark. Combine each list item with an intervening newline.
 
+### Tasks
+
+Task lists are translated to GitHub Flavored Markdown using HTML's `<ul>` (or
+`<ol>` for ordered lists) and `<li>` tags to designate lists and list elements
+(tasks), respectively. This frames each of the tasks of the task list as
+parsable, bulleted elements.
+
+Checkboxes, another element of task lists, are also accounted for when
+translating HTML to GitHub Flavored Markdown. Checkboxes represent completion
+indicators regarding tasks. When placed between the `<li>` tags, the `<input
+type="checkbox">` element denotes a checkbox preceding the task description and
+represents the completion of the task listed within the `<li>` element. To mark
+the box as checked, a `checked` flag must be present to classify the input as
+checked and mark the task completed. When translating to GFM syntax, an almost
+identical approach is used with marked and unmarked checkboxes both being
+represented with `[x]` and `[ ]` symbols respectively.
+
+To summarize, htmd's translation behavior for task lists is as follows:
+
+| Description                                             | HTML in                                                                                                                                   | Pure expected                                                 |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Unchecked box                                           | `<ul> <li><input type="checkbox"> Complete report</li></ul>`                                                                              | `- [ ] Complete report`                                       |
+| Checked box                                             | `<ul> <li><input type="checkbox" checked> Complete report</li></ul>`                                                                      | `- [x] Complete report`                                       |
+| Nested task                                             | `<ul><li> <input type="checkbox"> Homework <ul> <li><input type="checkbox" checked> Draft paper </li></ul></li></ul>`                     | `- [ ] Homework⏎␣␣- [x] Draft paper`                          |
+| Mixed list                                              | `<ul><li><input type="checkbox" checked> Write report</li><li>Submit materials</li><li><input type="checkbox"> Review feedback</li></ul>` | `- [x] Write report⏎- Submit materials⏎- [ ] Review feedback` |
+| Ordered list                                            | `<ol> <li><input type="checkbox" checked> Complete report</li> <li><input type="checkbox"> Review report </li></ol>`                      | `1. [x] Complete report⏎2. [ ] Review report`                 |
+| Formatted lists                                         | `<ul> <li><input type="checkbox" checked> Read <strong>chapter 3</strong></li> </ul>`                                                     | `- [x] Read **chapter 3**`                                    |
+| Element with `<p>` wrapper                              | `<ul> <li><p><input type="checkbox"> Complete report</p></li></ul>`                                                                       | `- [ ] Complete report`                                       |
+| Checkbox after task                                     | `<ul> <li> Complete report <input type = "checkbox"></li></ul>`                                                                           | `- Complete report`                                           |
+| Two checkboxes in a single element (not nested element) | `<ul> <li><input type="checkbox"> <input type="checkbox"> Complete report</li></ul>`                                                      | `- Complete report`                                           |
+
+Regarding Faithful and Pure mode differences, when Pure mode is activated, any
+attributes that are not related to the task description or the formatting of the
+HTML and GFM are discarded as any attributes besides the task description and
+formatting are not considered relevant. In Faithful mode, attributes that Pure
+mode may discard are preserved through HTML. This extends to `<p>` wrappers. If
+GFM is not able to accurately represent additional attributes, Faithful mode
+falls back to using regular HTML. Task marker insertion is also determine by
+default marker selection and spacing normalization settings.
+
+It should be noted that settings such as `bullet_list_marker` and
+`ul_bullet_spacing` are required for task list formatting. In the above test
+cases, it is assumed that `bullet_list_marker` is set to
+`BulletListMarker::Dash`, `ul_bullet_spacing` is set to `1` and
+`ol_number_spacing` is set to `1`. Other configurations should retain their
+existing behavior, although even when the configured spacing is unsuitable, task
+list output remains valid GFM. It should also be noted that although the above
+test cases utilize `-` dash symbols to signify task elements in Markdown, htmd
+and GitHub Flavored Markdown provide many different symbols to denote task and
+list elements such as asterisks and plus signs.
+
+An ordered list whose emitted numbers would exceed nine digits is preserved as
+HTML in Faithful mode. Pure mode restarts numbering at `1` so every marker
+remains valid GFM. This also applies to numeric `start` values too large to fit
+in a machine integer.
+
+Approach:
+
+* To identify a task list, htmd recognizes task list items by the task contained
+  within `<li>` tags as well as the presence of `<input type = "checkbox">` tags
+  within `<li>` elements followed by task descriptions. `<li>` elements
+  containing paragraph `<p>` wrappers around the task description and checkbox
+  tag are also considered valid. Recognition is conducted on an element by
+  element basis.
+
+* If a list element is determined to not represent a task list element, it is
+  judged using the standard list conversion rules described in this
+  specification.
+
+* When determining an element's completion status, the presence of the
+  `"checked"` flag is checked. If this flag is absent, the task is deemed
+  incomplete.
+
+* Task descriptions and nested list structure/indents are preserved.
+
+* A list element with the task positioned before the
+  `<input    type="checkbox">` tag is not considered a task element and the
+  checkbox tag is disregarded. In Pure mode, the checkbox will be discarded and
+  the element will be treated as a regular list element. In Faithful mode, the
+  checkbox will remain, but the element will still be treated as a regular
+  element.
+
+* A task checkbox is replaced by the GitHub Flavored Markdown task marker rather
+  than emitted a second time as raw HTML. Checkboxes that do not qualify do not
+  cause the element to be converted into a task. Instead, the regular list
+  (`-`,`*`,`1.`) marker is placed at the beginning of the list item's first
+  paragraph.
+
+* As for leading indentations, they are just considered to be whitespace and do
+  not affect recognition of task list elements. Recognition uses the same ASCII
+  whitespace classification as text conversion, including form feeds.
+
+* Task markers are finalized after the first paragraph's description has been
+  converted, including descriptions generated by custom handlers from empty
+  elements. Empty HTML wrappers, comments, whitespace, and Pure-mode hard breaks
+  alone cannot supply a description. If no description remains, Pure mode
+  discards the checkbox and Faithful mode preserves its HTML. Later paragraphs
+  and nested lists cannot supply the missing description; this includes
+  paragraphs introduced by blank lines in custom handler output.
+
+* As for multiple checkboxes within a single `<li>` element, they are not
+  considered valid or to be task list elements as task list elements only
+  require a single checkbox. It should be noted however that this rule does not
+  apply to nested, or parent-child list elements as these are evaluated
+  separately. Only elements with checkboxes belonging to the first paragraph
+  should influence that classification of the element as part of a task list.
+
+In general, the classification for task list items is as follows:
+
+```
+Examine list item's initial content
+            |
+            v
+Determine checkbox eligibility
+            |
+    +-------+-------+
+    |               |
+ Eligible       Not eligible
+    |               |
+    v               v
+Determine state   Ordinary list
+    |            conversion
+    v
+Generate list marker
+    |
+    v
+Convert task description
+    |
+    v
+Finalize [x] or [ ] marker
+    |
+    v
+Preserve nested-list structure
+```
+
 Inlines
 -------
 
@@ -732,3 +867,145 @@ its ends lie in math mode, where whitespace has no significance, and condition 3
 catches the one significant trailing whitespace, a control space. LaTeX reads a
 single newline as a space, and math mode ignores the space which replaces a
 comment, so only a comment in text mode renders differently (see step 1).
+
+### Fuzzer
+
+htmd is fed HTML that authors and browsers do not always keep well-formed.
+A fuzzer searches for inputs that make translation panic, hang, or disagree
+with this document. It is not a syntax checker for the caller's HTML:
+`html5ever` already parses garbage into a DOM. The fuzzer checks *htmd*.
+
+The two components are the **generator** (inputs) and the **oracle** (what
+counts as a bug). One run uses a single crate API. The default run is
+`TranslationMode::Faithful`, matching this document and `tests/common/mod.rs`:
+
+    HtmlToMarkdown::builder()
+        .options(Options {
+            translation_mode: TranslationMode::Faithful,
+            ..Options::default()
+        })
+        .build()
+        .convert(&str)
+
+`htmd::convert(&str)` uses `Options::default()`, whose mode is
+`TranslationMode::Pure`. The default fuzzer run is Faithful only. Start a
+Pure run only to check a specification-table row (not the generator table)
+that has a Pure expected column. Do not go through the CLI or the network.
+The 2-second timeout may use a thread or a child of the test binary, not
+the `htmd` CLI. Seed the corpus from HTML string literals in `tests/*.rs`
+and from this document's **specification tables**: feature sections whose
+tables pair an HTML (or Input) column with an Expected column for
+Faithful mode. Do not seed from the generator table in this section or
+from tables that only document edge cases without Expected output.
+
+#### Generator
+
+Two streams. Both are UTF-8 strings passed to `convert`. Cap each input at
+64 KiB. Produce at least 10,000 cases per run, mixing the streams; a shorter
+CI job may cap **wall-clock time** for the whole fuzz run instead of count
+(five minutes total, then stop). The per-input oracle timeout remains 2
+seconds.
+
+1. **Structured HTML.** Build a small DOM as nested tags drawn from the
+   elements this document specifies (`h1`–`h6`, `p`, `br`, `hr`, `em`,
+   `strong`, `a`, `img`, `code`, `pre`, `blockquote`, `ul`/`ol`/`li`,
+   `table`/`thead`/`tbody`/`tr`/`th`/`td`, `span` with math classes, and
+   elements this document writes as raw HTML). Fill text nodes from a pool
+   of ASCII, combining marks, `$`, `|`, `*`, `_`, `` ` ``, `<`, `&`, and
+   newlines. Serialize text-node content with HTML escaping (`<` as `&lt;`,
+   `&` as `&amp;`). The Ampersand row's `"<p>&amp;</p>"` payload is already
+   escaped; do not double-escape it to `&amp;amp;`. Generator-table payloads
+   whose Oracle column names Stream 1 are emitted verbatim, including
+   `"<p>3 < 4</p>"` (raw `<` in text). Nest at most 8 levels. Do not nest
+   `<a>` in `<a>`; nested anchors belong to stream 2. The fragment's root is
+   an element that html5ever parses under `<div>` without changing that
+   element's identity (`p`, `table`, `ul`, `pre`, …). Do not emit a bare
+   `td`/`tr`/`th`/`li` as the stream 1 root; those belong to stream 2, as in
+   the generator table. This stream is the one that may be checked for
+   “valid HTML”: every open tag that this generator emits is closed,
+   attributes are quoted, and the snippet is a fragment (no required
+   `<html>`/`<body>` wrapper). Validity here means *the generator's own
+   grammar*, not “the browser would accept it.”
+
+2. **Broken and random.** Mutate stream 1 and also emit raw bytes
+   interpreted as UTF-8 (replacement character on invalid sequences):
+   truncated tags, extra `</div>`, unquoted attributes, nested `<a>`,
+   `<table>` inside `<p>`, NUL (`\0`), empty input, very deep nesting
+   (then reject above 8 for structured; broken stream may go to 32 and
+   must still not stack-overflow), and the generator table below.
+
+Mutations operate on the string, not on a parsed DOM. A tag-delimited
+substring is an opening tag through its matching closer in the seed
+string. Void elements (`br`, `hr`, `img`) count as opening tag through
+end of tag with no closer. Operations on a seed: delete a byte slice, insert a tag or
+character from the pool, duplicate a tag-delimited substring, swap two
+adjacent tag-delimited sibling substrings, replace a named character
+reference with its raw character or the reverse. If the seed has no
+matching closer, skip duplicate and sibling-swap; still apply delete,
+insert, and named-reference replace.
+
+#### Oracle
+
+**Stream class at check time:** label an input **Stream 1** if it satisfies
+the structured HTML grammar in Generator stream 1 above (regardless of
+whether stream 2 mutations produced it). All other inputs are **Stream 2**.
+
+Call `convert` in a thread or a child of the test binary with a 2-second
+timeout per input. Classify the result in this order; the first match is
+the finding:
+
+| Priority | Result | Finding? |
+| --- | --- | --- |
+| 1 | Process abort, panic, or timeout | **Yes.** Save the input. |
+| 2 | `convert` returns `Err` | **Yes.** `html_to_tree` currently always returns `Ok`, so `convert` does not return `Err`. This document names no input as an expected `io::Error`. A panic inside parsing or walking is still priority 1. |
+| 3 | Stream 1, and the input equals (or normalizes to) an HTML cell in a specification table with Expected output, or appears in `tests/translation_approach_tests.rs` | **Yes** if Markdown ≠ Faithful expected (or the Pure column when the run set `TranslationMode::Pure`). Generator-table rows alone do not trigger priority 3 unless the same payload also appears in such a specification table. |
+| 4 | Stream 1, not covered by priority 3 | Write Faithful Markdown, then `render_markdown` from `tests/common/mod.rs`. Parse the **input** HTML and that round-trip HTML as fragments with `html5ever`, using `<div>` as the context element for both. **Yes** if those DOM fragments are not equivalent: same local tag names in the same child order, same text in text nodes (no trimming or newline collapse), same attribute local names and values on each element; ignore parser-inserted document wrappers, attribute order among siblings, and implied `<tbody>`. Do not strcmp the `round_trip` source string, and do not demand byte-identical Markdown. |
+| 5 | Stream 2 (broken HTML) | Only priorities 1–2. There is no unique “correct Markdown” for garbage. |
+
+Do not flag a difference from turndown.js unless the case already lives in
+`tests/turndown_cases_tests.rs`. htmd's Faithful mode is specified here, not
+by turndown.
+
+#### HTML the generator must include
+
+Quoted cells are the generator payload, not a Markdown example. If a payload
+appears in this table, this row's Oracle column wins over stream 1 vs 2
+classification.
+
+| Kind | Example payload | Oracle |
+| --- | --- | --- |
+| Empty | `""` | Must return `Ok`; panic, timeout, abort, or `Err` is a finding |
+| Whitespace only | `"   \n\t"` | Must return `Ok`; panic, timeout, abort, or `Err` is a finding |
+| Unclosed tag | `"<p>hello"` | Priority 1–2 only |
+| Extra closer | `"hello</p>"` | Priority 1–2 only |
+| Nested anchors | `"<a href=a><a href=b>x</a></a>"` | Priority 1–2 only |
+| Unquoted attr | `"<a href=http://x y>z</a>"` | Priority 1–2 only |
+| NUL | `"<p>a\0b</p>"` | Priority 1–2 only |
+| Comment / CDATA | `"<!-- <h1> -->"`, `"<![CDATA[ a ]]>"` | Priority 1–2; if the payload also appears in this document's specification tables, use that expected output |
+| Raw `<` in text | `"<p>3 < 4</p>"` | Stream 1 if wrapped in a complete `p`; else 1–2 |
+| Ampersand | `"<p>a&b</p>"`, `"<p>&amp;</p>"` | Stream 1 for `&amp;`; broken for lone `&` |
+| Table fragment | `"<td>x</td>"` | Priority 1–2 only |
+| Math span | `"<span class=\"math math-inline\">$</span>"` | Stream 1; expected follows the Math section |
+| Huge attribute | `"<p id=\""` + 10,000 `a`s + `"\">x</p>"` | Truncate to 64 KiB; still no panic |
+
+#### Run
+
+From the crate root of this git repo (Rust stable, same as CI):
+
+```
+cargo test
+cargo build
+```
+
+The fuzzer itself is a later binary or `cargo test` target; this section is
+the spec for that target. A fuzzer finding is added to the existing test
+tables as an `#[ignore]` test until the bug is confirmed fixed; it must not
+disappear as a silent log line. `cargo test` (without `--ignored`) must keep
+passing.
+
+Non-goals: mutating Markdown (htmd reads HTML); fuzzing `html5ever` in
+isolation; a second HTML parser as a “validator” of stream 2; claiming
+complexity bounds; language detection; I/O other than the `convert`
+`Result`.
+
+
