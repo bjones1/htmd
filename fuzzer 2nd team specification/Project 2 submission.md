@@ -2,11 +2,9 @@ Project 2 submission
 ====================
 
 Team members are Altynay Kishkenebayeva, Aiym Saparkha,
-<span id="author-1794145613557" class="fui-StyledText ___s8pl3v0 fz5stix f1a3p1vp f1cmbuwj" dir="auto">Daulet
-Bakytkhanov</span>,
-<span id="author-1794145678874" class="fui-StyledText ___s8pl3v0 fz5stix f1a3p1vp f1cmbuwj" dir="auto">Ali
-Zhumatayev</span>. The specification consists of the file
-[fuzzer-spec.md](fuzzer-spec.md).
+<span id="author-1794145613557">Daulet Bakytkhanov</span>,
+<span id="author-1794145678874">Ali Zhumatayev</span>. The specification
+consists of the file [fuzzer-spec.md](fuzzer-spec.md).
 
 Draft submission
 ----------------
@@ -14,9 +12,11 @@ Draft submission
 ### Contributions
 
 * Altynay: Run the first 4 rounds of LLM reviews with constant updates
-* Aiym: 
+* Aiym: Updated section 9 in round 5
 * Daulet: Generated initial specification
-* Ali: Specified the input generator — grammar, element tiers, attribute and text domains, bounds, the malformed class, and the case-count breakdown — and fixed the list snapshot, `code` opacity, and `Out of Scope` classification
+* Ali: Specified the input generator — grammar, element tiers, attribute and
+  text domains, bounds, the malformed class, and the case-count breakdown — and
+  fixed the list snapshot, `code` opacity, and `Out of Scope` classification
 
 ### Compiler test
 
@@ -38,7 +38,12 @@ worker isolation.
 
 #### Aiym
 
-(Summarized LLM output)
+Section 9 improves the specification by fixing the list snapshot and defining a
+bounded valid-core HTML generator, text pool, escaping, size limits, seed
+replay, and generator self-tests. Coverage remains narrow: GFM and
+malformed-input generation are undefined, and only 5,000 of the planned 15,000
+cases are specified. It is actionable for the valid-core subset, but not for the
+full fuzzing campaign.
 
 #### Daulet
 
@@ -46,17 +51,24 @@ worker isolation.
 
 #### Ali
 
-The project compiled and passed all three CI commands from `AGENTS.md`: `cargo build` with no errors, `cargo clippy -- --deny warnings` with no warnings, and `cargo test` with 262 passed, 0 failed, 1 ignored across 13 test groups including doctests. The examples also ran: `simple` exited 0, `table` printed a correct Markdown table, and `page-to-markdown` converted the Hacker News page in 15 ms and the Wikipedia page in 282 ms. Toolchain was cargo and rustc 1.99.1; the working tree stayed clean, since the two output files the last example writes are git-ignored.
+The project compiled and passed all three CI commands from `AGENTS.md`: `cargo
+build` with no errors, `cargo clippy -- --deny warnings` with no warnings, and
+`cargo test` with 262 passed, 0 failed, 1 ignored across 13 test groups
+including doctests. The examples also ran: `simple` exited 0, `table` printed a
+correct Markdown table, and `page-to-markdown` converted the Hacker News page in
+15 ms and the Wikipedia page in 282 ms. Toolchain was cargo and rustc 1.99.1;
+the working tree stayed clean, since the two output files the last example
+writes are git-ignored.
 
 ### Spec review rounds
 
-| Round | Findings (issues) | Summary and round-4 status                                                                                                                                                                                            |
-| ----- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | 10                | Identified missing round-trip checks, configuration, failure rules, generation/replay, and malformed-input coverage. Round 4 adds the oracle, modes, failure classes, and seeds; generator details remain incomplete. |
-| 2     | 10                | Requested a precise oracle, normalization, parser profiles, error/crash handling, and replay. Round 4 addresses most structure; normalization and generator/replay details remain unclear.                            |
-| 3     | 6                 | Flagged profile/scope conflicts, seed/resource rules, normalization, and a broken section reference. Round 4 fixes most; normalization and replay/resource guarantees still need clarification.                       |
-| 4     | 7                 | Remaining issues: generator coverage, case-count breakdown, reproducible replay, normalization, comments/raw content, soft memory limits, and section numbering. Not yet resolved.                                    |
-| 5 | 5 | Restored the generator contract (tiers, attribute and text domains, bounds, malformed class, seed derivation); named the three class/profile combinations behind the 15,000 total; fixed the list snapshot, `code` opacity vs `preformatted_code`, and `Out of Scope` classification. One finding rejected as incorrect. |
+| Round | Findings (issues) | Summary and round-4 status                                                                                                                                                                                                                                                                                               |
+| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | 10                | Identified missing round-trip checks, configuration, failure rules, generation/replay, and malformed-input coverage. Round 4 adds the oracle, modes, failure classes, and seeds; generator details remain incomplete.                                                                                                    |
+| 2     | 10                | Requested a precise oracle, normalization, parser profiles, error/crash handling, and replay. Round 4 addresses most structure; normalization and generator/replay details remain unclear.                                                                                                                               |
+| 3     | 6                 | Flagged profile/scope conflicts, seed/resource rules, normalization, and a broken section reference. Round 4 fixes most; normalization and replay/resource guarantees still need clarification.                                                                                                                          |
+| 4     | 7                 | Remaining issues: generator coverage, case-count breakdown, reproducible replay, normalization, comments/raw content, soft memory limits, and section numbering. Not yet resolved.                                                                                                                                       |
+| 5     | 5                 | Restored the generator contract (tiers, attribute and text domains, bounds, malformed class, seed derivation); named the three class/profile combinations behind the 15,000 total; fixed the list snapshot, `code` opacity vs `preformatted_code`, and `Out of Scope` classification. One finding rejected as incorrect. |
 
 ### Last LLM review
 
@@ -131,15 +143,35 @@ prompt: Review the updated specification in specification, point out what has im
 
 #### Ali review (round 5)
 
-Prompting Claude Opus 5 with `Review fuzzer-spec.md against the actual htmd source and list concrete findings; do not rewrite the specification` produced the following output. Strikethrough indicates output I deemed incorrect.
+Prompting Claude Opus 5 with `Review fuzzer-spec.md against the actual htmd
+source and list concrete findings; do not rewrite the specification` produced
+the following output. Strikethrough indicates output I deemed incorrect.
 
-1. **§9, the unordered-list snapshot is wrong.** The table expects `* One`, but `ul_bullet_spacing` defaults to 3 in `src/options.rs` and is applied in `src/element_handler/li.rs`, so the output is `*   One`. §9 itself requires these snapshots to be verified against actual output before commit.
-2. **§5 counts `del`/`s` as GFM-only constructs that drive the `gfm` profile, but `src/element_handler/` has no handler for either.** In `Faithful` mode such an element is emitted as raw HTML and round-trips verbatim, so the case always passes without exercising any htmd translation path, while inflating the `gfm` case count.
-3. **§6 contradicts §8 on `code`.** §6 declares `code` opaque and compares it exactly, while §8 inherits `preformatted_code: false` from `Options::default()`, under which whitespace inside an inline `<code>` is not preserved.
-4. **§3 classifies `Out of Scope` as a failure.** §6 requires the generator not to produce foreign-content elements, so a non-HTML namespace is a generator defect, not a conversion failure; the current table reports a harness bug as a library failure.
-5. ~~`Project 2 submission.md` links to `fuzzer-spec.md`, which does not exist at that path.~~ Incorrect: both files are in the same directory, so the relative link resolves.
+1. <strong>§9, the unordered-list snapshot is wrong.</strong> The table expects
+   `* One`, but `ul_bullet_spacing` defaults to 3 in `src/options.rs` and is
+   applied in `src/element_handler/li.rs`, so the output is `*   One`. §9 itself
+   requires these snapshots to be verified against actual output before commit.
+2. <strong>§5 counts `del`/`s` as GFM-only constructs that drive the `gfm`
+   profile, but `src/element_handler/` has no handler for either.</strong> In
+   `Faithful` mode such an element is emitted as raw HTML and round-trips
+   verbatim, so the case always passes without exercising any htmd translation
+   path, while inflating the `gfm` case count.
+3. <strong>§6 contradicts §8 on `code`.</strong> §6 declares `code` opaque and
+   compares it exactly, while §8 inherits `preformatted_code: false` from
+   `Options::default()`, under which whitespace inside an inline `<code>` is not
+   preserved.
+4. <strong>§3 classifies `Out of Scope` as a failure.</strong> §6 requires the
+   generator not to produce foreign-content elements, so a non-HTML namespace is
+   a generator defect, not a conversion failure; the current table reports a
+   harness bug as a library failure.
+5. <del>`Project 2 submission.md` links to `fuzzer-spec.md`, which does not
+   exist at that path.</del> Incorrect: both files are in the same directory, so
+   the relative link resolves.
 
-Findings 1 through 4 are applied in this commit. The round also restores the generation contract that round 4 recorded as missing (issue 1), names the three class/profile combinations behind the 15,000-case total (issue 2), and pins the PRNG and case-derivation rule (issue 3).
+Findings 1 through 4 are applied in this commit. The round also restores the
+generation contract that round 4 recorded as missing (issue 1), names the three
+class/profile combinations behind the 15,000-case total (issue 2), and pins the
+PRNG and case-derivation rule (issue 3).
 
 ---
 
