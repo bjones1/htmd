@@ -61,6 +61,7 @@ None of this changed your working tree. Your existing edits in pulldown-cmark-ht
 | round | findings | main changes made |
 |---|---|---|
 | 1 | 15 | fixed version mismatch, number input clamping, deployment url, CI job mismatch|
+| 2 (Ademi Bakhytova) | 30 (6 contradictions, 10 technical issues, 8 ambiguities, 6 missing requirements) | corrected htmd API assumptions, improved WASM panic handling, fixed the GitHub Pages deployment path, added CSP protection for sandboxed previews, clarified permalink encoding, improved CI configuration, testing requirements, and UI accessibility; 5 design decisions (C1, C2, C3, C7, D1) need team confirmation, and B5/C8 keep documented caveats |
 
 ### Last LLM review
 
