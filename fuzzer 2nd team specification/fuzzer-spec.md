@@ -33,19 +33,24 @@ The suite enforces four properties:
 
 Each result is assigned exactly one category:
 
-| Category                | Meaning                                        | Result         |
-| ----------------------- | ---------------------------------------------- | -------------- |
-| Expected Error          | Error is documented and expected               | Pass           |
-| Unexpected Error        | Error not in the expected-error list           | Fail           |
-| Panic                   | Caught with `catch_unwind`                     | Fail           |
-| Timeout                 | Worker exceeds wall-clock limit                | Fail           |
-| Resource Limit          | Worker exceeds memory limit                    | Fail           |
-| Non-determinism         | Same input, different output across runs       | Fail           |
-| Out of Scope            | Non-HTML namespace appears in generated input  | Fail           |
-| Round-Trip Mismatch     | Normalized DOMs differ without allowlist match | Fail           |
-| Known Loss              | Difference matches allowlist entry             | Pass, recorded |
-| Stale Allowlist Entry   | Allowlist no longer matches real cases         | Warning        |
-| Isolation Setup Failure | Resource-isolation self-test fails             | Abort          |
+| Category                | Meaning                                              | Result          |
+| ----------------------- | ---------------------------------------------------- | --------------- |
+| Expected Error          | Error is documented and expected                     | Pass            |
+| Unexpected Error        | Error not in the expected-error list                 | Fail            |
+| Panic                   | Caught with `catch_unwind`                           | Fail            |
+| Timeout                 | Worker exceeds wall-clock limit                      | Fail            |
+| Resource Limit          | Worker exceeds memory limit                          | Fail            |
+| Non-determinism         | Same input, different output across runs             | Fail            |
+| Out of Scope            | Generated input introduced a non-HTML namespace      | Fail (harness)  |
+| Round-Trip Mismatch     | Normalized DOMs differ without allowlist match       | Fail            |
+| Known Loss              | Difference matches allowlist entry                   | Pass, recorded  |
+| Stale Allowlist Entry   | Allowlist no longer matches real cases               | Warning         |
+| Isolation Setup Failure | Resource-isolation self-test fails                   | Abort           |
+
+`Out of Scope` reports a defect in the generator, not in the conversion:
+section 6 requires generated input to stay in the HTML namespace, so the case
+never reached a state where `htmd` could be at fault. It is counted separately
+from conversion failures.
 
 Expected-error list: starts empty. A case is added only when there is a
 documented reason why `htmd` is expected to return `Err`, plus a predefined test
@@ -94,8 +99,14 @@ includes the exact version.
 | `core`  | `Options::empty()`                          | Generated cases with no GFM-only constructs          |
 | `gfm`   | tables + strikethrough + task lists enabled | Generated cases with at least one GFM-only construct |
 
-GFM-only constructs are: tables, captioned table structures, `del`/`s`, and
-task-list checkboxes.
+GFM-only constructs are: tables, captioned table structures, and task-list
+checkboxes.
+
+`del` and `s` are deliberately excluded from that list. `src/element_handler/`
+has no handler for either, so in `Faithful` mode they are emitted as raw HTML
+and round-trip verbatim. Such a case passes without exercising any translation
+path in `htmd`, and counting it as a GFM construct would inflate the `gfm`
+profile with cases that test only the two parsers.
 
 A generated case belongs to exactly one profile:
 
@@ -134,8 +145,12 @@ Normalization passes run in order on both trees:
 4. Trim leading and trailing whitespace at inline-run edges.
 5. Remove empty text nodes and merge adjacent text siblings.
 
-Opaque elements (`pre`, `textarea`, `code`) are compared exactly; their internal
-whitespace is not normalized.
+Opaque elements are compared exactly; their internal whitespace is not
+normalized. `pre` and `textarea` are always opaque. `code` is opaque only when
+the `preformatted_code` option is enabled: the default options in section 8
+inherit `preformatted_code: false` from `Options::default()`, under which
+whitespace inside an inline `<code>` is not preserved, so treating `code` as
+unconditionally opaque would report a specified behavior as a mismatch.
 
 Block vs. inline:
 
@@ -200,7 +215,12 @@ Examples:
 | Bold           | `<strong>Text</strong>`                  | `**Text**`                    |
 | Italic         | `<em>Text</em>`                          | `*Text*`                      |
 | Link           | `<a href="https://example.com">Link</a>` | `[Link](https://example.com)` |
-| Unordered list | `<ul><li>One</li></ul>`                  | `* One`                       |
+| Unordered list | `<ul><li>One</li></ul>`                  | `*   One`                     |
+
+The unordered-list row carries three spaces after the marker: `ul_bullet_spacing`
+defaults to 3 in `src/options.rs` and is applied in `src/element_handler/li.rs`.
+A snapshot that assumes one space asserts an option value the defaults do not
+select.
 
 These snapshots must be verified against the actual output before commit.
 
@@ -226,7 +246,123 @@ Each generated case is run with:
 * memory limit (default 512 MiB)
 * determinism check by converting the same case twice
 
-## 11. Worker model and resource limits
+## 11. Input generation
+
+Byte-level mutation does not test `htmd`. `html5ever` implements the HTML
+parsing algorithm's error recovery, so arbitrary bytes still produce a tree
+whose shape is decided by recovery rules rather than by the input. Such a run
+compares two recoveries and reaches the element handlers only by accident.
+
+The generator therefore builds a node tree and serializes it. Every case in the
+`valid` class is well formed by construction: tags balance, nesting follows each
+element's content model, and the tree a parser reconstructs is the tree the
+generator intended.
+
+### 11.1 Case derivation
+
+A case is identified by the pair (master seed, case index) and is derived
+deterministically:
+
+* The PRNG is `rand_chacha::ChaCha8Rng`, pinned in `Cargo.lock`. The algorithm
+  is a requirement, not an implementation detail: replacing it invalidates every
+  stored seed.
+* The per-case stream is seeded from the master seed and the case index alone,
+  so cases are independent and a single case can be replayed without generating
+  its predecessors.
+* The generator has a version number, recorded in every failure artifact. A
+  change to the grammar, the element tiers, or the content domains below
+  increments it. Stored input remains the definitive replay path; seed replay is
+  valid only within one generator version.
+
+### 11.2 Element tiers
+
+The inventory is the set of elements `htmd` translates, one per module in
+`src/element_handler/`, split into tiers so that a run's coverage is stated
+rather than implied:
+
+| Tier | Elements | Drawn |
+| ---- | -------- | ----- |
+| Block containers | `div`, `blockquote`, `ul`, `ol`, `li`, `table`, `thead`, `tbody`, `tr`, `td`, `th`, `caption` | Every run |
+| Block leaves | `p`, `h1`-`h6`, `pre`, `hr` | Every run |
+| Inline | `a`, `em`, `strong`, `code`, `span`, `img`, `br` | Every run |
+| Unknown | One element with no handler, such as `section` | `malformed` class only |
+
+An element is drawn only where its content model allows it: block children for
+block containers, inline children for block leaves, inline children for inline
+elements. Table parts are drawn only as descendants of `table`, and `li` only as
+a child of `ul` or `ol`.
+
+Profile membership follows section 5. The `core` generator draws no table tier
+and no GFM-only construct; the `gfm` generator forces at least one.
+
+### 11.3 Bounds
+
+Every run fixes and logs:
+
+* maximum tree depth, default 5
+* maximum children per node, default 4
+* maximum text length per node, default 64 characters
+
+The depth bound is required, not an optimization: blockquote and list nesting is
+unbounded in the grammar, and the translation of a list depends on its depth.
+
+### 11.4 Attribute domain
+
+Attributes are not a refinement to add later. In `Faithful` mode an element
+carrying any attribute, even one with an empty value, is serialized as HTML
+rather than translated, so attribute presence selects between the two halves of
+the translation. Every element is therefore drawn both with and without
+attributes, and a run that produces only one of the two has tested half the
+library.
+
+Each element draws from: no attributes; one global attribute (`id`, `class`,
+`title`); one element-appropriate attribute (`href` on `a`, `src` and `alt` on
+`img`, `colspan` on `td`, `start` on `ol`); and one attribute with an empty
+value. Attribute values are drawn from the text domain below, restricted to
+characters legal in the position.
+
+### 11.5 Text domain
+
+Text is drawn from classes chosen to reach the escaping logic rather than to
+look like prose:
+
+* plain ASCII words
+* characters active in Markdown: `*`, `_`, `` ` ``, `#`, `[`, `]`, `<`, `>`,
+  `|`, `\`
+* line-leading constructs: `-`, `+`, `>`, a digit followed by `.`
+* character references: `&amp;`, `&#10;`, `&nbsp;`
+* runs of spaces and tabs, and text that is empty or whitespace only
+* Unicode: punctuation adjacent to emphasis delimiters, combining marks, and
+  characters outside the basic multilingual plane, which
+  `src/util/unicode.rs` and `src/util/unicode_punctuation.rs` classify when
+  deciding flanking and escaping
+
+### 11.6 The malformed class
+
+The `malformed` class exists to test that `htmd` does not panic, not that it
+round-trips. Its cases are produced by applying one corruption to a generated
+valid tree's serialized form: dropping a closing tag, closing tags out of order,
+truncating the document mid-tag, or inserting an element with no handler.
+
+A `malformed` case asserts panic and crash safety, determinism, the timeout, and
+the memory limit. It is not compared against a round trip, because the tree
+`html5ever` recovers is not the tree the generator described, and it is assigned
+no Markdown parser profile.
+
+### 11.7 Case counts
+
+The default CI plan runs three class/profile combinations, named here so the
+total in section 10 is auditable:
+
+| Combination | Class | Profile | Cases per seed |
+| ----------- | ----- | ------- | -------------- |
+| 1 | `valid` | `core` | 1,000 |
+| 2 | `valid` | `gfm` | 1,000 |
+| 3 | `malformed` | none | 1,000 |
+
+Five master seeds over three combinations is 15,000 cases.
+
+## 12. Worker model and resource limits
 Fuzzing runs in worker subprocesses because infinite loops and OOM aborts cannot
 be caught as ordinary panics.
 
@@ -248,7 +384,7 @@ Before fuzzing starts, a self-test verifies that both kinds of worker kill
 happen correctly. If the isolation test fails, the run aborts with `Isolation
 Setup Failure`.
 
-## 12. Failure artifacts and minimization
+## 13. Failure artifacts and minimization
 Each failure writes a JSON artifact containing:
 
 * master seed and case index
@@ -277,14 +413,15 @@ Failure reduction flow:
    * oracle bug -> fix normalization and add a self-test
    * intentional loss -> add allowlist entry
    * conversion defect -> fix `htmd` and update design docs
-## 6. Limitations
+
+## 14. Limitations
 * Random generation cannot cover every structure.
 * The preservation check is only for supported semantics, HTML-namespace
   content, and the active parser profile.
 * Registry entries must stay narrow and evidence-backed.
 * Memory-limit claims are valid only on platforms with real enforcement.
 
-## 14. Conclusion
+## 15. Conclusion
 This spec combines exact snapshot tests with a seeded, replayable round-trip
 fuzzer and an explicit oracle. That separation makes it possible to distinguish:
 
