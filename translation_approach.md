@@ -762,8 +762,9 @@ written with exactly one tilde on each side. The simple, alone-in-a-block and
 punctuation rows show the cases these rules allow.
 
 `H~2~O` renders as the literal text `H~2~O`, since the tildes touch letters on
-both sides, and `a ~b~c` fails for the same reason on one side. Nothing written
-next to the tildes can fix this, so these subscripts are serialized as HTML.
+both sides, and `a ~b~c` fails for the same reason on one side. No escape or markup
+next to the tildes can fix this without changing the surrounding text, so these
+subscripts are serialized as HTML.
 The test is on the characters outside the element, not on its content:
 `a ~.~ b` is a valid subscript because the tildes themselves are surrounded by
 spaces.
