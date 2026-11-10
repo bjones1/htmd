@@ -732,3 +732,21 @@ its ends lie in math mode, where whitespace has no significance, and condition 3
 catches the one significant trailing whitespace, a control space. LaTeX reads a
 single newline as a space, and math mode ignores the space which replaces a
 comment, so only a comment in text mode renders differently (see step 1).
+
+### Subscript
+htmd translates `<sub>` using the pulldown-cmark subscript extension
+(`Options::ENABLE_SUBSCRIPT`): a single tilde on each side, `~a~`.
+A double tilde, `~~a~~`, is strikethrough and must never be produced
+for `<sub>`.
+| Description | HTML in | Faithful expected |
+| ----------- | ------- | ----------------- |
+| Simple subscript between spaces | `a <sub>b</sub> c` | `a ~b~ c` |
+| Subscript inside a word | `H<sub>2</sub>O` | `H<sub>2</sub>O` |
+| Literal tilde in text | `a ~b~ c` | `a \~b\~ c` |
+| Empty subscript | `a<sub></sub>b` | `a<sub></sub>b` |
+| Whitespace-only subscript | `a<sub> </sub>b` | `a<sub> </sub>b` |
+| ... | ... | ... |
+(Explanation of the rows.)
+Approach:
+1. ...
+2. ...
