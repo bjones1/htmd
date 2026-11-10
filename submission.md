@@ -5,8 +5,7 @@ not take part in this submission.
 
 ## Contributions
 
-- Pavel Shegay: section frame, introduction, and escaping of a literal `~` in
-  text.
+- Pavel Shegay: Subscript section framing and introduction, including the example showing how to escape a literal `~` in text.
 - Viacheslav Sokolov: table rows and explanation for when `<sub>` can be
   written as `~a~` and when it must stay raw HTML (inside a word, next to
   punctuation, whitespace at the edges of the content).
@@ -32,7 +31,8 @@ compile and run the project in the current git repo.` produced:
 
 ### Pavel Shegay
 
-TODO
+Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Verify that you can compile and run the project in the current git repo.` produced:
+> Verified successfully: `cargo build --locked` compiled the project, and `cargo run --locked --example simple` ran the simple example and exited with code 0. No source files were changed.
 
 ### Arsen Zhanserkenov
 
@@ -48,9 +48,11 @@ TODO
 
 ### Pavel Shegay
 
-| Round | Findings | Main changes made |
-| ----- | -------- | ----------------- |
-| 1 | TODO | TODO |
+| Round | Findings | Main changes made                                                                                                                                                                                                                     |
+| ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | 2        | Updated the Subscript introduction in `translation_approach.md` to clarify that tilde syntax is a proposed pulldown-cmark extension encoding, not behavior htmd currently emits, and to qualify strikethrough by its required option. |
+| 2     | 2        | Updated the Subscript introduction in `translation_approach.md` to explain single-tilde delimiter constraints and clarify that the examples are proposed behavior, not current htmd output.                                           |
+| 3     | 0        | No changes, confirmed round 2 fixes.                                                                                                                                                                                                  |
 
 ### Arsen Zhanserkenov
 
@@ -105,7 +107,17 @@ deemed incorrect or irrelevant.
 
 ### Pavel Shegay
 
-TODO
+Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the “introduction” subsection of “Subscript” in translation_approach.md for round 3. Check it against the CommonMark spec, pulldown-cmark with ENABLE_SUBSCRIPT, and the existing “Emphasis and strong emphasis” section. Write any numbered findings to review_round_3.md. Do not edit translation_approach.md. If there are no findings, record that and briefly say whether another review round seems necessary.`
+produced the following output:
+> Review Round 3: Subscript introduction
+
+> No findings.
+
+>The introduction now distinguishes CommonMark from pulldown-cmark's `ENABLE_SUBSCRIPT` extension, notes the single-tilde flanking and intraword
+constraint, clarifies that the examples are proposed rather than current htmd
+output, and qualifies strikethrough by `ENABLE_STRIKETHROUGH`. No further
+changes to `translation_approach.md` are indicated by this review.
+
 
 ### Arsen Zhanserkenov
 
