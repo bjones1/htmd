@@ -62,6 +62,7 @@ None of this changed your working tree. Your existing edits in pulldown-cmark-ht
 |---|---|---|
 | 1 | 15 | fixed version mismatch, number input clamping, deployment url, CI job mismatch|
 | 2 (Ademi Bakhytova) | 30 (6 contradictions, 10 technical issues, 8 ambiguities, 6 missing requirements) | corrected htmd API assumptions, improved WASM panic handling, fixed the GitHub Pages deployment path, added CSP protection for sandboxed previews, clarified permalink encoding, improved CI configuration, testing requirements, and UI accessibility; 5 design decisions (C1, C2, C3, C7, D1) need team confirmation, and B5/C8 keep documented caveats |
+| 3 (Aruzhan Akhanayeva) | 27 (4 contradictions, 8 technical errors, 10 ambiguities, 5 missing requirements) | fixed the default-state crash (`skip_tags(vec![])` panics), closed the preview frames' meta-refresh navigation hole, froze the permalink `v=1` defaults and added a versioning rule, defined empty-input and strict-decoding permalink rules and `hashchange` failure handling, corrected the crash banner and added a crash-loop escape link, dropped strikethrough from the Preview and the redundant root `Cargo.toml` edit, split the status line into conversion and notice parts, made the deploy job reuse the check job's verified build with a checksum-pinned Trunk, specified option-combination and size-limit tests, and added accessibility (live regions, ARIA tabs), article-licence, and getrandom 0.2 requirements; marked round 2's open decisions as provisional in the spec header |
 
 ### Last LLM review
 
