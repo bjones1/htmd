@@ -747,11 +747,38 @@ form.
 | ----------- | ------- | ----------------- |
 | Simple subscript between spaces | `a <sub>b</sub> c` | `a ~b~ c` |
 | Subscript inside a word | `H<sub>2</sub>O` | `H<sub>2</sub>O` |
+| Subscript alone in a block | `<sub>b</sub>` | `~b~` |
+| Punctuation after the subscript | `x <sub>2</sub>.` | `x ~2~.` |
+| Punctuation before the subscript | `x.<sub>2</sub>` | `x.~2~` |
+| Letter right after the subscript | `a <sub>b</sub>c` | `a <sub>b</sub>c` |
+| Punctuation as the whole content | `a <sub>.</sub> b` | `a ~.~ b` |
+| Whitespace at the edges of the content | `a<sub> b </sub>c` | `a<sub> b </sub>c` |
 | Literal tilde in text | `a ~b~ c` | `a \~b\~ c` |
 | Empty subscript | `a<sub></sub>b` | `a<sub></sub>b` |
 | Whitespace-only subscript | `a<sub> </sub>b` | `a<sub> </sub>b` |
 | ... | ... | ... |
-(Explanation of the rows.)
+
+pulldown-cmark reads a subscript tilde the same way CommonMark reads an
+underscore emphasis delimiter. A single `~` opens a subscript only if the
+character before it is whitespace, punctuation, or the start of the line, and
+closes it only if the character after it is whitespace, punctuation, or the end
+of the line. A run of two tildes is strikethrough, so a subscript is always
+written with exactly one tilde on each side. The simple, alone-in-a-block and
+punctuation rows show the cases these rules allow.
+
+`H~2~O` renders as the literal text `H~2~O`, since the tildes touch letters on
+both sides, and `a ~b~c` fails for the same reason on one side. No escape or markup
+next to the tildes can fix this without changing the surrounding text, so these
+subscripts are serialized as HTML.
+The test is on the characters outside the element, not on its content:
+`a ~.~ b` is a valid subscript because the tildes themselves are surrounded by
+spaces.
+
+`~ b ~` is not a subscript, since the opening tilde is followed by whitespace.
+Moving the whitespace outside the delimiters, as the emphasis approach does,
+would here join the subscript to the neighbouring letters and cause the
+inside-a-word problem, so the element is serialized as HTML.
+
 Approach:
 1. ...
 2. ...
