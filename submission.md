@@ -36,7 +36,16 @@ Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Verify that you can compi
 
 ### Arsen Zhanserkenov
 
-TODO
+Verified in this Codex session on 2026-11-10 using Rust/Cargo 1.99.1
+on Windows (MSVC toolchain):
+
+- `cargo build` — passed.
+- `cargo clippy -- --deny warnings` — passed.
+- `cargo test` — passed: 267 tests, 1 ignored, 0 failures (including doctests).
+- `cargo run --example simple` — completed successfully with exit code 0.
+
+`git diff --check` also passed. These checks validate the current project;
+they do not establish that the proposed Subscript encoding is implemented.
 
 ## Review rounds
 
@@ -58,7 +67,8 @@ TODO
 
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
-| 1 | TODO | TODO |
+| 1 (Codex self-review) | 1 accepted | Clarified that selecting HTML in an earlier step prevents later delimiter selection; escaping still applies to the content. |
+| 2 (Codex self-review) | 0 additional static findings | Checked the added table rows against the final algorithm and the existing inline/adjacency rules. Runtime validation was not performed. |
 
 ## Last review
 
@@ -121,4 +131,22 @@ changes to `translation_approach.md` are indicated by this review.
 
 ### Arsen Zhanserkenov
 
-TODO
+This was a Codex self-review within the editing session, not an independent
+Copilot Fusion review. The user requested completion of Arsen's part; no
+separate review prompt or external reviewer response is claimed.
+
+Scope: the empty/whitespace-only and nesting explanations, the added table
+rows, and the Approach steps in the Subscript section. The review compared
+them with the document's raw HTML inline and emphasis rules and inspected
+[pulldown-cmark 0.13.4 delimiter checks](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2138-L2223).
+
+1. Accepted and fixed: make the HTML fallback terminal for delimiter selection,
+   while still applying text escaping to content inside retained tags.
+
+Final static pass: no additional findings in the added material. Nested and
+adjacent subscripts preserve wrappers; element children use the stated
+conservative fallback; the algorithm explicitly describes proposed Faithful
+behavior. `git diff --check` passed. The Markdown examples have not been run
+through pulldown-cmark in this environment, and the subsequent project build checks passed as recorded above.
+If the assignment requires an independent Copilot review, that review is still
+outstanding.

@@ -756,7 +756,11 @@ form.
 | Literal tilde in text | `a ~b~ c` | `a \~b\~ c` |
 | Empty subscript | `a<sub></sub>b` | `a<sub></sub>b` |
 | Whitespace-only subscript | `a<sub> </sub>b` | `a<sub> </sub>b` |
-| ... | ... | ... |
+| Nested subscripts | `<sub><sub>a</sub></sub>` | `<sub><sub>a</sub></sub>` |
+| Emphasis inside subscript | `<sub><em>a</em></sub>` | `<sub>*a*</sub>` |
+| Strong emphasis inside subscript | `<sub><strong>a</strong></sub>` | `<sub>**a**</sub>` |
+| Adjacent subscripts | `<sub>a</sub><sub>b</sub>` | `<sub>a</sub><sub>b</sub>` |
+| Subscript with an attribute | `<sub class="index">a</sub>` | `<sub class="index">a</sub>` |
 
 pulldown-cmark reads a subscript tilde the same way CommonMark reads an
 underscore emphasis delimiter. A single `~` opens a subscript only if the
@@ -779,6 +783,52 @@ Moving the whitespace outside the delimiters, as the emphasis approach does,
 would here join the subscript to the neighbouring letters and cause the
 inside-a-word problem, so the element is serialized as HTML.
 
+An empty or whitespace-only subscript keeps its tags and its whitespace
+(subject to the general whitespace collapsing rules). Removing the tags loses
+an element; delimiters around no content do not encode that element. These
+checks precede delimiter selection, as in the emphasis approach.
+
+Nested subscripts keep every `<sub>` wrapper. Encoding both levels of
+`<sub><sub>a</sub></sub>` as single tildes would produce `~~a~~`, which cannot
+preserve the two subscript levels. As a conservative design choice, a subscript
+containing an element or comment keeps its own tags, and a subscript with a
+subscript ancestor keeps its tags too. Children are still translated in an
+inline context under their own rules: an `<em>` child can become `*a*` inside
+the retained `<sub>` wrapper. This is raw HTML inline processing, not a
+verbatim HTML block. Adjacent subscripts retain separate wrappers, following
+the adjacent-inline rule in the emphasis section.
+
 Approach:
-1. ...
-2. ...
+
+The following specifies proposed Faithful output with `ENABLE_SUBSCRIPT`
+enabled in the reader. It does not change Pure mode or claim that the current
+converter implements these steps.
+
+1. Retain the opening and closing `<sub>` tags, including attributes, if the
+   element has any attribute, has an element or comment child, has a `<sub>`
+   ancestor, or belongs to a run of adjacent subscripts. Translate children
+   in an inline context under the general raw HTML inline rules.
+2. Otherwise, process its text using the normal inline whitespace rules.
+   If it is empty or begins or ends with Unicode whitespace, retain the tags.
+   Do not trim or move this whitespace outside the element. This includes
+   whitespace-only content and deliberately favors HTML over special encodings.
+3. Escape the text as ordinary Markdown text, including literal `~` as `\~`.
+   This tilde escaping also applies to ordinary text outside subscripts and
+   between retained raw HTML inline tags; literal contexts follow their own
+   rules. Escaping does not apply to generated subscript delimiters.
+4. Only if no earlier step retained the tags, consider a candidate with exactly
+   one `~` on either side. Check both
+   delimiters against the actual surrounding Markdown characters, including
+   escapes and raw HTML tags, using pulldown-cmark's single-tilde opening and
+   closing rules. Missing outside characters at an inline container boundary
+   act as whitespace. If either delimiter is invalid or would join another
+   tilde into a longer delimiter run, retain the HTML tags instead.
+5. Emit the candidate only if both checks pass. Otherwise emit the retained
+   tags around the processed content, without adding spaces to make it parse.
+
+The delimiter checks in step 4 refer to
+[`delim_run_can_open` and `delim_run_can_close` in pulldown-cmark 0.13.4](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2138-L2223).
+Using the emitted neighboring characters matters when another handler has
+introduced Markdown syntax. Like the future emphasis algorithm, this proposal
+requires access to neighboring output; implementation work must provide that
+context before enabling the proposed encoding.
