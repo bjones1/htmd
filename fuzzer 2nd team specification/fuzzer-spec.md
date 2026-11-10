@@ -226,6 +226,9 @@ These snapshots must be verified against the actual output before commit.
 
 ### 9.1 Core HTML Generation
 
+This section specifies the first-stage `core` generator; where it differs from
+section 11, section 11 governs.
+
 This section specifies the initial valid-input generator for the
 `core` parser profile. It describes planned behavior, not an
 implemented or executed fuzzing campaign.
@@ -311,7 +314,7 @@ dependency versions with run metadata.
 
 Assign accepted cases zero-based indices. Record the master seed,
 case index, input class `valid`, and parser profile `core` with each
-failure. Also save the exact HTML input as required by section 12.
+failure. Also save the exact HTML input as required by section 13.
 
 The same seed, generator revision, dependencies, and configuration
 must reproduce the same ordered inputs. Replaying saved HTML is the
