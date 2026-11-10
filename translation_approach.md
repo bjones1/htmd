@@ -734,10 +734,15 @@ single newline as a space, and math mode ignores the space which replaces a
 comment, so only a comment in text mode renders differently (see step 1).
 
 ### Subscript
-htmd translates `<sub>` using the pulldown-cmark subscript extension
-(`Options::ENABLE_SUBSCRIPT`): a single tilde on each side, `~a~`.
-A double tilde, `~~a~~`, is strikethrough and must never be produced
-for `<sub>`.
+CommonMark has no subscript syntax. With pulldown-cmark's subscript extension
+(`Options::ENABLE_SUBSCRIPT`), a single-tilde pair such as `~a~` represents
+subscript when its delimiters satisfy pulldown-cmark's flanking rules. As with
+emphasis, surrounding characters matter; unlike `*`, a single `~` cannot delimit
+text within a word, so `H~2~O` is not parsed as subscript. The examples below
+describe proposed output, not htmd's current output: in Faithful mode, htmd
+currently preserves `<sub>` as HTML. A double tilde, `~~a~~`, is strikethrough
+only when `Options::ENABLE_STRIKETHROUGH` is enabled; it is not the subscript
+form.
 | Description | HTML in | Faithful expected |
 | ----------- | ------- | ----------------- |
 | Simple subscript between spaces | `a <sub>b</sub> c` | `a ~b~ c` |
