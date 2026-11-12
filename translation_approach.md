@@ -732,3 +732,64 @@ its ends lie in math mode, where whitespace has no significance, and condition 3
 catches the one significant trailing whitespace, a control space. LaTeX reads a
 single newline as a space, and math mode ignores the space which replaces a
 comment, so only a comment in text mode renders differently (see step 1).
+
+### Smart Punctuation
+
+Smart punctuation is an optional Markdown-renderer behavior that converts ordinary ASCII punctuation into typographic characters. For example, a renderer with smart punctuation enabled may turn `"Hello," said Bob.` into `<p>“Hello,” said Bob.</p>`. Since `htmd` translates HTML back into Markdown, its strategy is to **reverse** these substitutions rather than preserve the typographic characters as-is: `<p>“Hello,” said Bob.</p>` becomes `"Hello," said Bob.`.
+
+Smart punctuation reversal is enabled by default in both `TranslationMode::Faithful` and `TranslationMode::Pure` and is not a separate user-configurable option. Both modes use the same default punctuation mappings, subject to the literal-content exclusions and structural-safety exceptions documented below. The expected outputs below use Faithful mode; surrounding HTML may be serialized differently according to each mode’s existing translation strategy.
+
+The target for a punctuation round trip is a CommonMark-compatible renderer with smart punctuation enabled, specifically one following the conventional `--` → en dash, `---` → em dash, and `...` → ellipsis mappings. Smart punctuation is *not* required by core CommonMark. Consequently, these expected outputs do not promise identical typography when rendered with smart punctuation disabled or with a renderer that uses different substitutions.
+
+| Description | HTML in | Faithful expected |
+| --- | --- | --- |
+| Straight double quotes | `<p>"Hello"</p>` | `"Hello"` |
+| Curly double quotes | `<p>“Hello”</p>` | `"Hello"` |
+| Straight single quotes | `<p>'Hello'</p>` | `'Hello'` |
+| Curly single quotes | `<p>‘Hello’</p>` | `'Hello'` |
+| Leading opening single quote (context-sensitive) | `<p>‘Twas the night</p>` | `<p>‘Twas the night</p>` |
+| Straight apostrophe | `<p>It's fine.</p>` | `It's fine.` |
+| Curly apostrophe | `<p>It’s fine.</p>` | `It's fine.` |
+| Three periods | `<p>Wait...</p>` | `Wait...` |
+| Ellipsis character | `<p>Wait…</p>` | `Wait...` |
+| Two hyphens | `<p>word--word</p>` | `word--word` |
+| Three literal hyphens | `<p>---</p>` | `\-\-\-` |
+| En dash | `<p>2020–2025</p>` | `2020--2025` |
+| Em dash | `<p>Wait—stop!</p>` | `Wait---stop!` |
+| Standalone em dash (thematic-break collision) | `<p>—</p>` | `<p>—</p>` |
+| Em dash as only list item (thematic-break collision) | `<ul><li>—</li></ul>` | `<ul><li>—</li></ul>` |
+| Em dash inside blockquote (thematic-break collision) | `<blockquote><p>—</p></blockquote>` | `<blockquote><p>—</p></blockquote>` |
+| Encoded curly quotes | `<p>&ldquo;Hello&rdquo;</p>` | `"Hello"` |
+| Encoded apostrophe | `<p>It&rsquo;s fine.</p>` | `It's fine.` |
+| Encoded ellipsis | `<p>Wait&hellip;</p>` | `Wait...` |
+| Encoded dash | `<p>Wait&mdash;stop!</p>` | `Wait---stop!` |
+| Punctuation within emphasis | `<p><em>It’s fine</em></p>` | `*It's fine*` |
+| Punctuation in code span | `<p><code>“Wait…”</code></p>` | `` `“Wait…”` `` |
+| Punctuation in code block | `<pre><code>“Wait…”</code></pre>` | Exact fenced block shown below |
+| Asterisk near punctuation | `<p>*Hello*</p>` | `\*Hello\*` |
+| Markdown heading marker | `<p># Hello</p>` | `\# Hello` |
+| Curly quotes in heading | `<h1>“Hello”</h1>` | `# "Hello"` |
+| Unicode punctuation in link label | `<p><a href="/test">It’s here</a></p>` | `[It's here](/test)` |
+| Mixed punctuation | `<p>“Wait…” — really?</p>` | `"Wait..." --- really?` |
+| Emphasis ending in punctuation | `<em>Hello!</em>` | `<em>Hello!</em>` |
+| Emphasis beginning with punctuation | `<em>“Hello”</em>` | `<em>"Hello"</em>` |
+
+The exact Faithful expected output for the **punctuation in code block** row is (including the newline after the opening fence and before the closing fence):
+
+````markdown
+```
+“Wait…”
+```
+````
+
+**Translation rules and edge cases:**
+
+1. Apply the reverse substitutions to ordinary text nodes: `“` and `”` → `"`; `‘` and `’` → `'`; `…` → `...`; `–` → `--`; `—` → `---`. Do not change punctuation that is already ASCII. Keep surrounding spaces unchanged. The quote mappings intentionally normalize the characters without trying to infer whether the author typed them deliberately.
+2. Decode HTML character references during HTML parsing, before applying the reverse substitutions. Thus `&ldquo;` and a literal `“` are treated identically in ordinary text.
+3. Do **not** reverse punctuation inside literal contexts such as `<code>`, `<pre>`, Markdown math, or the raw-text contents of `<script>` and `<style>`. Do not rewrite tag names, attributes, link destinations, or URLs: those are not visible prose. By contrast, ordinary visible text inside an HTML element retained by Faithful mode **is still subject to reversal** (for example, `<em>“Hello”</em>` becomes `<em>"Hello"</em>`), unless the whole element must be kept verbatim to avoid changing its rendered meaning. Do not mistake *retained HTML markup* for a *literal-text context*.
+4. Reverse punctuation in visible text within headings, emphasis, strong emphasis, and links, then apply the existing element-specific serialization rules. In particular, Faithful mode's conservative emphasis rule retains an `<em>` element when its content begins or ends with punctuation; the *text within that element* still undergoes reversal.
+5. Reversal happens before Markdown escaping and delimiter decisions. **Do not escape converted quotation marks or apostrophes merely because they are punctuation:** in smart-enabled renderers, `\"Hello\"` generally displays straight quotes, defeating the intended reconstruction of curly quotes. Only escape Markdown-sensitive characters when needed to prevent unintended structure, and check the *smart-rendered HTML*, not just whether the Markdown parses. Existing ASCII punctuation is not subject to smart punctuation reversal, but it must still be escaped when necessary to preserve its literal meaning. For example, `<p>---</p>` becomes `\-\-\-` rather than `---`, preventing an unintended thematic break. Similarly, `\# Hello` prevents an accidental heading while leaving the visible `#` intact.
+6. **Context-sensitive opening apostrophes:** a compatible smart renderer may interpret a leading ASCII `'` in `'Twas` as a closing apostrophe (`’`), not the original opening single quote (`‘`). Faithful mode therefore retains `<p>‘Twas the night</p>` as HTML for this documented case, rather than claim that `'Twas the night` reproduces its typography. This is an exception for a demonstrated round-trip mismatch, not a general instruction to guess the intended direction of every quote. Pure mode follows the default ASCII reversal and may lose the original quote direction.
+7. **Markdown structural collisions:** Reverse typographic dashes only when the resulting Markdown preserves the intended structure when parsed. An em dash converted to `---` can become a thematic break when it occupies a line by itself, including inside list items or blockquotes (for example, `- ---` or `> ---`). It can also be parsed as a Setext heading underline if emitted directly below paragraph text (for example, `Hello` followed by `---` on the next line). Faithful mode must therefore evaluate the surrounding block and container context, not just the punctuation character in isolation. When no safe Markdown representation has been verified, retain the affected HTML structure; for instance, `<p>—</p>` remains `<p>—</p>`, and a list item or blockquote containing only an em dash must retain sufficient HTML structure to avoid an unintended thematic break. This is a documented structural-safety exception to the default character-reversal mappings. Pure mode may follow its existing lossy-serialization policy, but must not describe an unintended thematic break or heading as equivalent to the original HTML.
+
+**Priority and round-trip limitation:** The primary goal is to recover conventional Markdown punctuation as requested by the reverse-smart-punctuation strategy, **not** to guarantee that every HTML input reproduces identical typography when re-rendered. In particular, existing straight quotation marks in HTML remain straight in the Markdown output; a smart-enabled renderer may then curl them. Faithful mode uses explicitly documented HTML-preservation exceptions for certain structural or typographic collisions (such as an isolated em dash or an opening `‘Twas`), but these do not make full typography preservation possible for arbitrary inputs. HTML does not record whether a curly quotation mark, ellipsis, or dash was entered directly or generated by a smart-punctuation renderer. Reversal therefore recovers a *conventional Markdown spelling*, not necessarily the author's exact original source. Furthermore, reproducing typographic punctuation relies on a compatible renderer with smart punctuation enabled. Faithful mode seeks equivalent rendered content and structure under that assumption where practical, while Pure mode retains its existing permission to simplify HTML structures.
