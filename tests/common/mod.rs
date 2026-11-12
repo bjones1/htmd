@@ -51,7 +51,10 @@ pub fn convert_pure(html: &str) -> std::io::Result<String> {
 // trip loses something instead, the assertion says what.
 #[allow(dead_code)]
 pub fn round_trip(html: &str) -> String {
-    render_markdown(&convert_faithful(html).unwrap(), CommonMarkOptions::empty())
+    render_markdown(
+        &convert_faithful(html).unwrap(),
+        CommonMarkOptions::ENABLE_STRIKETHROUGH,
+    )
 }
 
 // The second half of a round trip: the CommonMark of the first half read back

@@ -334,12 +334,12 @@ def a_fenced_code block; end
   <div class="input">
     ~~~ foo
   </div>
-  <pre class="expected">\~~~ foo</pre>
+  <pre class="expected">\~\~\~ foo</pre>
 </div>
 
-<div class="case" data-name="not escaping ~~~">
+<div class="case" data-name="escaping internal tildes">
   <div class="input">A sentence containing ~~~</div>
-  <pre class="expected">A sentence containing ~~~</pre>
+  <pre class="expected">A sentence containing \~\~\~</pre>
 </div>
 
 <div class="case" data-name="fenced pre/code block with language" data-options='{"codeBlockStyle": "fenced"}'>

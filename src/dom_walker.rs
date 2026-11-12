@@ -136,7 +136,7 @@ fn walk_element(
         if !context.literal {
             trim_newlines(&mut content);
         }
-        append_normalized_content(output, content, context.literal);
+        append_element_content(output, content, handlers, context);
         return markdown_translated;
     }
 
@@ -146,7 +146,7 @@ fn walk_element(
         let mut content = String::new();
         let is_block = is_block_element(tag);
         let markdown_translated = walk_children(node, &mut content, handlers, is_block, context);
-        append_normalized_content(output, content, context.literal);
+        append_element_content(output, content, handlers, context);
         return markdown_translated;
     }
 
@@ -154,7 +154,7 @@ fn walk_element(
         return true;
     };
     if !result.content.is_empty() || tag != "head" {
-        append_normalized_content(output, result.content, context.literal);
+        append_element_content(output, result.content, handlers, context);
     }
     result.markdown_translated
 }
@@ -194,7 +194,7 @@ fn is_markdown_block_start(byte: u8) -> bool {
 /// and a `$` a math expression; see the math section of
 /// `translation_approach.md`.
 fn is_markdown_inline_special(byte: u8) -> bool {
-    matches!(byte, b'\\' | b'&' | b'*' | b'_' | b'`' | b'[' | b']' | b'$')
+    matches!(byte, b'\\' | b'&' | b'*' | b'_' | b'`' | b'[' | b']' | b'$' | b'~')
 }
 
 pub(crate) fn walk_children(
@@ -366,6 +366,27 @@ fn combine_nodes(parent: &Rc<Node>, nodes: &[Rc<Node>]) -> Rc<Node> {
     copy_element_holding_text(&nodes[0], Some(parent), text)
 }
 
+// Pure-mode wrappers and dropped comments can make separately translated
+// strikethrough spans touch. Merge their boundary markers before joining.
+fn append_element_content(
+    output: &mut String,
+    mut content: String,
+    handlers: &ElementHandlers,
+    context: Context,
+) {
+    if handlers.options.translation_mode == TranslationMode::Pure
+        && !context.literal
+        && output.ends_with("~~")
+        && !output.ends_with("~~~")
+        && content.starts_with("~~")
+        && !content.starts_with("~~~")
+    {
+        output.truncate(output.len() - 2);
+        content.drain(..2);
+    }
+    append_normalized_content(output, content, context.literal);
+}
+
 /// Normalizes content before adding to output by:
 /// 1. Collapsing excessive newlines (max 2 consecutive newlines)
 /// 2. Collapsing adjacent spaces between inline elements
@@ -442,7 +463,7 @@ fn trim_output_end_spaces(output: &mut String) {
 /// '==='      -> '\==='      // setext underline
 /// '---'      -> '\---'      // setext underline, thematic break
 /// '```'      -> '\`\`\`'    // code fence, escaped as three inline specials
-/// '~~~'      -> '\~~~'      // code fence
+/// '~~~'      -> '\~\~\~'  // literal tildes
 /// '# Not h1' -> '\# Not h1' // ATX heading
 /// '1. Item'  -> '1\. Item'  // ordered list item
 /// '1) Item'  -> '1\) Item'  // ordered list item
@@ -479,7 +500,7 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
     // second-char space of list markers, so pre-escape checks match the old
     // post-escape behavior without `insert(0, ...)`.
     let needs_leading_backslash = match first {
-        '=' | '~' | '>' => true,
+        '=' | '>' => true,
         // A line of nothing but `-` and spaces is also a thematic break or a
         // setext underline. Anything else after the second `-` -- `--foo` --
         // is neither, and opens no list either.
@@ -506,6 +527,7 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
             '[' => escaped.push_str("\\["),
             ']' => escaped.push_str("\\]"),
             '$' => escaped.push_str("\\$"),
+            '~' => escaped.push_str("\\~"),
             _ => escaped.push(ch),
         }
     }

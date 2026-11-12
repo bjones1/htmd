@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - drj228-strikethrough
   pull_request:
 
 env:

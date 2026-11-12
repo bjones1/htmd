@@ -15,6 +15,7 @@ mod list;
 mod p;
 mod pre;
 mod span;
+mod strikethrough;
 mod table;
 mod table_section;
 mod td_th;
@@ -47,6 +48,7 @@ use p::p_handler;
 use pre::pre_handler;
 use span::span_handler;
 use std::{collections::HashMap, rc::Rc};
+use strikethrough::strikethrough_handler;
 use table::table_handler;
 use table_section::table_section_handler;
 use td_th::td_th_handler;
@@ -344,6 +346,8 @@ impl ElementHandlers {
 
         // italic
         handlers.add_handler(vec!["i", "em"], italic_handler);
+
+        handlers.add_handler(vec!["del", "s", "strike"], strikethrough_handler);
 
         // headings
         handlers.add_handler(vec!["h1", "h2", "h3", "h4", "h5", "h6"], headings_handler);

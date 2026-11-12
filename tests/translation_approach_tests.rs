@@ -21,8 +21,8 @@ fn translating_html_nodes() {
 /// The "Translating HTML nodes" rule that an inline begins an inline context,
 /// applied to every inline which can hold an element: a block inside one goes
 /// out as a raw HTML inline, as it does inside a heading. Images, autolinks and
-/// hard line breaks hold no elements. GFM strikethrough has no handler, so
-/// `<del>` is a raw HTML inline, like `<span>`.
+/// hard line breaks hold no elements. Strikethrough containing a block uses
+/// the shared raw HTML inline fallback.
 #[test]
 fn blocks_inside_inlines() {
     // An inline as HTML, then as the CommonMark expected for it with text at
@@ -259,7 +259,7 @@ fn emphasis_and_strong_emphasis() {
 }
 
 /// `<br>`s alone in an inline which goes out as a raw HTML inline. GFM
-/// strikethrough has no handler, so `<del>` is one, like `<span>`.
+/// strikethrough containing only breaks uses the raw HTML inline fallback.
 #[test]
 fn brs_alone_in_a_raw_html_inline() {
     assert_eq!(
