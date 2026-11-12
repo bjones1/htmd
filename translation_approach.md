@@ -444,6 +444,40 @@ Approach:
       begins with `<p>`, serialize it as HTML. Otherwise, leave it as
       CommonMark. Combine each list item with an intervening newline.
 
+### Definition Lists
+
+Target pulldown-cmark 0.13.4 with
+`ENABLE_DEFINITION_LIST`; this syntax is not part of core CommonMark.
+
+Approach:
+
+1. Translate each `<dl>` in order: write each `<dt>` as a term, followed by
+   each associated `<dd>` on a new line beginning with `: `.
+2. Support multiple definitions per term and successive term/definition groups.
+   Preserve line breaks in terms and translate inline formatting in terms and definitions.
+3. Indent continuation lines and paragraphs beneath the definition text.
+   Use blank lines to preserve paragraph wrappers; retain empty definitions
+   with a bare `:`. Do not put a blank line after an empty definition when
+   another definition follows in the same group.
+
+These examples were verified with the parser, not an HTMD implementation.
+`⏎` denotes a newline and `␣` a space; HTML block-formatting newlines are omitted.
+
+| Markdown | Generated HTML |
+| -------- | -------------- |
+| `T⏎: D` | `<dl><dt>T</dt><dd>D</dd></dl>` |
+| `T⏎: D1⏎: D2` | `<dl><dt>T</dt><dd>D1</dd><dd>D2</dd></dl>` |
+| `A⏎: D1⏎⏎B⏎: D2` | `<dl><dt>A</dt><dd>D1</dd><dt>B</dt><dd>D2</dd></dl>` |
+| `` *T*⏎: **D** and [link](https://example.com) and `code` `` | `<dl><dt><em>T</em></dt><dd><strong>D</strong> and <a href="https://example.com">link</a> and <code>code</code></dd></dl>` |
+| `T⏎: first⏎⏎␣␣second` | `<dl><dt>T</dt><dd><p>first</p><p>second</p></dd></dl>` |
+| `T⏎:` | `<dl><dt>T</dt><dd></dd></dl>` |
+
+Escape literal colons at syntax-sensitive line starts, including after indentation,
+with `\:`. Leave ordinary internal colons such as `a:b` and generated markers unchanged.
+
+If the structure cannot be represented faithfully, Faithful mode uses HTML fallback.
+Pure mode translates the contents without preserving unsupported list structure.
+
 Inlines
 -------
 

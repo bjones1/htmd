@@ -3,6 +3,7 @@ mod blockquote;
 mod br;
 mod caption;
 mod code;
+mod definition_list;
 pub(crate) mod element_util;
 mod emphasis;
 mod head_body;
@@ -33,6 +34,8 @@ use blockquote::blockquote_handler;
 use br::br_handler;
 use caption::caption_handler;
 use code::code_handler;
+pub(crate) use definition_list::preserves_definition_whitespace;
+use definition_list::{definition_item_handler, definition_list_handler};
 use emphasis::emphasis_handler;
 use head_body::head_body_handler;
 use headings::headings_handler;
@@ -389,6 +392,8 @@ impl ElementHandlers {
             .copied()
             .collect();
         handlers.add_handler(unhandled_block_elements, block_handler);
+        handlers.add_handler(vec!["dl"], definition_list_handler);
+        handlers.add_handler(vec!["dt", "dd"], definition_item_handler);
 
         handlers
     }

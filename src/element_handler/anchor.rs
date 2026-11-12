@@ -60,7 +60,7 @@ impl ElementHandler for AnchorElementHandler {
         if options.link_style == LinkStyle::Referenced {
             EventSubscription {
                 events: EventTypes::DOC_EVENTS | EventTypes::ELEMENT_EVENTS,
-                tags: &["table", "pre", "ol", "ul"],
+                tags: &["table", "pre", "ol", "ul", "dl"],
             }
         } else {
             EventSubscription::NONE
