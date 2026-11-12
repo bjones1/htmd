@@ -732,3 +732,156 @@ its ends lie in math mode, where whitespace has no significance, and condition 3
 catches the one significant trailing whitespace, a control space. LaTeX reads a
 single newline as a space, and math mode ignores the space which replaces a
 comment, so only a comment in text mode renders differently (see step 1).
+
+
+
+### Superscript
+
+Superscript is a
+[pulldown-cmark extension](https://docs.rs/pulldown-cmark/0.13.4/pulldown_cmark/enum.Tag.html#variant.Superscript).
+This design uses `pulldown-cmark`'s superscript rules as the normative parsing
+behavior. Translate an attribute-free `<sup>` element to caret-enclosed text
+(`^content^`) when the conditions below allow it. The Markdown reader must
+enable pulldown-cmark's `ENABLE_SUPERSCRIPT` option.
+
+ **General Rule: `<sup>...</sup> == ^...^`**
+ 1. When in Faithful Mode: When the HTML text contains a literal `^` inside or outside internal
+     `<sup>`, output `\^`
+ 2. When in Faithful Mode: superscript translation only happens when there are no attributes. If there
+     are `<sup>` tags with attributes, do not apply caret rule and revert back
+     to raw HTML code.
+ 3. When in Faithful Mode: translates any nested Inline Formatting while changing `<sup>` tags to `^`
+ 4. When in Faithful Mode: Only leading or trailing whitespace within the `<sup>` tag, becomes
+     exterior whitespace.
+ 5. When in Pure mode, use same superscript rule however drop any attributes attached to the tag
+ 6. In Pure Mode Adjacent superscripts without any exterior whitespace will
+     behave as one superscript
+ 7. In Pure Mode, empty or whitespace-only `<sup>` tags are dropped, output only the whitespace for whitespace only `<sup>` tags while tags that are completely empty are removed completely and has no output.
+ 8. In Pure mode, tags with only interior whitespace will be removed while retaining the whitespace.
+
+ 9. Apply the same superscript rule to any nested `<sup>` statements. In those cases, the base would be whatever before the nested `<sup>` call. If it is empty, then the empty string will be the base for the `<sup>` call.
+ 10. Instances of nested `<sup>` tags that has been opened and closed will have same superscript rule applied while the outer `<sup>` tag will also have the same superscript rule applied. If there is only one nested and closed `<sup>` tag and one outer and closed `<sup>` tag, that means the total number of carets would be 4, creating the equation `2x+2=total_carets`, `x` being the amount of nested `<sup>` tags there are in the outer `<sup>` tag.
+
+Any surrounding paragraph, heading, list item, or table cell follows its own
+translation rules. HTML fallbacks remain subject to the limitations described in
+the shared HTML translation sections.
+For pure mode merging, treat two `<sup>` elements as adjacent if and only if every node between them is either empty or consists solely of ASCII punctuation characters. Any non-empty inline node containing letters, digits, or non-punctuation characters breaks adjacency. 
+
+Non-empty inline node between two `<sup>` tags count as adjacency breaks.
+
+Attribute behavior is mode-dependent: In Faithful mode, output original HTML for `<sup>` elements with attributes. In Pure Mode, ignore all attributes and perform superscript conversion.
+
+
+Nested caret count follows the rule `2x+2` if and only if every outer and nested superscript has been closed.
+
+Whitespace can include ASCII, Unicode spaces, or zero-width spaces.
+
+| Description                                         | HTML in                                         | Faithful expected          |
+| --------------------------------------------------- | ----------------------------------------------- | -------------------------- |
+| Literal caret                                       | `a^b`                                           | `a\^b`                     |
+| Simple Superscript Case                             | `<sup>x</sup>`                                  | `^x^`                      |
+| Superscript in an equation                          | `a<sup>2</sup> + b<sup>2</sup> = c<sup>2</sup>` | `a^2^ + b^2^ = c^2^`       |
+| Superscript with tag attributes (HTML maintained)                    | `<sup class="x">a</sup>`                        | `<sup class="x">a</sup>`   |
+| Superscript with inline format                      | `<sup><em>X</em></sup>`                         | `^*X*^`                    |
+| Superscript with interior whitespace                | `<sup> x </sup>`                                | `␣^x^␣`                    |
+| Superscripts with only interior whitespace (HTML maintained)          | `<sup>␣</sup>`                                  | `<sup>␣</sup>`             |
+| Superscript with nested `<sup>`                     | `<sup><sup>x</sup></sup>`                       | `^^x^^`                    |
+| Empty Superscripts (HTML maintained)                                  | `<sup></sup>`                                   | `<sup></sup>`              |
+| Adjacent Superscripts without whitespace in between (HTML maintained) | `<sup>a</sup><sup>b</sup>`                      | `<sup>a</sup><sup>b</sup>` |
+
+"Note:" Nested row currently unverified, use round-trip test
+`ENABLE_SUPERSCRIPT` to verify before implementation
+
+| Description                                         | HTML in                    | Pure Mode |
+| --------------------------------------------------- | -------------------------- | --------- |
+| Attributes                                          | `<sup class="x">a</sup>`   | `^a^`     |
+| Adjacent Superscripts without whitespace in between | `<sup>a</sup><sup>b</sup>` | `^ab^`    |
+| Empty Superscripts                                  | `<sup></sup>`              |           |
+| Superscripts with only interior whitespace          | `<sup>␣</sup>`             |    `␣`    |
+
+* blank cells means the element produces no output
+
+
+Implementation
+
+** Target syntax: HTML <sup></sup> elements
+** Translation Rule:
+	- In pure mode: both open and closing `<sup>` tags without attributes translates into carets `^`
+	- In faithful mode (or if tag has attributes): preserve the raw HTML by keeping `<sup>` tags to preserve any attribute loss
+	- In faithful mode: For any literal `^` values, translate them to `\^`
+
+** Element Stage: Inline HTML formatting tags encountered during the Markdown/HTML parsing pass
+
+**Syntax & Rendering:**
+  
+  - Clean tag: `<sup>2</sup>` -> `^2^`
+  - Attribute: fallback: `<sup class="content">1</sup>` -> `<sup class="content">1</sup>`
+
+**ID:** 
+
+  - superscripts, priority class: inline-formatting, safety: safe
+
+
+**Nested Caret Algorithm:**
+
+  1) Parse HTML into DOM-like tree
+  2) for each `<sup>` node found in documented order, compute `depth = total number of outer <sup> nodes.
+  3) If all outer nodes are closed properly, output `^` `depth + 1` times before the node's converted content and `^` repeats `depth + 1` afterwards
+  4) If any outer `<sup>` nodes are unbalances, revert to Faithful Mode behavior for that subtree
+  5) After conversion, apply adjacency merging per the inline-HTML adjacency rule provided in spec.
+  
+  **In Pure Mode:** remove the <sup> tags but preserve the original whitespace characters between the surrounding nodes.
+  
+  **In Faithful Mode:** output the original HTML for empty or whitespace only `<sup>` elements
+
+  **Mixed Inline content:** Preserve inline formatting inside the caret-delminited content according to mode rules. Convert nested inline tags to their pure mode equivalents before wrapping with carets.
+
+**Conditions:** 
+	
+  1) Inspect incoming HTML tokens for opening and closing `<sup>` tags
+  2) Evaluate whether `<sup>` tag contains attributes
+  3) `if ((attributes_Present == FALSE) && (PURE_MODE_ACTIVE == TRUE))` 
+		    `then {perform superscript command of stripping tags and add caret rule (`^`) };`
+    
+  4) `if ((attributes_Present == TRUE) || (strict_preservation_rules == TRUE))` 
+		    `then { don't perform superscript caret `^` rule and output the raw HTML element instead}`
+    
+  5) Avoid applying superscript translation inside code blocks, raw code spans, or preformatted text zones
+  
+  6) `if (HTML_input == '^')` 
+		    `then {output = '\^'}`
+    
+  7) If outer `<sup>` tag is closed and if every inner `<sup>` tags are closed. If both conditions are true, then use 		formula `caret_Total = 2x + 2`. `2x` representing formula for how many nested <sup> tags are there while the `2` afterwards represent the outer `<sup>` tag wrapping over the nested `<sup>` tags.
+  
+  8) For multiple caret layers, use the formula `2x` to calculate how many carets are need to represent each nested loop. `x` representing the total amount of nested `<sup>` tags and 2 representing each pair of opened and closed tags (e.g. `<sup></sup>`)
+  
+  9) `If ((<sup>`␣`</sup>) && (PURE_MODE == True))
+		then {remove tags while leaving `␣` alone}`  -> `␣` represents any type of whitespace within superscript tag
+
+** Test Cases:
+
+	1) literal caret escaping (Faithful Mode):
+		Input: `^`
+		Expected Output: `\^`
+	2) Clean Pure-Mode Superscript:
+		Input: `a<sup>2</sup> + b<sup>2</sup> = c<sup>2</sup>`
+		Expected Output (When in Pure Mode): `a^2^ + b^2^ = c^2^`
+	3) Attribute Fallbacks:
+		Input: <sup class="note">2</sup>
+		Expected Output: `<sup class="note">2</sup>` (HTML preserved)
+	4) Nested Formatting
+		Input: <sup><strong>bold sup</strong></sup>
+		Expected Output: `^**bold sup**^`
+	5) Adjacent Superscripts
+		Input: <sup>1</sup><span>,</span><sup>2</sup>
+		Expected Output (When in Pure Mode): `^1,2^` (avoids merging carets across adjacent tags)
+	6) Test nested superscript behavior:
+		Input: `<sup><sup>x</sup></sup>`
+		Expected Output:  ^^X^^ (can also determine how many carets total in this case by using `2x+2=totalcarets`) 
+	7) Whitespace-only superscript behavior in Faithful Mode
+		Input:  `<sup>␣</sup>`
+		Expected Output: `<sup>␣</sup>` (HTML Preserved)      
+
+	8) Whitespace-only superscript behavior in Pure Mode
+		Input: <sup>`␣`</sup>
+		Output: `␣`
