@@ -103,14 +103,11 @@ not.
 
 Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the “introduction” subsection of “Subscript” in translation_approach.md for round 3. Check it against the CommonMark spec, pulldown-cmark with ENABLE_SUBSCRIPT, and the existing “Emphasis and strong emphasis” section. Write any numbered findings to review_round_3.md. Do not edit translation_approach.md. If there are no findings, record that and briefly say whether another review round seems necessary.`
 produced the following output:
-> Review Round 3: Subscript introduction
-
-> No findings.
-
->The introduction now distinguishes CommonMark from pulldown-cmark's `ENABLE_SUBSCRIPT` extension, notes the single-tilde flanking and intraword
-constraint, clarifies that the examples are proposed rather than current htmd
-output, and qualifies strikethrough by `ENABLE_STRIKETHROUGH`. No further
-changes to `translation_approach.md` are indicated by this review.
+> The introduction now distinguishes CommonMark from pulldown-cmark's
+> `ENABLE_SUBSCRIPT` extension, notes the single-tilde flanking and intraword
+> constraint, clarifies that the examples are proposed rather than current
+> htmd output, and qualifies strikethrough by `ENABLE_STRIKETHROUGH`. No
+> further changes to `translation_approach.md` are indicated by this review.
 
 
 ### Arsen Zhanserkenov
