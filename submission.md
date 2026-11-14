@@ -6,9 +6,10 @@ not take part in this submission.
 ## Contributions
 
 - Pavel Shegay: Subscript section framing and introduction, including the example showing how to escape a literal `~` in text.
-- Viacheslav Sokolov: table rows and explanation for when `<sub>` can be
-  written as `~a~` and when it must stay raw HTML (inside a word, next to
-  punctuation, whitespace at the edges of the content).
+- Viacheslav Sokolov: the rules for translating `<sub>` to tildes or keeping it
+  as HTML (characters on both sides of each delimiter, character references,
+  neighboring tildes), first as table rows and then, after the instructor
+  review, as prose.
 - Arsen Zhanserkenov: empty and whitespace-only `<sub>`, nesting, and the
   Approach steps.
 
@@ -54,6 +55,7 @@ they do not establish that the proposed Subscript encoding is implemented.
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
 | 1 | 4 (1 accepted, 3 rejected) | Reworded the sentence on why in-word subscripts need HTML so it no longer claims that nothing can fix them. |
+| 2 | 2 (2 accepted) | After the instructor review, rewrote the rows and explanation as prose rules; encoded edge whitespace as a reference to the original character and kept HTML next to another element's tilde delimiter. |
 
 ### Pavel Shegay
 
@@ -74,46 +76,28 @@ they do not establish that the proposed Subscript encoding is implemented.
 
 ### Viacheslav Sokolov
 
-Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review only lines
-745-774 of translation_approach.md (the table rows I added to the Subscript
-section and the three explanation paragraphs below the table). Check them
-against the pulldown-cmark subscript extension (Options::ENABLE_SUBSCRIPT) and
-CommonMark left/right-flanking delimiter rules. Do not edit any files. List any
-factual errors, unclear wording, or missing cases as numbered findings.`
+Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review only the paragraphs
+I rewrote in the Subscript section of translation_approach.md (from
+"Translating `<sub>` to tildes" to "kept for that future improvement"). Check
+them against the pulldown-cmark subscript extension (Options::ENABLE_SUBSCRIPT)
+and the CommonMark rules for `_` delimiter runs. Do not edit any files. List
+any factual errors, unclear wording, or missing cases as numbered findings.`
 produced the following output; strikethrough indicates LLM output that I
 deemed incorrect or irrelevant.
 
-1. ~~The negative example `a ~b~c` is not a valid failure case under
-   CommonMark/pulldown-cmark subscript rules. The opener is left-flanking
-   because it is preceded by a space, and the closer is right-flanking even
-   when followed by a letter, so this should be treated as a valid subscript,
-   not as a literal-text case. The prose currently says it "fails for the same
-   reason on one side," which contradicts the delimiter-flanking model.~~
-   (pulldown-cmark 0.13.4 renders `a ~b~c` as literal text.)
-2. ~~The rule sentence is oversimplified and not the actual algorithm: "A
-   single `~` opens a subscript only if the character before it is whitespace,
-   punctuation, or the start of the line, and closes it only if the character
-   after it is whitespace, punctuation, or the end of the line" is not the
-   CommonMark left/right-flanking rule. The real test is both sides of the
-   delimiter run together: opener/closer validity depends on
-   left-flanking/right-flanking, not on a one-sided check of just the adjacent
-   character. This matters because cases like `x.~2~` are valid even though
-   the closer is not followed by whitespace/punctuation.~~ (In `x.~2~` the
-   closer is followed by the end of the line, which the rule covers; for a
-   single `~` the stated rule gives the same result as the flanking rules.)
-3. The explanation "Nothing written next to the tildes can fix this" is too
-   absolute and inconsistent with the surrounding point that the parser looks
-   at the characters outside the element. In fact, changing the neighboring
-   characters can make the same content valid: `H ~2~ O` is a valid subscript,
-   while `H~2~O` is not. The document is describing the outside-neighbor test
-   correctly, but then states the opposite too strongly.
-4. ~~The section is missing a key positive case that shows the real boundary
-   behavior: examples such as `a ~b~c` or `x.~2~` are exactly the cases
-   CommonMark uses to demonstrate that the check is on the characters outside
-   the delimiters, not on the content inside. Right now the doc only presents
-   the blocking cases and omits the corresponding valid "one-side letter,
-   other-side space/punctuation" cases that explain the rule.~~ (Based on
-   finding 1; `x.~2~` is already a row of the table.)
+> 1. **Whitespace preservation:** The instruction to encode any whitespace edge
+>    as `&#32;` preserves only an ordinary space. For tabs, line breaks, or
+>    other Unicode whitespace, it changes the subscript's content. Specify that
+>    this applies only to U+0020, or encode the original whitespace character.
+> 2. **Adjacent tilde runs:** The outside-character rule treats `~` as safe
+>    punctuation, but pulldown-cmark matches tilde delimiters only when their
+>    run lengths agree. For example, `<sub>a</sub>~` would produce `~a~~`, whose
+>    opening and closing runs do not match; the subscript won't parse. The
+>    procedure needs a guard or handling for neighboring tildes.
+
+Both findings were accepted after checking them with pulldown-cmark 0.13.4:
+`a ~&#160;b~ c` keeps the no-break space, `~a~\~` parses, and `~~x~~~a~` does
+not.
 
 ### Pavel Shegay
 

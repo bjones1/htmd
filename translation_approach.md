@@ -762,26 +762,33 @@ form.
 | Adjacent subscripts | `<sub>a</sub><sub>b</sub>` | `<sub>a</sub><sub>b</sub>` |
 | Subscript with an attribute | `<sub class="index">a</sub>` | `<sub class="index">a</sub>` |
 
-pulldown-cmark reads a subscript tilde the same way CommonMark reads an
-underscore emphasis delimiter. A single `~` opens a subscript only if the
-character before it is whitespace, punctuation, or the start of the line, and
-closes it only if the character after it is whitespace, punctuation, or the end
-of the line. A run of two tildes is strikethrough, so a subscript is always
-written with exactly one tilde on each side. The simple, alone-in-a-block and
-punctuation rows show the cases these rules allow.
+Translating `<sub>` to tildes depends on the characters on both sides of each
+delimiter. Using the notation of the emphasis section, consider `1~233..34~5`,
+where `1` and `5` are the characters before and after the element (a missing
+character at the start or end of a line counts as whitespace), `2` and `4` are
+the first and last characters of its content, and `3` is the rest of the
+content. Since a single `~` follows the rules for `_`, not `*`:
 
-`H~2~O` renders as the literal text `H~2~O`, since the tildes touch letters on
-both sides, and `a ~b~c` fails for the same reason on one side. No escape or markup
-next to the tildes can fix this without changing the surrounding text, so these
-subscripts are serialized as HTML.
-The test is on the characters outside the element, not on its content:
-`a ~.~ b` is a valid subscript because the tildes themselves are surrounded by
-spaces.
+1. If `2` or `4` is whitespace, encode that character as a numeric character
+   reference, such as `&#32;` for a space or `&#160;` for a no-break space; a
+   subscript cannot begin or end with whitespace.
+2. If `1` is neither whitespace nor punctuation, encode `1` as a character
+   reference, so the opening `~` follows the `;` of the reference. Likewise, if
+   `5` is neither whitespace nor punctuation, encode `5`, so the closing `~` is
+   followed by the `&` of the reference. For example, `H<sub>2</sub>O` becomes
+   `&#72;~2~&#79;`. A literal `~` next to the element is safe, since it is
+   escaped as `\~`; but if `1` or `5` is a `~` delimiter of another element,
+   such as the end of a strikethrough, serialize the element as HTML, because
+   the tildes would join into one longer run (`~~x~~~a~` is literal text).
+3. Escape every literal `~` in the content as `\~`.
 
-`~ b ~` is not a subscript, since the opening tilde is followed by whitespace.
-Moving the whitespace outside the delimiters, as the emphasis approach does,
-would here join the subscript to the neighbouring letters and cause the
-inside-a-word problem, so the element is serialized as HTML.
+An empty subscript has no such encoding: `~~` is a strikethrough delimiter, not
+a subscript holding nothing.
+
+htmd cannot yet examine the output before and after an element (see the
+emphasis section), so it cannot apply step 2. Until it can, Faithful mode
+serializes `<sub>` as HTML whenever its outside characters are unknown; the
+steps above are kept for that future improvement.
 
 An empty or whitespace-only subscript keeps its tags and its whitespace
 (subject to the general whitespace collapsing rules). Removing the tags loses
