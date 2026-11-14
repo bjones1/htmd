@@ -41,6 +41,9 @@ Changing the direction moves the current output into the input pane and
 converts it the other way, so one click round-trips the text. The options are
 kept. Undo of this change is not required.
 
+The direction switch, **Copy**, and **Share** always act on output that is up
+to date with the input, even if the user is still inside the typing pause.
+
 ### Input pane
 
 * A single plain-text editor, labelled "HTML" or "Markdown" to match the
@@ -90,7 +93,9 @@ on the library's documentation where it exists.
 
 ### htmd options
 
-These are shown only in HTML → Markdown mode. Defaults are htmd's own defaults.
+These are shown only in HTML → Markdown mode. The defaults are those in the
+table below, which match htmd 0.5.5's own defaults; if a later htmd changes a
+default, the table still applies.
 
 | Option | Control | Choices | Default | Shown |
 | --- | --- | --- | --- | --- |
@@ -145,14 +150,15 @@ checkbox for each pulldown-cmark extension:
 
 Tables and math are on by default because htmd writes both: with them off, the
 **Rendered** tab of HTML → Markdown would show its own output incorrectly.
-Checking old-style footnotes also checks footnotes, since one implies the
-other.
+Old-style footnotes requires footnotes: checking old-style footnotes also checks
+footnotes, and unchecking footnotes also unchecks old-style footnotes.
 
 Examples
 --------
 
-Each direction has its own presets. **Basic** is the default example, shown on
-a first visit.
+Each direction has its own presets, and **Basic** is the first in each menu.
+The HTML **Basic** preset is shown when the page opens with no saved state in
+its address.
 
 HTML → Markdown:
 
@@ -170,7 +176,8 @@ HTML → Markdown:
 | Edge cases | empty elements, entities, runs of whitespace, comments, `<script>`, `<style>`, and `<noscript>` |
 
 Markdown → HTML: one preset for each pulldown-cmark extension, plus a Basic
-preset of plain CommonMark.
+preset of plain CommonMark. Picking an extension's preset also checks that
+extension, so the preset always shows its feature; no other option changes.
 
 The article text is written for the playground or taken from a source whose
 license allows it to be redistributed.
@@ -180,7 +187,8 @@ Expected results
 
 These rows are the reference behavior. Each was produced with htmd 0.5.5 and
 pulldown-cmark 0.13.4, with every option at its default unless the Settings
-column says otherwise. `⏎` is a newline and `␣` a space.
+column says otherwise. `⏎` is a newline and `␣` a space. A trailing newline at
+the end of the output is ignored.
 
 ### HTML → Markdown
 
@@ -237,7 +245,7 @@ Permalinks
 
 The page address records the direction, the input, and every option that
 differs from its default. Opening the address in a new tab restores them
-exactly; the converted output can differ only if the page was rebuilt with a
+exactly, except input over 1 MiB (see Limits and failures); the converted output can differ only if the page was rebuilt with a
 newer htmd or pulldown-cmark. The address updates as the user works, without
 adding an entry to the browser history for each keystroke.
 
@@ -256,19 +264,22 @@ Limits and failures
 
 * **Large input.** Above 1 MiB of input, conversion pauses and the status line
   offers a "Convert anyway" button. The output shows the last result until then.
-  Input this large is not stored in the address, and a notice says so.
+  Input this large is not stored: the address keeps only the direction and
+  options, a notice says the input is too large to share, and **Share** shows
+  that notice instead of copying.
 * **Crashes.** If a converter fails or crashes, the page does not freeze
-  silently. It shows a message with a **Reload** link, and a **Start over**
-  link that loads the page without the saved address (in case the saved input
-  itself causes the crash).
+  silently. It shows a message with a **Copy input** button, a **Reload** link,
+  and a **Start over** link that loads the page without the saved address (in
+  case the saved input itself causes the crash).
 
 Constraints
 -----------
 
 * **Safety.** Nothing the user enters, and nothing a converter produces from
-  it, runs scripts, loads anything from the network, or navigates the page. This
-  applies to the **Rendered** and **Original** tabs in particular; images with
-  remote addresses show as broken there.
+  it, runs scripts, loads anything from the network, navigates the page, or
+  changes the look of the rest of the playground. This applies to the
+  **Rendered** and **Original** tabs in particular: images with remote
+  addresses show as broken there, and clicking a link does nothing.
 * **No network use** at run time beyond loading the site itself.
 * **Browsers:** current Chrome, Firefox, and Safari, on desktop and phone.
 * **Accessibility:** every control works from the keyboard, has a visible focus
@@ -276,8 +287,9 @@ Constraints
   to screen readers.
 * **Themes:** the page, including the rendered tabs, follows the system's light
   or dark setting.
-* **Size and speed:** the downloaded page is under 1 MB compressed, and
-  converting the Article example takes under 10 ms in desktop Chrome.
+* **Size and speed:** the downloaded page, with all its files, is under 1 MB
+  with gzip, and converting the Article example to Markdown takes under 10 ms
+  (median of 10 runs) in desktop Chrome.
 * **The library is untouched.** Adding the playground does not change htmd's
   code, its published package, or its existing build, lint, and test results.
 
@@ -286,8 +298,13 @@ Acceptance criteria
 
 * Every row under Expected results gives its stated output.
 * Every option changes the output of at least one example.
-* The direction switch round-trips the Basic example in both directions.
-* A link copied with **Share** reproduces the page in a new tab.
+* Switching direction twice on the HTML **Basic** preset gives back the
+  original HTML, ignoring whitespace between tags, and the Round trip row above
+  holds.
+* A link copied with **Share** reproduces the page in a new tab, for any input
+  up to 1 MiB.
+* An invalid link shows the notice and the Basic preset; input over 1 MiB waits
+  for "Convert anyway"; and the page works at phone width.
 * `<script>alert(1)</script>` in the input never runs, and
   `<img src="https://example.com/x.png">` makes no network request.
 * A push to `main` publishes the site, and the htmd crate's own CI still
