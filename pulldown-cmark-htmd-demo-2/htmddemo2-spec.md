@@ -25,8 +25,9 @@ Page layout
 
 From top to bottom:
 
-1. A header with the title "htmd playground", the htmd version the page was
-   built from, and links to the source repository, docs.rs, and crates.io.
+1. A header with the title "htmd playground", the htmd and pulldown-cmark
+   versions the page was built from, and links to the source repository,
+   docs.rs, and crates.io.
 2. A **direction switch** with two positions, "HTML → Markdown" (the default)
    and "Markdown → HTML".
 3. The **options panel** (see Options).
@@ -42,7 +43,8 @@ converts it the other way, so one click round-trips the text. The options are
 kept. Undo of this change is not required.
 
 The direction switch, **Copy**, and **Share** always act on output that is up
-to date with the input, even if the user is still inside the typing pause.
+to date with the input, even if the user is still inside the typing pause. The
+exceptions are under Limits and failures.
 
 ### Input pane
 
@@ -177,7 +179,8 @@ HTML → Markdown:
 
 Markdown → HTML: one preset for each pulldown-cmark extension, plus a Basic
 preset of plain CommonMark. Picking an extension's preset also checks that
-extension, so the preset always shows its feature; no other option changes.
+extension, so the preset always shows its feature. No other option changes,
+except as the footnotes rule under Options requires.
 
 The article text is written for the playground or taken from a source whose
 license allows it to be redistributed.
@@ -200,10 +203,12 @@ the end of the output is ignored.
 | `<ul><li>a</li><li>b</li></ul>` | | `*␣␣␣a⏎*␣␣␣b` |
 | `<ul><li>a</li><li>b</li></ul>` | `-` marker, 1 space | `-␣a⏎-␣b` |
 | `<ol start="3"><li>a</li></ol>` | | `3.␣␣a` |
+| `<ol start="3"><li>a</li></ol>` | 1 space after list number | `3.␣a` |
 | `<hr>` | | `*␣*␣*` |
 | `<hr>` | `- - -` | `-␣-␣-` |
 | `<p>a<br>b</p>` | | `a␣␣⏎b` |
 | `<p>a<br>b</p>` | backslash | `a\⏎b` |
+| `<p>a<br>b</p>` | Faithful | `a<br>b` |
 | `<p><a href="https://e.com">t</a></p>` | | `[t](https://e.com)` |
 | `<p><a href="https://e.com">t</a></p>` | referenced | `[t][1]⏎⏎[1]:␣https://e.com` |
 | `<p><a href="https://e.com">t</a></p>` | referenced, collapsed | `[t][]⏎⏎[t]:␣https://e.com` |
@@ -217,10 +222,14 @@ the end of the output is ignored.
 | `<p><code> a </code></p>` | preserve code whitespace | `` `␣␣a␣␣` `` |
 | `<table><tr><th>a</th></tr><tr><td>b</td></tr></table>` | | `\|␣a␣\|⏎\|␣-␣\|⏎\|␣b␣\|` |
 | `<p><span class="math math-inline">x^2</span></p>` | | `$x^2$` |
+| `<p><span class="math math-display">x^2</span></p>` | | `$$x^2$$` |
 | `<p class="x">a</p>` | | `a` |
 | `<p class="x">a</p>` | Faithful | `<p class="x">a</p>` |
 | `<p>a</p><script>alert(1)</script>` | | `a⏎⏎alert(1)` |
 | `<p>a</p><script>alert(1)</script>` | skip tags `script` | `a` |
+| `<p>a</p><script>alert(1)</script>` | skip tags `SCRIPT` | `a` |
+| `<p>a</p><noscript><b>x</b></noscript>` | | `a⏎⏎\<b>x\</b>` |
+| `<p>a</p><noscript><b>x</b></noscript>` | `<noscript>` as raw text off | `a⏎⏎**x**` |
 
 ### Markdown → HTML
 
@@ -238,19 +247,28 @@ the end of the output is ignored.
 
 ### Round trip
 
-Converting `#␣Hi⏎⏎$x^2$` to HTML and switching direction gives back `#␣Hi⏎⏎$x^2$`.
+Converting `#␣Hi⏎⏎$x^2$` to HTML and switching direction gives back
+`#␣Hi⏎⏎$x^2$`.
 
 Permalinks
 ----------
 
 The page address records the direction, the input, and every option that
-differs from its default. Opening the address in a new tab restores them
-exactly, except input over 1 MiB (see Limits and failures); the converted output can differ only if the page was rebuilt with a
-newer htmd or pulldown-cmark. The address updates as the user works, without
-adding an entry to the browser history for each keystroke.
+differs from its default. All of this follows the `#` in the address, so none
+of it is sent to the server. Opening the address in a new tab restores them
+exactly; the converted output can differ only if the page was rebuilt with a
+newer htmd or pulldown-cmark.
+
+The address is at most 32,768 characters long, so that links survive chat apps
+and mail clients. When the input does not fit, the address keeps only the
+direction and options, and a notice says the input is too large to share.
+
+The address updates as the user works. Nothing the user does in the playground
+adds an entry to the browser history; only editing the address by hand does.
 
 * A **Share** button copies the address. It first brings the address up to
-  date with the latest keystrokes.
+  date with the latest keystrokes. When the input is too large to share, it
+  shows that notice instead of copying.
 * If the address cannot be decoded, the page shows the default example and a
   notice saying the link was invalid. The address is left unchanged until the
   user changes the input or an option.
@@ -262,11 +280,13 @@ adding an entry to the browser history for each keystroke.
 Limits and failures
 -------------------
 
-* **Large input.** Above 1 MiB of input, conversion pauses and the status line
-  offers a "Convert anyway" button. The output shows the last result until then.
-  Input this large is not stored: the address keeps only the direction and
-  options, a notice says the input is too large to share, and **Share** shows
-  that notice instead of copying.
+* **Large input.** Above 1 MiB of input (measured as UTF-8 text), conversion
+  pauses and the status line offers a "Convert anyway" button. The output shows
+  the last result until then. A direction switch whose output would be over
+  1 MiB pauses in the same way.
+* **Stale output.** While conversion is paused, and after a crash, the
+  direction switch and **Copy** are unavailable, because the output does not
+  match the input.
 * **Crashes.** If a converter fails or crashes, the page does not freeze
   silently. It shows a message with a **Copy input** button, a **Reload** link,
   and a **Start over** link that loads the page without the saved address (in
@@ -302,7 +322,7 @@ Acceptance criteria
   original HTML, ignoring whitespace between tags, and the Round trip row above
   holds.
 * A link copied with **Share** reproduces the page in a new tab, for any input
-  up to 1 MiB.
+  that fits in a 32,768-character address.
 * An invalid link shows the notice and the Basic preset; input over 1 MiB waits
   for "Convert anyway"; and the page works at phone width.
 * `<script>alert(1)</script>` in the input never runs, and
@@ -314,5 +334,5 @@ Out of scope
 ------------
 
 A server, user accounts, analytics, saving work anywhere other than the page
-address, custom htmd element handlers, syntax highlighting, and changes to htmd
-itself.
+address, custom htmd element handlers, syntax highlighting, a conversion that
+never finishes, and changes to htmd itself.

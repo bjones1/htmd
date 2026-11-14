@@ -2,178 +2,94 @@ Spec review: htmd and pulldown-cmark playground
 ===============================================
 
 This is a review of [htmddemo2-spec.md](htmddemo2-spec.md), dated 2026-11-14.
-It lists 30 findings: inconsistencies, incomplete scenarios, and vague
-objectives. It does not cover technical implementation.
+It lists 7 findings and 5 smaller points, and it replaces the earlier review of
+the same date.
 
-The findings come from reading the spec against itself. The converters were not
-run, so the rows under Expected results are unchecked.
+Unlike the earlier review, this one ran the converters. Every row under
+Expected results was run through htmd 0.5.5 and pulldown-cmark 0.13.4, built
+from this repository.
 
-The most consequential findings are the large-input permalink contradiction
-(1), the stale-output scenarios (13), and the undefined "round-trips" criterion
-(7).
+The most consequential finding is that sharing input of up to 1 MiB is probably
+not achievable (1).
 
 Line numbers refer to the spec as it stood on the review date.
 
-Inconsistencies
----------------
+What was verified
+-----------------
 
-1. **Large input contradicts the permalink guarantee** (line 257 vs lines 238
-   and 290). Input over 1 MiB is not stored in the address, yet the address
-   "restores them exactly" and a Share link "reproduces the page". The spec
-   does not say what the address holds in that state (the old input, or none)
-   or what Share does.
+* **Expected results.** All 27 HTML → Markdown rows, all 9 Markdown → HTML
+  rows, and the Round trip row give the stated output.
+* **Basic round trip.** A paragraph with bold and italic text survives two
+  direction switches, apart from a trailing newline.
+* **Defaults table.** It matches `Options::default()` in `src/options.rs`, and
+  `<noscript>` "on" matches htmd's `scripting_enabled: true`.
+* **Extension list.** The 15 checkboxes are exactly the 15 option flags of
+  pulldown-cmark 0.13.4.
+* **Footnotes coupling.** `ENABLE_OLD_FOOTNOTES` already includes the footnotes
+  bit in the library, so the two-way rule on lines 153–154 matches it.
 
-2. **"Undo is not required" vs Back and Forward** (line 42 vs line 249). Back
-   and Forward must load the state in the address, but the spec never says
-   which actions create a history entry. If none do, Back has nothing to go to;
-   if a direction switch does, Back is an undo.
+Findings
+--------
 
-3. **"First visit" has no meaning** (line 154 vs line 299). Nothing is saved
-   outside the address, so the page cannot tell a first visit from a later one.
-   It presumably means "an address with no state".
+1. **Share for "any input up to 1 MiB" is probably not achievable** (lines
+   246–248 and 304–305). Encoding 1 MiB into an address gives roughly 1.4 MB
+   before any compression. That is near or past the URL limits of the browsers
+   the spec requires, and phones are the tightest. Either set a much lower
+   share limit, separate from the 1 MiB conversion limit, or say the criterion
+   is tested only up to a stated size.
 
-4. **The Markdown Basic preset is never a default.** The page opens in HTML →
-   Markdown, and switching direction carries the converted output over, so the
-   Markdown Basic preset appears only if picked from the menu.
+2. **The address does not say it uses the fragment** (lines 246–250). If the
+   state went in the query string, GitHub Pages would reject long addresses and
+   the input would be sent to the server. One sentence saying the state lives
+   after `#` settles this.
 
-5. **Hidden vs disabled** (lines 100–107). Code fence and Reference style are
-   hidden when they do not apply, while Line break is disabled. The column is
-   headed "Shown" but holds both behaviours, with no reason given for the
-   difference.
+3. **"Always up to date" conflicts with the large-input pause** (lines 44–45 vs
+   lines 265–266). Above 1 MiB the output is deliberately stale until "Convert
+   anyway". The spec does not say what the direction switch and Copy do then,
+   or after a crash. It also does not say what happens when a direction switch
+   produces an input over 1 MiB.
 
-6. **Confirmation is applied unevenly** (line 50). Loading an example over
-   edited input asks first. Clear, the direction switch, Back and Forward, and
-   Reset to defaults discard the same work without asking.
+4. **Back and Forward have nothing defined to go back to** (lines 249–250 and
+   257–258). The spec says keystrokes add no history entry, but never says
+   which actions do. If none do, Back leaves the site.
 
-7. **"Round-trips" is used in two senses** (line 233 vs line 289). Line 233
-   means the text comes back identical. Line 289 cannot mean that for the HTML
-   Basic example unless the converters happen to be exact inverses, so the
-   criterion has no pass condition.
+5. **A hang is not covered by "Crashes"** (lines 270–273). A converter that
+   loops forever freezes the page silently, which is what the section forbids.
+   Either rule hangs out of scope or require that the page stays responsive.
 
-8. **Only one version is shown** (line 28 vs line 240). The header shows only
-   the htmd version, but the Permalinks section says output can change with
-   either library.
+6. **"No other option changes" contradicts the footnotes rule** (lines 153–154
+   vs lines 179–180). Picking the Old-style footnotes preset checks old-style
+   footnotes, which also checks footnotes.
 
-9. **Defaults have two sources** (line 93). "Defaults are htmd's own defaults"
-   sits beside a table of fixed values. The spec does not say which wins if
-   htmd changes a default, and that also changes what "differs from its
-   default" means for old permalinks.
+7. **Three options have no Expected results row:** Spaces after list number,
+   the `<noscript>` option, and Line break in Faithful mode. Display math is
+   also missing in the HTML → Markdown direction. These rows were produced in
+   the same run and can be added as they are:
 
-10. **Expected results mix exact and descriptive rows** (lines 225 and 228).
-    Most rows give exact text, but these two give descriptions. No row says
-    whether a trailing newline counts, which also affects the character count
-    in the status line.
+   | Input | Settings | Output |
+   | --- | --- | --- |
+   | `<ol start="3"><li>a</li></ol>` | 1 space after list number | `3.␣a` |
+   | `<p>a</p><noscript><b>x</b></noscript>` | | `a⏎⏎\<b>x\</b>` |
+   | `<p>a</p><noscript><b>x</b></noscript>` | noscript as raw text off | `a⏎⏎**x**` |
+   | `<p>a<br>b</p>` | Faithful | `a<br>b` |
+   | `<p><span class="math math-display">x^2</span></p>` | | `$$x^2$$` |
 
-11. **Share is missing from the page layout** (lines 26–36). The layout list
-    does not place the Share button. Copy has a "browser does not allow
-    copying" message, but Share, which also copies, does not.
+Smaller points
+--------------
 
-12. **"A group of controls for each converter"** (line 85) is true in only one
-    direction. It is also unclear whether Reset to defaults resets the htmd
-    group while it is hidden.
+* **Skip tags case** (line 121). htmd's `skip_tags` is case-sensitive: passing
+  `SCRIPT` skipped nothing in the run. The "case-insensitive" rule holds only
+  if the playground lowercases the names, and a row with `SCRIPT` would pin
+  that down.
+* **1 MiB unit** (line 265). The spec does not say bytes or characters, while
+  the status line counts characters.
+* **Header version** (line 28 vs lines 248–249). The header shows only the htmd
+  version, though the output can change with either library.
+* **Formatting** (line 248). The line is not wrapped like the rest of the file.
+* **Still open from the earlier review:**
 
-Incomplete scenarios
---------------------
-
-13. **Stale output.** Output can lag the input during the typing pause, while a
-    large input is paused, and after a failure. The spec does not say what the
-    direction switch, Copy, and the Rendered tab do then, or whether the output
-    is marked as out of date.
-
-14. **Tab selection on a direction switch.** If Original is selected and the
-    user switches to Markdown → HTML, where that tab does not exist, the
-    selected tab is undefined. The spec also does not say whether the selected
-    tab or the panel's collapsed state are part of the permalink.
-
-15. **Footnotes coupling is one-way** (line 148). Unchecking Footnotes while
-    Old-style is checked is undefined. So is unchecking Old-style, and so is a
-    hand-edited address with old-style on and footnotes off.
-
-16. **Number fields.** Empty, 0, 9, 2.5, or a half-typed value in a 1–4 field
-    has no defined result (clamp, reject, or keep the last valid value). The
-    same applies to out-of-range values in an address.
-
-17. **Partly valid addresses** (line 246). The spec covers only "cannot be
-    decoded". Undefined cases are an unknown option, one bad value among good
-    ones, and a format version newer than the page. It also omits the direction
-    switch from the actions that replace an invalid address.
-
-18. **"Convert anyway" scope** (line 257). The spec does not say whether it
-    applies once, until the input drops below 1 MiB, or for the session. It
-    also does not say whether the limit is checked when a direction switch or
-    an example produces the large input, or whether 1 MiB means bytes or
-    characters (the status line counts characters).
-
-19. **Fails vs crashes** (line 260) get the same treatment. A recoverable error
-    should arguably let the user keep editing. Other gaps:
-
-    * a conversion that hangs instead of crashing;
-    * a failure in the Rendered pass only;
-    * no way to recover the text, since Start over discards it and Reload loses
-      any input too large for the address.
-
-20. **Links in the Rendered and Original tabs** (line 269). "Navigates the
-    page" does not say what a click does: nothing, or open a new tab. Forms,
-    iframes, and input `<style>` that could restyle the playground are also
-    uncovered.
-
-21. **Relative image addresses** (line 204). Only remote images are said to
-    show as broken. `i.png`, used in the Links and images preset and in the
-    Expected results, would resolve against the site itself; `data:` images are
-    not mentioned.
-
-22. **"Edited"** (line 50) is undefined after a permalink load, a direction
-    switch, Clear, or an edit that is then reverted.
-
-23. **When conversion runs** (line 79). The spec covers typing and option
-    changes only. Page load, example load, Clear, paste, and the direction
-    switch are not covered. Skip tags is a typed option, so "immediately" means
-    on every keystroke.
-
-24. **Markdown → HTML presets and their extensions** (line 172). The spec does
-    not say whether picking the Strikethrough preset turns strikethrough on. If
-    not, the preset shows nothing by default; if so, examples change options,
-    which the spec does not mention.
-
-25. **Options panel.** Behaviour on resize or rotation across 800 px is
-    undefined. A permalink with non-default options opened on a phone has the
-    panel collapsed, with no sign that hidden settings are active.
-
-26. **Skip tags.** "Valid tag name" is undefined (hyphenated custom elements,
-    for example). The spec does not say whether ignored entries stay in the
-    address, or how skipping `noscript` interacts with the noscript checkbox.
-
-27. **Empty input, and feedback after a successful Copy or Share,** are
-    unspecified. So is how several notices share the status line and when each
-    one clears.
-
-Vague objectives
-----------------
-
-28. **Unmeasurable targets:**
-
-    * "under 10 ms in desktop Chrome" gives no hardware, and does not say
-      whether the Rendered pass is included;
-    * "a few kilobytes" for the Article;
-    * "under 1 MB compressed" does not say which compression or whether it
-      covers all assets;
-    * "current" browsers;
-    * "about a tenth of a second".
-
-29. **"Status changes are announced"** (line 275). The spec does not say which
-    changes; announcing time and length after every conversion would flood a
-    screen reader. The Esc-then-Tab exit is also not required to be
-    discoverable.
-
-30. **Acceptance criteria are thin.**
-
-    * "Every option changes the output of at least one example" does not say
-      which output: pulldown-cmark options in HTML → Markdown only affect the
-      Rendered tab.
-    * No listed preset clearly exercises Faithful mode.
-    * Nothing tests invalid links, large input, crashes, Back and Forward,
-      accessibility, themes, size, or the phone layout.
-    * Most pulldown-cmark extensions, the noscript option, and "Spaces after
-      list number" have no Expected results row.
-    * "Links to the source repository" does not say whether that is htmd
-      upstream or this fork.
+  * out-of-range or empty values in the number fields;
+  * partly valid addresses, and a format version newer than the page;
+  * how long "Convert anyway" applies;
+  * which tab is selected when Original disappears on a direction switch;
+  * what "edited" means after a direction switch or a permalink load.
