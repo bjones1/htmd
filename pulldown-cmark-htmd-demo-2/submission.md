@@ -46,6 +46,18 @@ page-to-markdown: converted the saved Hacker News page in 25ms and the Wikipedia
 
 #### Ademi
 
+The project compiles and runs with Rust 1.99.1. All three CI commands from AGENTS.md pass:
+
+cargo build: finished cleanly.
+cargo clippy -- --deny warnings: no warnings.
+cargo test: 267 tests passed, 0 failed, 1 ignored. The largest suites had 91 and 36 tests.
+
+htmd is a library, so to check it at runtime I ran its three examples:
+
+simple: all its built-in checks passed.
+table: printed a correctly aligned Markdown table.
+page-to-markdown: converted the saved Hacker News page in 81ms and the Wikipedia page in 652ms.
+
 | Check | Result |
 | --- | --- |
 | `cargo build` | ✅ builds (Rust 1.99.1) |
@@ -86,15 +98,46 @@ page-to-markdown: converted the saved Hacker News page in 21ms and the Wikipedia
 
 ### Last LLM review
 
-Prompting Claude Opus 5.5, Medium effort with:
-> Review a spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Find logical inconsistencies. DO not change any files yet.
+Prompting Claude Fable 5.2 with:
+> Review the spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Evaluate against acceptance criteria and submission template.
+>
 
-LLM output on last review:
-> **Repo mismatches:** ~~version 0.5.6 vs. `Cargo.toml` 0.5.5~~; `Options` does derive `Clone, PartialEq`; ~~spacing clamp 1–8 vs. library's 1–4~~; ~~deploy URL doesn't match repo~~.
+LLM output on last review (round 9, in full in
+[latest-review.md](latest-review.md)); no finding was judged incorrect, so
+nothing is struck through:
+
+> **Converters run.** Every row under Expected results, and the Round trip,
+> gives the stated output with htmd 0.5.5 and pulldown-cmark 0.13.4. The option
+> defaults and the 15 extensions match the libraries.
 >
-> **Contradictions:** ~~clippy command missing `--`~~; ~~`deploy` waits on PR-only `check`~~; optional compression vs. mandatory deflate; "only allowed edit" vs. extra repo edits; 1 MB input vs. URL permalinks; debounce vs. single `Memo`.
+> **Findings, fixed:**
 >
-> **Gaps:** no `<hr>` example; `br_style` ignored in Faithful mode; `skip_tags` default and permalink undefined; build-time version reads demo's own; "must not panic" vs. `panic = "abort"`.
+> 1. Crash and stale output contradict each other: tabs were to keep their
+     >    last content while the output is stale, but stale includes "after a
+     >    crash", when a message replaces the output pane.
+> 2. The skip tags `SCRIPT` row is not htmd's own output: htmd matches tag
+     >    names by case, so the row holds only through the playground's Skip tags
+     >    rule.
+> 3. The double-switch criterion fails on a trailing newline, which is not
+     >    "whitespace between tags".
+> 4. Two address rules were missing: what Back or Forward to an address with
+     >    no saved state shows, and whether a loaded address or a pending typing
+     >    update wins.
+>
+> **Trivial points, left as they are:**
+>
+> 5. "Valid tag name" under Skip tags is not defined.
+> 6. The 10 ms speed target names the browser but no hardware.
+> 7. The spec does not say whether the address still updates after a crash.
+> 8. The Pages address belongs to the team's fork, while the pull request
+     >    targets the instructor's fork.
+>
+> **Submission file:** team name and GitHub userids missing; rounds 5–8 belong
+> to the final submission; the final review table and last review were empty;
+> the round 8 row misstated two changes; Ademi's compiler test was a table
+> pasted as loose lines; the draft's "Last LLM review" shows round 1, not
+> round 3; final contributions and commits are missing for two members.
+> 
 
 Final submission (Excluding implementation, as discussed at the 1-to-1 and group calls)
 ----------------
@@ -104,7 +147,10 @@ Final submission (Excluding implementation, as discussed at the 1-to-1 and group
 * Daniil: rewrite of the spec after the instructor's review (round 4); spec
   review rounds 5, 6, 8 and 9, with the resulting fixes to the spec and this
   file.
-* Ademi: (to be completed for the final submission)
+* Ademi: spec review round 2 (30 findings: 6 contradictions, 10 technical
+  issues, 8 ambiguities, 6 missing requirements), with the resulting fixes to
+  the spec and the round 2 row in this file; compiler test (build, clippy,
+  tests and examples).
 * Aruzhan: check of the rewritten spec against every instructor comment, with
   the remaining fixes to the spec and this file (round 7).
 * Alisher: (to be completed for the final submission)
@@ -125,12 +171,13 @@ The reviews for rounds 5, 6 and 8 were earlier versions of
 
 ### Implementation review rounds
 
-(Table showing implementation review rounds)
+~~(Table showing implementation review rounds)~~ to be added during the implementation phase. 
 
 ### Last LLM spec review
 
 Prompting Claude Fable 5.2 with:
-> Review the spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Evaluate against @pulldown-cmark-htmd-demo-2/acceptance-criteria.md and submission template.
+> Review the spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Evaluate against acceptance criteria and submission template.
+> 
 
 LLM output on last review (round 9, in full in
 [latest-review.md](latest-review.md)); no finding was judged incorrect, so
@@ -170,6 +217,6 @@ nothing is struck through:
 
 ### Last LLM implementation review
 
-(LLM and prompt used)
+~~(LLM and prompt used)~~ to be added during the implementation phase. 
 
-(LLM output, possibly with strikethrough)
+~~(LLM output, possibly with strikethrough)~~ to be added during the implementation phase. 
