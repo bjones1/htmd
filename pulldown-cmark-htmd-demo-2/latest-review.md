@@ -1,95 +1,95 @@
 Spec review: htmd and pulldown-cmark playground
 ===============================================
 
-This is a review of [htmddemo2-spec.md](htmddemo2-spec.md), dated 2026-11-14.
-It lists 7 findings and 5 smaller points, and it replaces the earlier review of
-the same date.
+This is review round 9 of [htmddemo2-spec.md](htmddemo2-spec.md), dated
+2026-11-14. It replaces the round 8 review of the same date.
 
-Unlike the earlier review, this one ran the converters. Every row under
-Expected results was run through htmd 0.5.5 and pulldown-cmark 0.13.4, built
-from this repository.
+Model: Claude Fable 5.2. Prompt:
 
-The most consequential finding is that sharing input of up to 1 MiB is probably
-not achievable (1).
+> Review the spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md . Evaluate
+> against @pulldown-cmark-htmd-demo-2/acceptance-criteria.md and submission
+> template.
 
-Line numbers refer to the spec as it stood on the review date.
+Findings refer to spec sections, not line numbers, since the fixes below moved
+the lines.
 
-What was verified
------------------
+Summary
+-------
 
-* **Expected results.** All 27 HTML → Markdown rows, all 9 Markdown → HTML
-  rows, and the Round trip row give the stated output.
-* **Basic round trip.** A paragraph with bold and italic text survives two
-  direction switches, apart from a trailing newline.
-* **Defaults table.** It matches `Options::default()` in `src/options.rs`, and
-  `<noscript>` "on" matches htmd's `scripting_enabled: true`.
-* **Extension list.** The 15 checkboxes are exactly the 15 option flags of
-  pulldown-cmark 0.13.4.
-* **Footnotes coupling.** `ENABLE_OLD_FOOTNOTES` already includes the footnotes
-  bit in the library, so the two-way rule on lines 153–154 matches it.
+The spec is close to the point where a review gives only trivial findings:
+one contradiction, three small gaps, and four trivial points. Nothing is
+overspecified; the only implementation choices are Leptos 0.8 and GitHub
+Pages, both under Constraints.
+
+Converters run
+--------------
+
+Every row under Expected results, and the Round trip, was run against htmd
+0.5.5 and pulldown-cmark 0.13.4 in a scratch crate. All rows give the stated
+output. The htmd defaults in the options table match `Options::default()`, the
+`<noscript>` default matches the builder's default, and the 15 extensions match
+pulldown-cmark's option flags, including old-style footnotes implying
+footnotes.
 
 Findings
 --------
 
-1. **Share for "any input up to 1 MiB" is probably not achievable** (lines
-   246–248 and 304–305). Encoding 1 MiB into an address gives roughly 1.4 MB
-   before any compression. That is near or past the URL limits of the browsers
-   the spec requires, and phones are the tightest. Either set a much lower
-   share limit, separate from the 1 MiB conversion limit, or say the criterion
-   is tested only up to a stated size.
+1. **Crash and stale output contradict each other** (Output pane; Limits and
+   failures). The Output pane section said every tab keeps its last content
+   while the output is stale. Stale output includes "after a crash", but a
+   crash replaces the output pane with a message. *Fixed:* the rule now
+   applies only while conversion is paused.
 
-2. **The address does not say it uses the fragment** (lines 246–250). If the
-   state went in the query string, GitHub Pages would reject long addresses and
-   the input would be sent to the server. One sentence saying the state lives
-   after `#` settles this.
+2. **The skip tags `SCRIPT` row is not htmd's own output** (Expected results).
+   The section says each row was produced with htmd 0.5.5, but htmd matches
+   tag names by case: given `SCRIPT`, it returns `a⏎⏎alert(1)`. The row holds
+   only because the playground's Skip tags rule ignores case. *Fixed:* the
+   section's introduction now says so.
 
-3. **"Always up to date" conflicts with the large-input pause** (lines 44–45 vs
-   lines 265–266). Above 1 MiB the output is deliberately stale until "Convert
-   anyway". The spec does not say what the direction switch and Copy do then,
-   or after a crash. It also does not say what happens when a direction switch
-   produces an input over 1 MiB.
+3. **The double-switch criterion fails on a trailing newline** (Acceptance
+   criteria). pulldown-cmark ends its output with a newline, which is not
+   "whitespace between tags". *Fixed:* the criterion also ignores a trailing
+   newline.
 
-4. **Back and Forward have nothing defined to go back to** (lines 249–250 and
-   257–258). The spec says keystrokes add no history entry, but never says
-   which actions do. If none do, Back leaves the site.
+4. **Two address rules were missing** (Permalinks). The spec did not say what
+   Back or Forward to an address with no saved state shows, or whether a
+   loaded address or a pending typing update wins. *Fixed:* such an address
+   loads the default example, and the loaded state replaces keystrokes still
+   inside the typing pause.
 
-5. **A hang is not covered by "Crashes"** (lines 270–273). A converter that
-   loops forever freezes the page silently, which is what the section forbids.
-   Either rule hangs out of scope or require that the page stays responsive.
+Trivial points, left as they are
+--------------------------------
 
-6. **"No other option changes" contradicts the footnotes rule** (lines 153–154
-   vs lines 179–180). Picking the Old-style footnotes preset checks old-style
-   footnotes, which also checks footnotes.
+5. "Valid tag name" under Skip tags is not defined (for example, whether
+   `my-element` counts).
+6. The 10 ms speed target names the browser but no hardware.
+7. The spec does not say whether the address still updates when the user
+   edits the input after a crash.
+8. The Pages address belongs to the team's fork, while the pull request
+   targets the instructor's fork, where a push to `main` would not publish to
+   that address.
 
-7. **Three options have no Expected results row:** Spaces after list number,
-   the `<noscript>` option, and Line break in Faithful mode. Display math is
-   also missing in the HTML → Markdown direction. These rows were produced in
-   the same run and can be added as they are:
+Submission file
+---------------
 
-   | Input | Settings | Output |
-   | --- | --- | --- |
-   | `<ol start="3"><li>a</li></ol>` | 1 space after list number | `3.␣a` |
-   | `<p>a</p><noscript><b>x</b></noscript>` | | `a⏎⏎\<b>x\</b>` |
-   | `<p>a</p><noscript><b>x</b></noscript>` | noscript as raw text off | `a⏎⏎**x**` |
-   | `<p>a<br>b</p>` | Faithful | `a<br>b` |
-   | `<p><span class="math math-display">x^2</span></p>` | | `$$x^2$$` |
+The review also compared [submission.md](submission.md) with the assignment
+and the template. These points were fixed in the same round:
 
-Smaller points
---------------
+* The team name and GitHub userids were missing.
+* Rounds 5–8 came after the instructor's review of the draft (round 4), so
+  they belong to the final submission, not the draft.
+* The final submission's review table and last review were empty.
+* The round 8 row said the acceptance criteria were cut "from 7 to 4" (the
+  spec has 2) and that the address format was specified (the spec only says
+  when an address is invalid).
+* Ademi's compiler test was a table pasted as loose lines.
 
-* **Skip tags case** (line 121). htmd's `skip_tags` is case-sensitive: passing
-  `SCRIPT` skipped nothing in the run. The "case-insensitive" rule holds only
-  if the playground lowercases the names, and a row with `SCRIPT` would pin
-  that down.
-* **1 MiB unit** (line 265). The spec does not say bytes or characters, while
-  the status line counts characters.
-* **Header version** (line 28 vs lines 248–249). The header shows only the htmd
-  version, though the output can change with either library.
-* **Formatting** (line 248). The line is not wrapped like the rest of the file.
-* **Still open from the earlier review:**
+These points remain for the team:
 
-  * out-of-range or empty values in the number fields;
-  * partly valid addresses, and a format version newer than the page;
-  * how long "Convert anyway" applies;
-  * which tab is selected when Original disappears on a direction switch;
-  * what "edited" means after a direction switch or a permalink load.
+* The draft's "Last LLM review" shows the round 1 review, not the last draft
+  review (round 3).
+* Final contributions for Ademi and Alisher are not filled in, and neither has
+  a commit after the draft; the assignment requires one from each member.
+* The implementation and its review are excluded, as agreed with the
+  instructor.
+* The template groups sections by team member; the file groups them by topic.
