@@ -56,6 +56,7 @@ they do not establish that the proposed Subscript encoding is implemented.
 | ----- | -------- | ----------------- |
 | 1 | 4 (1 accepted, 3 rejected) | Reworded the sentence on why in-word subscripts need HTML so it no longer claims that nothing can fix them. |
 | 2 | 2 (2 accepted) | After the instructor review, rewrote the rows and explanation as prose rules; encoded edge whitespace as a reference to the original character and kept HTML next to another element's tilde delimiter. |
+| 3 | 7 (2 accepted, 5 rejected) | Defined the neighboring characters as those of the emitted Markdown and removed a repeated statement of the `_` rule. |
 
 ### Pavel Shegay
 
@@ -76,28 +77,79 @@ they do not establish that the proposed Subscript encoding is implemented.
 
 ### Viacheslav Sokolov
 
-Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review only the paragraphs
-I rewrote in the Subscript section of translation_approach.md (from
-"Translating `<sub>` to tildes" to "kept for that future improvement"). Check
-them against the pulldown-cmark subscript extension (Options::ENABLE_SUBSCRIPT)
-and the CommonMark rules for `_` delimiter runs. Do not edit any files. List
-any factual errors, unclear wording, or missing cases as numbered findings.`
-produced the following output; strikethrough indicates LLM output that I
-deemed incorrect or irrelevant.
+Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review only the
+paragraphs I wrote in the Subscript section of translation_approach.md (from
+"Translating `<sub>` to tildes" to "Step 4 of the approach below says when
+these steps apply."). Check them against the pulldown-cmark subscript
+extension (Options::ENABLE_SUBSCRIPT), the CommonMark rules for `_` delimiter
+runs, and the rest of the Subscript section for contradictions or repetition.
+Do not edit any files. List any factual errors, unclear wording, or missing
+cases as numbered findings.` produced the following output; strikethrough
+indicates LLM output that I deemed incorrect or irrelevant.
 
-> 1. **Whitespace preservation:** The instruction to encode any whitespace edge
->    as `&#32;` preserves only an ordinary space. For tabs, line breaks, or
->    other Unicode whitespace, it changes the subscript's content. Specify that
->    this applies only to U+0020, or encode the original whitespace character.
-> 2. **Adjacent tilde runs:** The outside-character rule treats `~` as safe
->    punctuation, but pulldown-cmark matches tilde delimiters only when their
->    run lengths agree. For example, `<sub>a</sub>~` would produce `~a~~`, whose
->    opening and closing runs do not match; the subscript won't parse. The
->    procedure needs a guard or handling for neighboring tildes.
-
-Both findings were accepted after checking them with pulldown-cmark 0.13.4:
-`a ~&#160;b~ c` keeps the no-break space, `~a~\~` parses, and `~~x~~~a~` does
-not.
+> 1. ~~"Literal tildes in ordinary Markdown text ... must be escaped as `\~`"
+>    is too absolute. In pulldown-cmark, `~` is special only when it can
+>    participate in a valid subscript/strikethrough delimiter run; bare `~` or
+>    `~~` in ordinary text may still remain literal. For example, with
+>    `Options::ENABLE_SUBSCRIPT` alone, `~~a~~` is parsed as literal text, not
+>    as a subscript or as a required escape target. The section should say
+>    "escape a literal `~` when it could start/close a delimiter run," not "all
+>    literal tildes must be escaped."~~ (Outside my paragraphs; escaping every
+>    literal tilde is the conservative rule the instructor asked for.)
+> 2. ~~The summary "a single `~` follows the rules for `_`, not `*`" is not
+>    the whole flanking story. pulldown-cmark adds a special-case for adjacent
+>    `~` runs: a single `~` may still be treated as opening/closing when the
+>    previous or next character is another `~` and the other side is not
+>    punctuation. That matters in cases like `~a~~b~` or `~~x~~~a~`, where the
+>    decision depends on the whole delimiter run, not just "`_`-style"
+>    neighbors. The section should mention this extra rule or it will miss real
+>    parser behavior.~~ (Checked with pulldown-cmark 0.13.4: `~a~~b~` and
+>    `~~x~~~a~` give no subscript; the rule already keeps HTML next to another
+>    tilde delimiter.)
+> 3. ~~The flanking-rule description is too simplified for the actual
+>    CommonMark logic. "If `1` is neither whitespace nor punctuation, encode
+>    `1` …" and the corresponding check for `5` describes only a coarse
+>    approximation. The actual rules are run-length-sensitive and depend on
+>    whether the delimiter reaches a whitespace/punctuation boundary, whether
+>    the neighboring code point is a `~` from another run, and whether the run
+>    is length 1 vs length >1. The prose is therefore not a faithful summary of
+>    the spec and can lead to wrong output in edge cases.~~ (The steps are a
+>    sufficient encoding, not a summary: they always place `;` or `&` next to a
+>    single tilde; `&#72;~2~&#79;` renders as `H<sub>2</sub>O`.)
+> 4. The prose mixes two different notions of "neighboring characters": the
+>    original HTML source characters (`1`/`5`) and the emitted Markdown text
+>    after escaping and raw-HTML handling. Step 4 says "retain tags whenever the
+>    characters outside the element are unknown," but the earlier flanking
+>    checks are described as if they can be decided from the original
+>    neighboring characters alone. In pulldown-cmark, the actual parse depends
+>    on the emitted text that the reader sees, including escapes and adjacent
+>    raw HTML, so the section should be clearer about checking the output text,
+>    not just original source adjacency.
+> 5. ~~The section is missing a concrete note that delimiter runs are not
+>    decided only by the immediate character classes but also by word
+>    boundaries. The doc correctly says "cannot delimit text within a word,"
+>    but it never spells out that this is the same `_`-style intraword
+>    restriction as CommonMark, and that this is why `foo~a~bar` stays literal
+>    while `~a~` works. Without that explicit tie-back to the `_` rules, the
+>    reader may assume "single tilde is just a kind of punctuation rule" rather
+>    than the actual flanking behavior.~~ (The introduction already ties `~` to
+>    the `_` rules; repeating it would break DRY.)
+> 6. ~~The "adjacent subscripts" paragraph is a bit internally fuzzy. It says
+>    adjacent subscripts "retain separate wrappers," but the later approach
+>    says "Adjacent subscripts are combined under the adjacent-inline rule in
+>    the emphasis section." Those are not clearly the same claim. If the
+>    intended rule is "keep separate HTML wrappers but treat them as adjacent
+>    inline elements," the wording should say that explicitly; otherwise it
+>    reads as two different strategies.~~ (Not in my paragraphs; Faithful keeps
+>    separate wrappers and Pure combines them, as in the emphasis section.)
+> 7. The section is repetitive in a way that makes the key rule harder to
+>    follow: it repeats the same point several times that single `~` behaves
+>    like `_`, that content may not begin/end with whitespace, and that a
+>    subscript with a dangerous neighboring tilde should fall back to HTML. The
+>    actual rule set is small, but the repeated examples and warnings make it
+>    hard to distinguish the normative algorithm from the conservative
+>    fallback. The prose would be clearer if the "actual flanking algorithm"
+>    and the "conservative HTML fallback" were separated more sharply.
 
 ### Pavel Shegay
 

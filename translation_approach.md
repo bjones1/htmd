@@ -748,10 +748,10 @@ output: in Faithful mode, htmd currently preserves `<sub>` as HTML. Enabling
 
 Translating `<sub>` to tildes depends on the characters on both sides of each
 delimiter. Using the notation of the emphasis section, consider `1~233..34~5`,
-where `1` and `5` are the characters before and after the element (a missing
-character at the start or end of a line counts as whitespace), `2` and `4` are
-the first and last characters of its content, and `3` is the rest of the
-content. Since a single `~` follows the rules for `_`, not `*`:
+where `1` and `5` are the characters of the emitted Markdown just before and
+after the element, after escaping and raw HTML (a missing character at the
+start or end of a line counts as whitespace), `2` and `4` are the first and
+last characters of its content, and `3` is the rest of the content. To encode:
 
 1. If `2` or `4` is whitespace, encode that character as a numeric character
    reference, such as `&#32;` for a space or `&#160;` for a no-break space; a
@@ -769,10 +769,7 @@ content. Since a single `~` follows the rules for `_`, not `*`:
 An empty subscript has no such encoding: `~~` is a strikethrough delimiter, not
 a subscript holding nothing.
 
-htmd cannot yet examine the output before and after an element (see the
-emphasis section), so it cannot apply step 2. Until it can, Faithful mode
-serializes `<sub>` as HTML whenever its outside characters are unknown; the
-steps above are kept for that future improvement.
+Step 4 of the approach below says when these steps apply.
 
 An empty or whitespace-only subscript keeps its tags and its whitespace
 (subject to the general whitespace collapsing rules). Removing the tags loses
