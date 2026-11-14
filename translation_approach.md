@@ -745,24 +745,6 @@ be escaped as `\~`. The rules below describe proposed output, not htmd's current
 output: in Faithful mode, htmd currently preserves `<sub>` as HTML. Enabling
 `Options::ENABLE_SUBSCRIPT` does not enable strikethrough; a double tilde,
 `~~a~~`, is strikethrough only when `Options::ENABLE_STRIKETHROUGH` is enabled.
-| Description | HTML in | Faithful expected | Pure expected |
-| ----------- | ------- | ----------------- | ------------- |
-| Simple subscript between spaces | `a <sub>b</sub> c` | `a ~b~ c` | `a b c` |
-| Subscript inside a word | `H<sub>2</sub>O` | `H<sub>2</sub>O` | `H2O` |
-| Subscript alone in a block | `<sub>b</sub>` | `~b~` | `b` |
-| Punctuation after the subscript | `x <sub>2</sub>.` | `x ~2~.` | `x 2.` |
-| Punctuation before the subscript | `x.<sub>2</sub>` | `x.~2~` | `x.2` |
-| Letter right after the subscript | `a <sub>b</sub>c` | `a <sub>b</sub>c` | `a bc` |
-| Punctuation as the whole content | `a <sub>.</sub> b` | `a ~.~ b` | `a . b` |
-| Whitespace at the edges of the content | `a<sub> b </sub>c` | `a<sub> b </sub>c` | `a b c` |
-| Literal tilde in text | `a ~b~ c` | `a \~b\~ c` | `a ~b~ c` |
-| Empty subscript | `a<sub></sub>b` | `a<sub></sub>b` | `ab` |
-| Whitespace-only subscript | `a<sub> </sub>b` | `a<sub> </sub>b` | `a b` |
-| Nested subscripts | `<sub><sub>a</sub></sub>` | `<sub><sub>a</sub></sub>` | `a` |
-| Emphasis inside subscript | `<sub><em>a</em></sub>` | `<sub>*a*</sub>` | `*a*` |
-| Strong emphasis inside subscript | `<sub><strong>a</strong></sub>` | `<sub>**a**</sub>` | `**a**` |
-| Adjacent subscripts | `<sub>a</sub><sub>b</sub>` | `<sub>a</sub><sub>b</sub>` | `ab` |
-| Subscript with an attribute | `<sub class="index">a</sub>` | `<sub class="index">a</sub>` | `a` |
 
 Translating `<sub>` to tildes depends on the characters on both sides of each
 delimiter. Using the notation of the emphasis section, consider `1~233..34~5`,
@@ -800,20 +782,21 @@ checks precede delimiter selection, as in the emphasis approach.
 Nested subscripts keep every `<sub>` wrapper. Encoding both levels of
 `<sub><sub>a</sub></sub>` as single tildes would produce `~~a~~`, which cannot
 preserve the two subscript levels. As a conservative design choice, a subscript
-containing an element or comment keeps its own tags, and a subscript with a
-subscript ancestor keeps its tags too. Children are still translated in an
-inline context under their own rules: an `<em>` child can become `*a*` inside
-the retained `<sub>` wrapper. This is raw HTML inline processing, not a
-verbatim HTML block. Adjacent subscripts retain separate wrappers, following
-the adjacent-inline rule in the emphasis section.
+containing a comment keeps its own tags, and a subscript with a subscript
+ancestor keeps its tags too. Children are still translated in an inline context
+under their own rules: an `<em>` child can become `*a*` inside the retained
+`<sub>` wrapper. This is raw HTML inline processing, not a verbatim HTML block.
+Adjacent subscripts retain separate wrappers, following the adjacent-inline rule
+in the emphasis section.
 
 Approach:
 
 The following specifies proposed Faithful output with `ENABLE_SUBSCRIPT`
-enabled in the reader. In `TranslationMode::Pure`, discard the `<sub>` tags and
-their attributes, then translate the children in an inline context. Pure mode
-does not emit `~` delimiters because CommonMark has no subscript syntax. This
-is lossy, including for nesting and empty elements.
+enabled in the reader. `TranslationMode::Pure` ignores attributes, translates
+children in an inline context, moves leading and trailing whitespace outside the
+subscript, and surrounds the remaining content with single `~` delimiters.
+Adjacent subscripts are combined under the adjacent-inline rule in the emphasis
+section.
 
 1. Retain the opening and closing `<sub>` tags, including attributes, if the
    element has any attribute, has a comment child, has a `<sub>` ancestor, or
@@ -828,18 +811,12 @@ is lossy, including for nesting and empty elements.
    including literal `~` as `\~`. This tilde escaping also applies to ordinary text outside subscripts and
    between retained raw HTML inline tags; literal contexts follow their own
    rules. Escaping does not apply to generated subscript delimiters.
-4. Only if no earlier step retained the tags, consider a candidate with exactly
-   one `~` on either side. Check both
-   delimiters against the actual surrounding Markdown characters, including
-   escapes and raw HTML tags. Missing outside characters at an inline container
-   boundary act as whitespace. As a conservative rule, retain the HTML tags if
-   either delimiter is invalid or would join another tilde into a longer
-   delimiter run.
-5. Emit the candidate only if both checks pass. Otherwise emit the retained
-   tags around the processed content, without adding spaces to make it parse.
+4. Retain the HTML tags whenever the characters outside the element are
+   unknown. This conservative rule avoids emitting delimiter runs whose parsing
+   depends on unavailable neighboring output.
 
-The delimiter checks in step 4 are the subscript extension's single-tilde
-flanking rules described above. Using the emitted neighboring characters matters
-when another handler has introduced Markdown syntax. Like the future emphasis
-algorithm, this proposal requires access to neighboring output; implementation
-work must provide that context before enabling the proposed encoding.
+A future implementation with access to neighboring output may instead check
+the subscript extension's single-tilde flanking rules against the emitted
+characters, including escapes and raw HTML tags, and emit `~` delimiters only
+when both checks pass. Missing outside characters at an inline container
+boundary would act as whitespace.
