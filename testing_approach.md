@@ -48,28 +48,32 @@ A case whose trip is lossy by design (property 2) still uses `assert_faithful`, 
 
 This section defines how a test compares whitespace in two HTML strings: the expected round trip and the HTML which pulldown-cmark renders (property 2). Markdown is always compared exactly, whitespace included (properties 1 and 3).
 
-Whitespace here is [ASCII whitespace](https://developer.mozilla.org/en-US/docs/Glossary/Whitespace): U+0020 space, tab, line feed, form feed and carriage return ([Infra](https://infra.spec.whatwg.org/#ascii-whitespace)). Other spaces, such as U+00A0 and U+2003, are text and are compared exactly.
+HTML whitespace is [ASCII whitespace](https://developer.mozilla.org/en-US/docs/Glossary/Whitespace): U+0020 space, tab, line feed, form feed and carriage return ([Infra](https://infra.spec.whatwg.org/#ascii-whitespace)). A browser collapses only space, tab, line feed and carriage return ([CSS Text §4.1](https://www.w3.org/TR/css-text-3/#white-space-rules)), and renders a form feed as a visible character. So "whitespace" below means those four. A form feed, like U+00A0 and U+2003, is text and is compared exactly, and a trip which turns a form feed into a space is a difference.
 
-Two HTML strings are equivalent when a browser with its default style sheet renders them the same. [How whitespace is handled by HTML, CSS, and in the DOM](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model/Whitespace) describes how a browser does this, and the rules below follow it.
+Two HTML strings are equivalent when they parse to the same DOM after the normalization below. The normalization removes only differences which a browser with its default style sheet does not render, following [Handling whitespace](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Text/Whitespace). A few differences which a browser does not render are still kept, as listed under "Where whitespace matters".
 
 #### Comparison
 
-The comparison helper parses both strings with html5ever, as htmd does, and compares the two DOMs after the normalization below. Parsing already makes these equivalent: `\r\n`, `\r` and `\n` (the parser normalizes line endings), a character reference and the character it stands for (`&#10;` and a line feed), and the spelling of tags and attributes.
+The comparison helper parses both strings with html5ever, as htmd does, and compares the two DOMs after the normalization below. Parsing already makes these equivalent: `\r\n`, `\r` and `\n` (the parser normalizes line endings), a character reference and the character it stands for (`&#10;` and a line feed), and the spelling of tags and attributes. A character reference is decoded after line endings are normalized, so `&#13;` stays a carriage return and is not equivalent to a line feed. Attributes are compared as a set, ignoring their order.
 
 In text rendered with `white-space: normal`, which is everything outside the elements listed under "Where whitespace matters":
 
-1. A run of whitespace is equivalent to one space. This holds across the boundaries of inline elements: `a <em> b</em>` is equivalent to `a <em>b</em>`, since the browser collapses the second space.
-2. Whitespace at the start or end of a line is removed. A line starts and ends at the edges of a block element (`<p>`, `<h1>`–`<h6>`, `<li>`, `<blockquote>`, `<td>`, `<th>` and the other elements which the default style sheet displays as blocks) and at a `<br>`. So `<p> a </p>` is equivalent to `<p>a</p>`, and `a <br> b` to `a<br>b`. This also applies inside an inline element at the edge of a line: `<p><em> a</em></p>` is equivalent to `<p><em>a</em></p>`.
-3. A text node holding only whitespace between two block elements, or between a block element and the edge of its parent, is removed. So `<p>a</p>\n<p>b</p>\n` is equivalent to `<p>a</p><p>b</p>`.
+1. A run of whitespace is equivalent to one space, which stays where the run starts ([CSS Text §4.1.1](https://www.w3.org/TR/css-text-3/#white-space-phase-1)). This holds across the boundaries of inline elements: `a <em> b</em>` is equivalent to `a <em>b</em>`, and `<em>a </em> b` to `<em>a </em>b`, not to `<em>a</em> b`.
+2. Whitespace at the start or end of a line is removed ([CSS Text §4.1.2](https://www.w3.org/TR/css-text-3/#white-space-phase-2)). A line starts and ends at the edges of a block container (`<p>`, `<h1>`–`<h6>`, `<li>`, `<blockquote>`, `<td>`, `<th>` and the other elements which the default style sheet displays as blocks or table cells) and at a `<br>`. So `<p> a </p>` is equivalent to `<p>a</p>`, and `a <br> b` to `a<br>b`. This also applies inside an inline element at the edge of a line: `<p><em> a</em></p>` is equivalent to `<p><em>a</em></p>`.
+3. A text node holding only whitespace is removed when it lies between two block elements, between two parts of a table (`<table>`, `<caption>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>`, `<td>`, `<th>`), or between one of these and the edge of its parent ([CSS 2 §17.2.1](https://www.w3.org/TR/CSS2/tables.html#anonymous-boxes)). So `<p>a</p>\n<p>b</p>\n` is equivalent to `<p>a</p><p>b</p>`, and `<tr>\n<td>a</td>\n</tr>` to `<tr><td>a</td></tr>`.
 
-Everything else is compared exactly: element names, attributes and their values, the order of nodes, and all text other than the whitespace above.
+Everything else is compared exactly: element names, attribute values, the order of nodes, and all text other than the whitespace above.
+
+Tests use text in which a line feed renders as a space. Between Chinese or Japanese characters a browser may remove it instead ([CSS Text §4.1.3](https://www.w3.org/TR/css-text-3/#line-break-transform)), which these rules do not model.
 
 #### Where whitespace matters
 
-1. **Preformatted elements.** The default style sheet renders `<pre>`, `<listing>`, `<xmp>` and `<plaintext>` with `white-space: pre`, and `<textarea>` with `white-space: pre-wrap` ([HTML rendering](https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3)). Their text, and the text of any element inside them, is compared exactly. The one exception comes from parsing: the parser drops a single line feed directly after the start tag of `<pre>`, `<listing>` or `<textarea>`, so `<pre>\na</pre>` is equivalent to `<pre>a</pre>`, but `<pre>\n\na</pre>` is not.
+1. **Preformatted elements.** The default style sheet renders `<pre>`, `<listing>`, `<xmp>` and `<plaintext>` with `white-space: pre` ([HTML rendering, flow content](https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3)), and `<textarea>` with `white-space: pre-wrap` ([HTML rendering, form controls](https://html.spec.whatwg.org/multipage/rendering.html#form-controls)). Their text, and the text of any element inside a `<pre>` or `<listing>`, is compared exactly, with two exceptions:
+   * The parser drops a single line feed directly after the start tag of `<pre>`, `<listing>` or `<textarea>`, so `<pre>\na</pre>` is equivalent to `<pre>a</pre>`, but `<pre>\n\na</pre>` is not.
+   * A single line feed at the end of the content is not rendered, since the empty line after it has no height ([CSS 2 §9.4.2](https://www.w3.org/TR/CSS2/visuren.html#inline-formatting)). So `<pre>a\n</pre>` is equivalent to `<pre>a</pre>`, and `<pre><code>a\n</code></pre>` to `<pre><code>a</code></pre>`, but `<pre>a\n\n</pre>` is not.
 2. **Whitespace between inline content.** Whether whitespace is present between two pieces of inline content matters, even though its amount does not: `<em>a</em> <em>b</em>` is not `<em>a</em><em>b</em>`, and `a<code>b</code>` is not `a <code>b</code>`.
-3. **Which side of an element boundary the whitespace is on.** Rule 1 collapses a run which spans a boundary, but a single space keeps its place: `a <em>b</em>` is not `a<em> b</em>`. The space renders the same in most fonts, but an underline, a background or a link target shows the difference. A trip which moves whitespace into or out of an element is a difference, recorded as described in "Known failures".
-4. **Attribute values, comments, `<script>` and `<style>`.** These are compared exactly.
+3. **Which side of an element boundary the whitespace is on.** A single space keeps its place: `a <em>b</em>` is not `a<em> b</em>`. A browser usually renders the two the same, but the space has moved into the element, which an underline, a background or a link target shows. A trip which moves whitespace into or out of an element is a difference, recorded as described in "Known failures".
+4. **Attribute values, comments, `<script>` and `<style>`.** These are compared exactly, although a comment is never rendered and some whitespace in an attribute value (such as a leading space in an `href`) does not change rendering: a trip should keep them as they were.
 
 `<code>` is not preformatted: its default style is `white-space: normal`, so the rules under "Comparison" apply to it.
 
@@ -79,7 +83,7 @@ The comparison assumes the default style sheet. Tests do not use a `style` attri
 
 1. Write expected Markdown with the exact whitespace htmd should write. Never trim or normalize it to make a test pass.
 2. Write the expected round trip in whichever equivalent form reads best. When the trip loses nothing, this is the input HTML itself, so the test shows that the HTML comes back as it went in.
-3. The comparison helper has its own tests. Each rule under "Comparison" gets a pair of strings which must compare equal, and each item under "Where whitespace matters" gets a pair which must not, using the examples above.
+3. The comparison helper has its own tests. Each rule under "Comparison" gets a pair of strings which must compare equal. Each item under "Where whitespace matters" gets a pair which must not, using the examples above, and item 1 also gets its two exceptions as pairs which must. Item 4 uses `<a href="x">` against `<a href=" x">`, and `<!--a-->` against `<!-- a -->`. A form feed gets `<p>a\fb</p>` against `<p>a b</p>`, which must not compare equal.
 4. Write invisible characters as escapes (`\t`, `\r\n`, `\u{a0}`), so a reader sees them.
 5. A difference which remains after the normalization is a failure, recorded as described in "Known failures".
 
