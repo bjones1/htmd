@@ -15,9 +15,13 @@ Draft submission
 
 ### Contributions
 
-* Daniil: (Andy's contributions)
-* Ademi: (Bob's contributions)
-* Aruzhan: (Victoria's contributions)
+* Daniil: initial spec draft; wasm-markdown, CommonMark and Leptos exploration;
+  repository setup; pull request to the instructor; rewrite of the spec after
+  the instructor's review, and review rounds 5 and 6 (rounds 4–6).
+* Ademi: spec review round 2 (30 findings) and the resulting spec fixes.
+* Aruzhan: spec review round 3 (27 findings) and the resulting spec fixes;
+  check of the rewritten spec against every instructor comment, with the
+  remaining fixes to the spec and this file (round 7).
 
 
 ### Compiler test
@@ -27,8 +31,6 @@ based on the prompt "Verify that you can compile and run the project in the
 current git repo."
 
 #### Daniil
-
-Build, clippy and tests all pass. Now I’m running the examples to confirm the library works at runtime.
 
 The project compiles and runs. All three CI commands from AGENTS.md pass:
 
@@ -42,19 +44,23 @@ simple: all its built-in checks passed.
 table: printed a correctly formatted Markdown table.
 page-to-markdown: converted the saved Hacker News page in 25ms and the Wikipedia page in 310ms.
 
-None of this changed your working tree. Your existing edits in pulldown-cmark-htmd-demo-2/ are still there and uncommitted.
-
-#### Daniil
-
-(Summarized LLM output)
-
 #### Ademi
 
 (Summarized LLM output)
 
 #### Aruzhan
 
-(Summarized LLM output)
+The project compiles and runs with Rust 1.99.1. All three CI commands from AGENTS.md pass:
+
+cargo build: finished cleanly.
+cargo clippy -- --deny warnings: no warnings.
+cargo test: 268 tests passed, 0 failed, 1 ignored. The largest suites had 91 and 37 tests.
+
+htmd is a library, so to check it at runtime I ran its three examples:
+
+simple: all its built-in checks passed.
+table: printed a correctly aligned Markdown table.
+page-to-markdown: converted the saved Hacker News page in 21ms and the Wikipedia page in 385ms.
 
 ### Spec review rounds
 
@@ -66,6 +72,7 @@ None of this changed your working tree. Your existing edits in pulldown-cmark-ht
 | **4 (instructor review, bjones1)** | **15 (overall review, 11 inline spec comments, 3 submission comments)** | **rewrote the spec to state behavior, not implementation; added the Markdown → HTML direction with a one-editor direction switch; listed every htmd and pulldown-cmark option with its control and default (Pure mode, math on); added expected-results tables checked against htmd 0.5.5 and pulldown-cmark 0.13.4; removed the API tables, repo layout, Leptos idioms, file tree, CI and implementation-order sections, including most round 2 and 3 additions** |
 | 5 ([latest-review.md](latest-review.md)) | 30 (12 inconsistencies, 15 incomplete scenarios, 3 vague objectives); 13 fixed, 17 left as low-priority implementation detail | large input is kept out of permalinks and Share; defined the round-trip criterion; Markdown presets turn on their extension; switch, Copy and Share use up-to-date output; rendered tabs can't restyle the page and links do nothing; a single source for defaults; two-way footnote coupling; Copy input on crash; measurable size and speed targets; more acceptance criteria |
 | 6 ([latest-review.md](latest-review.md), converters run) | 12 (7 findings, 5 smaller points); 11 fixed, the 5 earlier open points left to the implementer | separate 32,768-character share limit for links; saved state kept after `#`; no history entries except hand edits; switch and Copy unavailable while output is stale; 6 verified Expected results rows (list number spacing, `<noscript>`, Faithful line break, display math, upper-case skip tags); footnote preset wording; both library versions in the header; hangs out of scope |
+| 7 (Aruzhan Akhanayeva) | 13 (instructor comments and review findings still open after round 6: 3 in submission.md, 1 inline spec comment, 7 review findings, 2 repetitions) | removed the editor detail the instructor called too detailed (font, spell check, Tab/Esc); made Clear confirm like Examples; gave Copy and Share a manual-copy fallback; specified that the address changes only after user edits, that Back to an address with no state shows the default example, and that loading an address wins over a pending update; named deep nesting (stack overflow) as a crash the page must survive; required titles on rendered tabs; removed two repeated statements (narrow-screen width, network rule); filled in Contributions, removed the duplicate heading and leftover LLM lines, fixed draft/final placement, added a compiler test |
 
 ### Last LLM review
 
@@ -84,10 +91,10 @@ Final submission (Excluding implementation, as discussed at the 1-to-1 and group
 
 ### Contributions
 
-* Daniil: Initial spec draft, wasm-markdown exploration, commonmark exploration, leptos exploration.
-* Ademi: (Ademi's contributions)
-* Aruzhan: (Aruzhan's contributions)
-* Alisher: (Alisher's contributions)
+* Daniil: (to be completed for the final submission)
+* Ademi: (to be completed for the final submission)
+* Aruzhan: (to be completed for the final submission)
+* Alisher: (to be completed for the final submission)
 
 ### Spec review rounds
 

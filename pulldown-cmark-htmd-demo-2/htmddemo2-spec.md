@@ -32,8 +32,8 @@ From top to bottom:
    and "Markdown → HTML".
 3. The **options panel** (see Options).
 4. The **input pane** on the left and the **output pane** on the right, each
-   half the width. On screens narrower than 800 px the panes stack, input
-   first.
+   half the width. On *narrow screens* (under 800 px wide) the panes stack,
+   input first.
 5. A **status line** under the output pane.
 
 ### Direction switch
@@ -49,12 +49,10 @@ exceptions are under Limits and failures.
 ### Input pane
 
 * A single plain-text editor, labelled "HTML" or "Markdown" to match the
-  direction, in a monospace font with spell checking off. Pressing Tab inserts a
-  tab character; pressing Esc and then Tab moves focus out of the editor.
+  direction.
 * An **Examples** menu, which replaces the input with a preset for the current
-  direction (see Examples). If the input has been edited, the user is asked to
-  confirm first.
-* A **Clear** button, which empties the input.
+  direction (see Examples), and a **Clear** button, which empties the input.
+  If the input has been edited, both ask the user to confirm first.
 
 ### Output pane
 
@@ -69,8 +67,9 @@ The output pane has tabs:
 In HTML → Markdown mode, comparing **Rendered** with **Original** shows how well
 the HTML survived the round trip.
 
-The **Source** tab has a **Copy** button. If the browser does not allow copying,
-a message says so.
+The **Source** tab has a **Copy** button. If the browser does not allow
+copying, the text is shown selected, with a message asking the user to copy it
+manually.
 
 ### Status line
 
@@ -88,8 +87,8 @@ Options
 -------
 
 The options panel shows a group of controls for each converter. It starts
-expanded on screens 800 px and wider and collapsed on narrower screens; the user
-can expand or collapse it. A **Reset to defaults** button restores every option
+collapsed on narrow screens and expanded otherwise; the user can expand or
+collapse it. A **Reset to defaults** button restores every option
 below without changing the input. Each control has a one-line help text, based
 on the library's documentation where it exists.
 
@@ -263,17 +262,20 @@ The address is at most 32,768 characters long, so that links survive chat apps
 and mail clients. When the input does not fit, the address keeps only the
 direction and options, and a notice says the input is too large to share.
 
-The address updates as the user works. Nothing the user does in the playground
-adds an entry to the browser history; only editing the address by hand does.
+The address updates only after the user changes the input, the direction or
+an option; opening the page does not rewrite it. Nothing the user does in the
+playground adds an entry to the browser history; only editing the address by
+hand does.
 
-* A **Share** button copies the address. It first brings the address up to
-  date with the latest keystrokes. When the input is too large to share, it
-  shows that notice instead of copying.
+* A **Share** button copies the address, like **Copy**. It first brings the
+  address up to date with the latest keystrokes. When the input is too large
+  to share, it shows that notice instead of copying.
 * If the address cannot be decoded, the page shows the default example and a
   notice saying the link was invalid. The address is left unchanged until the
   user changes the input or an option.
 * Editing the address by hand, or using Back and Forward, loads the state it
-  describes.
+  describes; an address with no saved state shows the default example. Loading
+  an address always wins over an update that was about to be written.
 * The address format carries a version number, so that addresses shared today
   keep working after the format changes.
 
@@ -288,23 +290,25 @@ Limits and failures
   direction switch and **Copy** are unavailable, because the output does not
   match the input.
 * **Crashes.** If a converter fails or crashes, the page does not freeze
-  silently. It shows a message with a **Copy input** button, a **Reload** link,
-  and a **Start over** link that loads the page without the saved address (in
-  case the saved input itself causes the crash).
+  silently. This includes input nested so deeply that a converter runs out of
+  stack, which htmd currently does at about 1,000 levels. The page shows a
+  message with a **Copy input** button, a **Reload** link, and a **Start
+  over** link that loads the page without the saved address (in case the saved
+  input itself causes the crash).
 
 Constraints
 -----------
 
-* **Safety.** Nothing the user enters, and nothing a converter produces from
-  it, runs scripts, loads anything from the network, navigates the page, or
-  changes the look of the rest of the playground. This applies to the
+* **Safety.** After the site loads, the page makes no network requests.
+  Nothing the user enters, and nothing a converter produces from it, runs
+  scripts, loads anything from the network, navigates the page, or changes the
+  look of the rest of the playground. This applies to the
   **Rendered** and **Original** tabs in particular: images with remote
   addresses show as broken there, and clicking a link does nothing.
-* **No network use** at run time beyond loading the site itself.
 * **Browsers:** current Chrome, Firefox, and Safari, on desktop and phone.
 * **Accessibility:** every control works from the keyboard, has a visible focus
-  style and a label, and meets WCAG AA contrast. Status changes are announced
-  to screen readers.
+  style and a label, and meets WCAG AA contrast. Each rendered tab has a
+  title. Status changes are announced to screen readers.
 * **Themes:** the page, including the rendered tabs, follows the system's light
   or dark setting.
 * **Size and speed:** the downloaded page, with all its files, is under 1 MB
