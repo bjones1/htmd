@@ -1033,7 +1033,7 @@ None.
 * ~~<strong>R11-M1 — FR-1 enables all 15 `pulldown-cmark` flags, contradicting FR-4 and the Demo Preset (FR-1 line 37; FR-4 lines 74–89 and 108; 8.5 line 260):</strong> FR-1 says Markdown → HTML uses "all 15  `Options::ENABLE_*` flags listed in FR-4", but FR-4 exposes only 7 and  fixes the other 8 off; Reset enables those 7 and disables the remaining 8.  Enabling all 15 would make `ENABLE_GFM`, the metadata-block flags,definition lists, superscript, subscript, and wikilinks change output with  no sidebar control, and the first conversion after a reset would not match FR-1. FR-4 also lists the 8 fixed-off flags as ordinary bullets in the same option list, so they read as controls. <em>Fix: say FR-1 uses the 7 exposed flags with their sidebar/preset values and that the other 8 are never enabled; move the 8 into a clearly labeled "fixed off" paragraph or drop them from the option list.</em>~~
 [fixed]
 *~~ <strong>R11-M2 — The preview still does not remove `<noscript>` or `<template>`, and the new template rationale is inaccurate (FR-1 lines 46–47; 8.6 line 286):</strong> The round-10 fix added `<noscript>` and  `<template>` to the explanation and the 8.6 test but not to the removal  list, which still contains only `<base>`, `<meta>`, `<link>`, and  `target`. `html5ever`'s tree builder defaults scripting_enabled: true` (`tree_builder/mod.rs:47–75`), so `<noscript>...</noscript>` is parsed as  one text node and the walk sees no `<meta>`/`<link>` inside it. The serializer also defaults `scripting_enabled: true`, and its `write_text`  writes `<noscript>` text raw (`serialize/mod.rs:214–227`), so  `<noscript><meta http-equiv="refresh" ...></noscript>` or  `<noscript><a target="_self" ...></noscript>` is emitted unescaped; the  sandboxed preview, which parses with scripting disabled, turns it back  into live markup, defeating the removal. Separately, `RcDom` stores  `<template>` contents in `template_contents`, not `children`; the FR-1 walk  has no rule for that field and the serializer ignores it  (`markup5ever_rcdom-0.39.0+unofficial/lib.rs:642–658`), so the contents are  dropped from the preview rather than becoming a live shadow root, while the  `<template>` element itself remains and 8.6 still requires its absence.  8.6 also misspells `<nonscript>`, so that check does not exercise the real  element. <em>Fix: remove `<noscript>` and `<template>` whole in the  preview walk (or parse with scripting disabled so noscript contents are  visible to the walk, but still remove both elements); correct the rationale  to say template contents are dropped by the serializer; spell `<noscript>`  in 8.6; add a `<noscript>` case carrying `<meta http-equiv="refresh">` and  a `<template shadowrootmode="open">` case with contents.</em>~~
-* <strong>R11-M3 — The persisted `cmark` object stores all 15 flags although
+* ~~<strong>R11-M3 — The persisted `cmark` object stores all 15 flags although
   FR-4 fixes 8 off (FR-8 line 165; FR-4 lines 74–89):</strong> The schema
   lists `yaml_style_metadata_blocks`, `pluses_delimited_metadata_blocks`,
   `old_footnotes`, `gfm`, `definition_list`, `superscript`, `subscript`, and
@@ -1047,7 +1047,8 @@ None.
   recorded this object as holding the 7 exposed flags, so this is a
   regression in the schema. <em>Fix: store only the 7 exposed flags; or
   validate/force the other 8 to `false` on read and state that they are
-  ignored. Update the schema list and the 8.6 invalid-payload tests.</em>
+  ignored. Update the schema list and the 8.6 invalid-payload tests.</em>~~
+Adjudication: moot: bjones1's Nov 11 PR comment ("Allow all available pulldown-cmark flags") superseded it; all 15 flags are sidebar-exposed (FR-4) and persisted (FR-8), so none is fixed-off state.
 [fixed]
 * ~~<strong>R11-M4 — The fidelity round trip leaves the non-`translation_mode` `htmd` options unstated (FR-5 lines 114–116; 8.7 line 300):</strong> FR-5  fixes the `pulldown-cmark` options for the HTML → Markdown → HTML round trip but requires only `translation_mode: Faithful` from`htmd`; it does  not say whether `heading_style`, `link_style`, `preformatted_code`, and the  other sidebar options apply to the fidelity conversion or whether it uses  fixed crate defaults. 8.7 pins only `translation_mode: Faithful` and the  fixed round-trip options, so its golden expectations are not reproducible.  The choice is observable: `preformatted_code` changes inline-code handling  (`src/element_handler/code.rs:141–149`, `223–244`); with `true`, a newline  in a `<code>` element becomes a space and the span stays a code span, while  the default serializes the element as raw HTML. That difference survives  the round trip into the canonical HTML and changes the diff. <em>Fix:  state the exact `htmd` option set used for the fidelity conversion (all  sidebar options, or crate defaults plus `Faithful`) and pin every one in  8.7.</em>~~
 [fixed]
@@ -1057,14 +1058,15 @@ None.
 
 #### Low-severity / editorial
 
-* <strong>R11-L1 — 8.6's "no `target` attribute" is unsatisfiable with the
+* ~~<strong>R11-L1 — 8.6's "no `target` attribute" is unsatisfiable with the
   injected `<base target="_blank">` (FR-1 line 47; 8.6 line 286):</strong>
   8.6 requires the injected `srcdoc` to contain no `target` attribute, but
   FR-1 deliberately injects `<base target="_blank">` after the CSP `<meta>`.
   If the test inspects the final `srcdoc`, as written, it always finds that
   target. <em>Fix: require no user-supplied `target` attribute and exclude the
   demo's own `<base>`, or inspect the content before the base is
-  injected.</em>
+  injected.</em>~~
+Adjudication: resolved by the current 8.6 wording "no user-supplied `target` attribute (excluding the demo's own injected `<base target="_blank">`)" (demo-spec.md line 291).
 [fixed]
 ~~* <strong>R11-L2 — "Use Output as Input" does not identify which output view it copies (FR-2 line 61; FR-3 lines 66–69; 8.5 line 263):</strong> The output pane has a Source tab (the generated Markdown or HTML string) and a Rendered tab (the live preview; in HTML → Markdown it is HTML re-rendered from the Markdown). "Copies the current output" and 8.5's "active output" do not say whether the copied value is the Source string or the Rendered DOM, nor whether the active tab matters. In HTML → Markdown, copying the  Rendered HTML into the opposite (Markdown → HTML) buffer is a different action from copying the Source Markdown into it. <em>Fix: state that the generated Source string is copied regardless of the active tab, or define the tab-dependent behavior.</em>~~
 [fixed]

@@ -103,58 +103,7 @@ its test suite.
 
 #### Justin Gray
 
-Prompting Claude Opus 5.5 High effort with "review @demo-spec.md"
-Output: 
-I reviewed the spec as a fresh round 10. I checked it against src/lib.rs, src/dom_walker.rs, src/element_handler/pre.rs, tests/common/mod.rs and the round-9 notes in review.md. Cargo isn't installed here, so I couldn't open the html5ever/markup5ever_rcdom sources, and I've marked the claims that depend on them. I haven't edited any files.
-
-What still holds: the 12 htmd options and their defaults match src/options.rs, and the 15-flag count for pulldown-cmark is right. html_to_tree → tree_to_markdown is exactly what convert does (src/lib.rs:148–214), so the parse-once nesting check works as written.
-
-Medium
-M1. A conversion that never reloads the iframe stalls the pipeline for good (FR-2, line 55). A run counts as "in flight" until the iframe fires load for its commit. Several kinds of run never set srcdoc, so that load never comes:
-
-a stale run, which "writes nothing";
-a run whose output is cleared (empty input, the 2 MB limit, an Err banner, a size or nesting limit);
-a run still waiting for load when the mode is switched.
-With one run allowed at a time, the queued run then never starts, and conversion stops for the rest of the session. The 8.6 concurrency test, with its 300 ms delay, hits the stale case directly.
-
-Fix: a run that writes nothing, or doesn't navigate the iframe, ends at commit. Say what "clear the preview" does to srcdoc. Ignore a load that doesn't match the current commit.
-
-M2. Every ordinary code block shows a false diff (FR-5, line 112). CommonMark code blocks always end with a line ending, so pulldown-cmark renders <pre><code>x\n</code></pre>. The usual input <pre><code>x</code></pre> is converted to ```\nx\n``` (see tests/code_tests.rs), which comes back with the extra \n. Because <pre> is a preserved subtree, nothing trims it, so the diff flags it. The real-world page in the corpus will show this on every code block. The basics sample passes 8.7's zero-diff test only if its HTML happens to include the \n.
-
-Fix: on both sides, remove one trailing U+000A from the last text inside each <pre>. A single trailing newline doesn't render, so this is safe. Add a golden test for <pre><code>x</code></pre>.
-
-M3. <noscript> and <template> get past preview stripping (FR-1, lines 45–46; 8.6 "Preview navigation" and "Preview stripping"). The sandboxed preview has scripting disabled, so the browser reads what's inside <noscript> as markup. html5ever parses with scripting enabled by default, so the walk sees that content as plain text and strips nothing in it. If the serializer then writes it out raw, as I believe it does by default, the link reaches the preview with its target intact. This last step is unverified because I couldn't open the crate sources. For example:
-
-
-<noscript><a href="https://x.example" target="_self">click</a></noscript>
-With target="_self" the click loads x.example into the preview, which breaks the 8.6 navigation test. <link rel=preconnect> inside <noscript> gets through the same way, and CSP doesn't cover preconnect.
-
-<template> has a similar gap. RcDom stores template contents apart from the element's children, so a walk over children never sees them. Browsers turn <template shadowrootmode="open"> into a live shadow root, so a target attribute inside it survives.
-
-Fix: remove <noscript> and <template> elements whole in the preview walk (FR-5 already drops <template>), or parse and serialize with scripting off. Add both cases to the 8.6 stripping test.
-
-M4. An input that causes a panic can lock the user in a crash loop (FR-7, lines 133–134; FR-8, lines 159–160). Three places can save the crashing input before or after the panic:
-
-the flush on UI actions, which runs before "Use Output as Input" or a sample load converts;
-the 500 ms text-save timer;
-the pagehide flush when the user clicks reload, as the overlay tells them to.
-On the next load, startup converts the saved buffer once, it panics again, and the only way out is clearing site data by hand.
-
-Fix: have the panic hook and the error/unhandledrejection listeners stop all further storage writes and set a crash-marker key. If the marker is present at startup, restore the workspace but skip the first conversion, and show a banner offering to convert or clear.
-
-Low
-L1. Typing in skip_tags counts as an option change (FR-4, FR-8). On a 100 KB input, every keystroke runs a full conversion and a synchronous save of the whole workspace. Debounce this field the same way as text input. FR-8 also doesn't say whether a stored skip_tags longer than 200 characters is invalid.
-L2. No one has checked that 512 levels fit on the wasm stack (FR-7, line 131). The stack is 1 MiB by default. Each level runs about six to eight frames (walk_node → walk_element → handler → walk_children), so 512 levels could come close. Run the "512 levels converts" test with the element that uses the most stack (nested lists, tables or blockquotes), in both translation modes and in the release build. Or set the stack size explicitly.
-L3. The fidelity panel and the converter parse the input differently (FR-5, line 108). The panel parses the original as a fragment, but htmd parses it as a whole document (parse_document, src/lib.rs:148). For full-page input like the corpus page, the doctype, <html>/<body> attributes and <head> contents are handled differently on the two sides. Either canonicalize from the same tree htmd converted, or state this as a limitation.
-L4. FR-2 says each mode has its own fidelity panel (line 58), but FR-5 limits the panel to HTML → Markdown mode. This is an editorial fix.
-L5. Undo after a sample load restores the buffer but not the selected sample (FR-6). A later Reload Sample then loads the sample the user just undid. Say whether that's intended.
-Still open from round 9
-R9-L3: the strip = true trade-off, and how to trigger a deliberate panic in a release build.
-R9-L7: no time limit for "neither hangs".
-R9-L8: mixed byte-unit conventions.
-R9-L9: the Pure preset hides the fidelity check by default.
-Round 8's browser-floor and editorial findings.
-Total: 9 new findings (0 blocking, 4 medium, 5 low). 
+Compiler verification not run; member no longer in the team.
 
 
 ### Spec review rounds
@@ -170,7 +119,7 @@ WebAssembly runtime stability and browser security.
 | **2** | **26**                | Resolved diff pipeline contradictions, added the missing Section 5 UI sketch, formalized the localStorage validation schema, and eliminated runtime panics on empty tag inputs.                                                                                                                                                                                                                                                              |
 | **3** | **12**                | Enforced total preview isolation using a sandboxed `<iframe>` with a strict Content Security Policy to eliminate XSS risks and hidden third-party network requests.                                                                                                                                                                                                                                                                          |
 | **4** | **38**                | Verified all settings against `htmd 0.5.5` and `pulldown-cmark 0.13.4`, expanded the option mapping to 15 flags, resolved reset semantics, and added deep DOM nesting bounds.                                                                                                                                                                                                                                                                |
-| **5** | **12**                | Made performance and size budgets measurable (artifact, command, profile), defined the demo build contract and CI workflow, normalized `skip_tags`, hardened the iframe/panic-hook/debounce contracts, and renumbered sections; then reconciled long-task vs compute budgets, unified storage version handling, added the persisted-state schema, moved the nesting guard to a streaming pre-scan, and pinned the 2 KB threshold.            |
+| **5** | **12**                | Made performance and size budgets measurable (artifact, command, profile), defined the demo build contract and CI workflow, normalized `skip_tags`, hardened the iframe/panic-hook/debounce contracts, and renumbered sections; then reconciled long-task vs compute budgets, unified storage version handling, added the persisted-state schema, moved the nesting guard to a streaming pre-scan, and pinned the 2 kB threshold.            |
 | **6** | **11**                | Open, awaiting processing: six LLM findings (missing axe-core CI step, underspecified nesting pre-scan, unadjudicable forced-tick latency rule, `&nbsp;` exemption inconsistency, missing acceptance criteria for "Use Output as Input"/"Reload Sample", preset naming variance) plus five spec-quality checklist findings (word tokenizer definition, code-point vs locale sorting, NFC normalization, first-run state, banner byte units). |
 | **7** | **8**                 | <p>Addressed some findings from the previous round. A follow-up review identified 8 new non-critical issues, some of which I fixed while dismissing the rest as not applicable</p>                                                                                                                                                                                                                                                           |
 | **8** | **13**                | Fixed all 7 new medium findings: fixed `TABLES \| MATH` options for the fidelity round trip (the Demo Preset's smart punctuation produced false diffs), a defined main-thread execution model for the concurrency rules, `textContent` for every user-derived view, blocked preview self-navigation, a keyboard-reachable Undo toast, banners for quota failures and multi-tab writes, and a benchmark corpus with adversarial bounds. The 6 new low findings and the open round-6/7 findings remain.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -192,7 +141,7 @@ WebAssembly runtime stability and browser security.
 3. <strong>Round 3 (Browser Security \& Sandboxing):</strong> Blocked raw HTML
    passthrough vulnerabilities, isolated event handling vectors (`onclick`,
    `onerror`), explicitly mapped the `pulldown-cmark` bitflags, and unified the
-   100 KB limit using UTF-8 byte arrays.
+   100 kB limit using UTF-8 byte arrays.
 4. <strong>Round 4 (Crate Alignment \& Edge Cases):</strong> Expanded the UI
    flags to match all 15 bitflags available in `pulldown-cmark 0.13.4`,
    protected the recursive WASM stack walker against deeply nested elements, and
@@ -340,7 +289,7 @@ None.
 #### Low-severity / editorial
 
 * <strong>R10-L1 — Typing in `skip_tags` counts as an option change (FR-4,
-  FR-8):</strong> on a 100 KB input every keystroke runs a full conversion and a
+  FR-8):</strong> on a 100 kB input every keystroke runs a full conversion and a
   synchronous save of the whole workspace, and FR-8 does not say whether a
   stored `skip_tags` over 200 characters is invalid. <em>Fix: debounce the
   field like text input and state the stored-length rule.</em>
@@ -445,7 +394,7 @@ None.
 * ~~<strong>R11-M1 — FR-1 enables all 15 `pulldown-cmark` flags, contradicting FR-4 and the Demo Preset (FR-1 line 37; FR-4 lines 74–89 and 108; 8.5 line 260):</strong> FR-1 says Markdown → HTML uses "all 15  `Options::ENABLE_*` flags listed in FR-4", but FR-4 exposes only 7 and  fixes the other 8 off; Reset enables those 7 and disables the remaining 8.  Enabling all 15 would make `ENABLE_GFM`, the metadata-block flags,definition lists, superscript, subscript, and wikilinks change output with  no sidebar control, and the first conversion after a reset would not match FR-1. FR-4 also lists the 8 fixed-off flags as ordinary bullets in the same option list, so they read as controls. <em>Fix: say FR-1 uses the 7 exposed flags with their sidebar/preset values and that the other 8 are never enabled; move the 8 into a clearly labeled "fixed off" paragraph or drop them from the option list.</em>~~
 [fixed]
 *~~ <strong>R11-M2 — The preview still does not remove `<noscript>` or `<template>`, and the new template rationale is inaccurate (FR-1 lines 46–47; 8.6 line 286):</strong> The round-10 fix added `<noscript>` and  `<template>` to the explanation and the 8.6 test but not to the removal  list, which still contains only `<base>`, `<meta>`, `<link>`, and  `target`. `html5ever`'s tree builder defaults scripting_enabled: true` (`tree_builder/mod.rs:47–75`), so `<noscript>...</noscript>` is parsed as  one text node and the walk sees no `<meta>`/`<link>` inside it. The serializer also defaults `scripting_enabled: true`, and its `write_text`  writes `<noscript>` text raw (`serialize/mod.rs:214–227`), so  `<noscript><meta http-equiv="refresh" ...></noscript>` or  `<noscript><a target="_self" ...></noscript>` is emitted unescaped; the  sandboxed preview, which parses with scripting disabled, turns it back  into live markup, defeating the removal. Separately, `RcDom` stores  `<template>` contents in `template_contents`, not `children`; the FR-1 walk  has no rule for that field and the serializer ignores it  (`markup5ever_rcdom-0.39.0+unofficial/lib.rs:642–658`), so the contents are  dropped from the preview rather than becoming a live shadow root, while the  `<template>` element itself remains and 8.6 still requires its absence.  8.6 also misspells `<nonscript>`, so that check does not exercise the real  element. <em>Fix: remove `<noscript>` and `<template>` whole in the  preview walk (or parse with scripting disabled so noscript contents are  visible to the walk, but still remove both elements); correct the rationale  to say template contents are dropped by the serializer; spell `<noscript>`  in 8.6; add a `<noscript>` case carrying `<meta http-equiv="refresh">` and  a `<template shadowrootmode="open">` case with contents.</em>~~
-* <strong>R11-M3 — The persisted `cmark` object stores all 15 flags although
+* ~~<strong>R11-M3 — The persisted `cmark` object stores all 15 flags although
   FR-4 fixes 8 off (FR-8 line 165; FR-4 lines 74–89):</strong> The schema
   lists `yaml_style_metadata_blocks`, `pluses_delimited_metadata_blocks`,
   `old_footnotes`, `gfm`, `definition_list`, `superscript`, `subscript`, and
@@ -459,7 +408,8 @@ None.
   recorded this object as holding the 7 exposed flags, so this is a
   regression in the schema. <em>Fix: store only the 7 exposed flags; or
   validate/force the other 8 to `false` on read and state that they are
-  ignored. Update the schema list and the 8.6 invalid-payload tests.</em>
+  ignored. Update the schema list and the 8.6 invalid-payload tests.</em>~~
+Adjudication: moot: bjones1's Nov 11 PR comment ("Allow all available pulldown-cmark flags") superseded it; all 15 flags are sidebar-exposed (FR-4) and persisted (FR-8), so none is fixed-off state.
 [fixed]
 * ~~<strong>R11-M4 — The fidelity round trip leaves the non-`translation_mode` `htmd` options unstated (FR-5 lines 114–116; 8.7 line 300):</strong> FR-5  fixes the `pulldown-cmark` options for the HTML → Markdown → HTML round trip but requires only `translation_mode: Faithful` from`htmd`; it does  not say whether `heading_style`, `link_style`, `preformatted_code`, and the  other sidebar options apply to the fidelity conversion or whether it uses  fixed crate defaults. 8.7 pins only `translation_mode: Faithful` and the  fixed round-trip options, so its golden expectations are not reproducible.  The choice is observable: `preformatted_code` changes inline-code handling  (`src/element_handler/code.rs:141–149`, `223–244`); with `true`, a newline  in a `<code>` element becomes a space and the span stays a code span, while  the default serializes the element as raw HTML. That difference survives  the round trip into the canonical HTML and changes the diff. <em>Fix:  state the exact `htmd` option set used for the fidelity conversion (all  sidebar options, or crate defaults plus `Faithful`) and pin every one in  8.7.</em>~~
 [fixed]
@@ -469,14 +419,15 @@ None.
 
 #### Low-severity / editorial
 
-* <strong>R11-L1 — 8.6's "no `target` attribute" is unsatisfiable with the
+* ~~<strong>R11-L1 — 8.6's "no `target` attribute" is unsatisfiable with the
   injected `<base target="_blank">` (FR-1 line 47; 8.6 line 286):</strong>
   8.6 requires the injected `srcdoc` to contain no `target` attribute, but
   FR-1 deliberately injects `<base target="_blank">` after the CSP `<meta>`.
   If the test inspects the final `srcdoc`, as written, it always finds that
   target. <em>Fix: require no user-supplied `target` attribute and exclude the
   demo's own `<base>`, or inspect the content before the base is
-  injected.</em>
+  injected.</em>~~
+Adjudication: resolved by the current 8.6 wording "no user-supplied `target` attribute (excluding the demo's own injected `<base target="_blank">`)" (demo-spec.md line 291).
 [fixed]
 ~~* <strong>R11-L2 — "Use Output as Input" does not identify which output view it copies (FR-2 line 61; FR-3 lines 66–69; 8.5 line 263):</strong> The output pane has a Source tab (the generated Markdown or HTML string) and a Rendered tab (the live preview; in HTML → Markdown it is HTML re-rendered from the Markdown). "Copies the current output" and 8.5's "active output" do not say whether the copied value is the Source string or the Rendered DOM, nor whether the active tab matters. In HTML → Markdown, copying the  Rendered HTML into the opposite (Markdown → HTML) buffer is a different action from copying the Source Markdown into it. <em>Fix: state that the generated Source string is copied regardless of the active tab, or define the tab-dependent behavior.</em>~~
 [fixed]
@@ -551,7 +502,3 @@ GitHub userid: nurlybek-aimagambetov
 (LLM and prompt used)
 
 (LLM output, possibly with strikethrough)
-
-### (Team member 4 name)
-
-(Same sections as Team member 1)
