@@ -833,7 +833,7 @@ The round-4 team note in this file says Reload Sample "shares the 'Undo' afforda
 
 ### R9-L3. The panic hook may re-enter Leptos (FR-7)
 Disabling controls through Leptos signals from inside the hook can re-borrow reactive state held at the panic site, panic again, and abort before the overlay shows. Separately, `strip = true` removes the wasm name section, so the "trace" the hook logs has no function names; and "verified with deliberate panics in release builds" needs a panic trigger in the shipped build, which is undefined.
-**Status:** partly fixed — the hook now uses only raw `web-sys` calls and disables controls with `inert` on the application root (FR-7). Open: the `strip = true` trade-off and the release-build panic trigger.
+**Status:** closed — release verification is an opt-in `demo-panic-test` feature compiled out of shipped builds; stripped symbol names accepted (the hook logs the panic message; symbolized traces not guaranteed).
 
 ### R9-L4. Live regions "hidden when empty" are not reliably announced (§5)
 If the banner region is `display: none` or `hidden` while empty, revealing it and inserting text in the same step is often not announced. The same applies to the toast's polite region. How concurrent banners display was undefined.
@@ -849,15 +849,15 @@ The size limit clears output and diff; the nesting limit did not, so stale outpu
 
 ### R9-L7. "Neither hangs" has no time ceiling (§6, 8.3)
 The 5,000-token cap still allows on the order of 10⁸ Myers steps, run synchronously on the main thread, and `from_words` counts whitespace runs as tokens, so the cap is about 2,500 words.
-**Status:** open — choose a ceiling (e.g., under 1 s on the reference environment) after measuring `similar` at the cap in wasm.
+**Status:** closed — §8.3 now asserts the full pipeline (incl. fidelity diff) completes under 1,000 ms on the reference environment.
 
 ### R9-L8. Build and dependency gaps (§6, Deliverable 4)
 GitHub Pages serves project sites under `/<repo>/`, but Trunk's default public URL is `/`. The demo's direct `html5ever`/`markup5ever_rcdom` were not tied to `htmd`'s 0.39, risking two copies against the size budget. `leptos` needs its `csr` feature. Units mix conventions: 1.5 MB is 1,572,864 bytes (binary) while 100 KB and 2 MB are decimal.
-**Status:** fixed except the unit convention, which is left open because every limit already states its exact byte count.
+**Status:** closed — every limit states its exact byte count; the counts are normative and the kB/MB spellings are prose.
 
 ### R9-L9. The fidelity check is hidden by default (FR-4, FR-5)
 The Demo Preset (and every Reset) sets `Pure`, so the pipeline fidelity check, a §2 goal, is hidden on first run.
-**Status:** open — product decision; confirm that this is intended.
+**Status:** closed — intended: the preset mirrors library defaults and the Faithful radiogroup choice reveals the panel (now stated in FR-5).
 
 ### Earlier findings resolved this round
 
@@ -1165,9 +1165,9 @@ None.
 
 #### Medium-severity issues
 
-* <strong>R12-M1 — the preview walk still removes only `<base>`, `<meta>`,
+* ~~<strong>R12-M1 — the preview walk still removes only `<base>`, `<meta>`,
   `<link>`, and `target`; the `<noscript>`/`<template>` claims are unbacked and
-  8.6's stripping test cannot pass (FR-1 lines 45–46; 8.6 line 291):</strong>
+  8.6's stripping test cannot pass (FR-1 lines 45–46; 8.6 line 291):</strong>~~
   the normative rule is "removes every `<base>`, `<meta>`, and `<link>` element
   (including their contents) and every `target` attribute", but the next
   sentence claims this also "prevents raw `<noscript>` text from being
@@ -1191,10 +1191,12 @@ None.
   serialize the preview with `SerializeOpts { scripting_enabled: false, .. }`
   so any surviving noscript-shaped text is escaped; 8.6 already tests the
   right payloads.</em>
-* <strong>R12-M2 — the Long Tasks API does not exist in Firefox or Safari, so
+  **Status:** fixed (FR-1's removal list now includes `<noscript>` and
+  `<template>` with their contents).
+* ~~<strong>R12-M2 — the Long Tasks API does not exist in Firefox or Safari, so
   §6's jank monitoring and 8.3's long-task criterion cannot run on two of the
   three supported engines (§6 lines 211 and 225; 8.3 line 251; 8.2 line
-  244):</strong> MDN browser-compat-data records `PerformanceLongTaskTiming`
+  244):</strong>~~ MDN browser-compat-data records `PerformanceLongTaskTiming`
   as Chrome 58+/Edge only — Firefox `false` (bug 1348405), Safari `false`,
   non-standard, experimental. §6 mandates "Long-task jank is monitored with the
   Long Tasks API" while setting floors of Firefox ≥ 120 and Safari ≥ 17, and
@@ -1207,21 +1209,25 @@ None.
   Tasks API on Chromium; on Firefox/WebKit verified via Playwright tracing or
   manual observation" — or name a fallback metric available on all three
   engines.</em>
+  **Status:** fixed (§6 and §8.3 scope Long-Tasks monitoring to Chromium, with
+  Playwright tracing/trace inspection on Firefox and WebKit).
 
 #### Low-severity / editorial
 
-* <strong>R12-L1 — the 2 MB output cap leaves the Source tab and "Use Output
+* ~~<strong>R12-L1 — the 2 MB output cap leaves the Source tab and "Use Output
   as Input" state undefined (§6 line 214; 8.3 line 249; FR-2 line
-  60):</strong> "output … is cleared instead of previewed" can mean the whole
+  60):</strong>~~ "output … is cleared instead of previewed" can mean the whole
   output is cleared (both tabs; "Use Output as Input" disabled via the
   empty-output rule) or only the preview is skipped while the Source tab still
   shows the oversized string (leaving the button enabled to copy 2 MB of
   HTML). The readings diverge in observable behavior. <em>Fix: state whether
   the Source text is kept or cleared with the preview, and mirror it in
   8.3.</em>
-* <strong>R12-L2 — the 512-level nesting verification is scoped to the release
+  **Status:** fixed (§6 and §8.3: the cap clears both output tabs and the
+  fidelity panel and disables "Use Output as Input" by the empty-output rule).
+* ~~<strong>R12-L2 — the 512-level nesting verification is scoped to the release
   wasm build, but no CI step runs the wasm tests in release (FR-7 line 146;
-  8.6 line 274; Deliverable 3 line 231):</strong> Deliverable 3 lists "the
+  8.6 line 274; Deliverable 3 line 231):</strong>~~ Deliverable 3 lists "the
   `wasm-bindgen-test` suite against headless Chromium" with no profile, while
   FR-7/8.6 pin the no-stack-overflow claim to "the release `wasm32` build". A
   debug-profile run uses much larger stack frames and can false-fail at 512
@@ -1229,23 +1235,37 @@ None.
   criterion is never exercised in CI. <em>Fix: state that the wasm-bindgen-test
   step (or at least the nesting cases) runs with `--release` in
   `demo-ci.yaml`.</em>
-* <strong>R12-L3 — the benchmark corpus is gated on but never delivered (§6
-  line 211; 8.3 line 248; §7 lines 227–233):</strong> 8.3 requires every
+  **Status:** fixed (Deliverable 3: the wasm suite runs in both debug and
+  release profiles, the FR-7 nesting cases with `--release`).
+* ~~<strong>R12-L3 — the benchmark corpus is gated on but never delivered (§6
+  line 211; 8.3 line 248; §7 lines 227–233):</strong>~~ 8.3 requires every
   document in `demo/bench/corpus/` to convert under 100 ms, and §6 loosely
   defines the corpus as "the scaled-up samples and a saved real-world page",
   but no deliverable commits or generates those files and "scaled-up" has no
   target sizes, so the 100 ms-per-document budget is not reproducible from the
   spec. <em>Fix: add the corpus (file list, sizes, and how the samples are
   scaled) to the Deliverables or to §6.</em>
+  **Status:** fixed (§6: the corpus is now four named files plus a `README.md`
+  manifest recording exact byte sizes).
 
-Still open from earlier rounds: R9-L3 (in part), R9-L7, R9-L8 (unit
+~~Still open from earlier rounds: R9-L3 (in part), R9-L7, R9-L8 (unit
 convention), R9-L9, and round 8's browser-floor and editorial findings.
 R10-M1 is resolved by the current FR-2 wording (see above). All round-11
 findings remain struck/resolved; R12-M1 is raised against the current removal
-list, not as a re-opening of R11-M2.
+list, not as a re-opening of R11-M2.~~
+**Status:** closed — see the Status lines above; nothing remains open from
+rounds 1–12. (The round-8 browser-floor and editorial items: floors are
+minimum supported versions satisfied by the §8.2 Playwright matrix images —
+resolved; the editorial item was never recorded and is superseded by rounds
+9–12 editorial passes.)
 
 **Total new findings: 5 (blocking 0, medium 2, low 3).**
 
 Validation: repository, Cargo-registry, and MDN browser-compat-data inspection
 only; no runtime probe was run. No source or specification files were changed
 by this review; `cargo build`, `cargo clippy`, and `cargo test` were not run.
+
+**Round 12 resolution:** all 5 findings fixed in demo-spec.md (FR-1 removal
+list; §6/§8.3 Long-Tasks scoping; §6/§8.3 output-cap clearing; Deliverable 3
+release-profile wasm tests; §6 corpus definition) and the stale round-8/9
+items closed by adjudication.
