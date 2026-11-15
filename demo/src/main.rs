@@ -2,6 +2,7 @@ use leptos::mount::mount_to_body;
 
 mod app;
 mod convert;
+mod fidelity;
 mod options_model;
 
 fn main() {

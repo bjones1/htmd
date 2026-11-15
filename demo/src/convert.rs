@@ -209,8 +209,10 @@ mod tests {
     #[test]
     fn md_to_html_forwards_cmark_flags() {
         let table = "| a | b |\n| - | - |\n| 1 | 2 |";
-        let mut flags = CmarkFlags::default();
-        flags.tables = true;
+        let flags = CmarkFlags {
+            tables: true,
+            ..Default::default()
+        };
         assert!(convert_md_to_html(table, &flags).contains("<table>"));
         assert!(!convert_md_to_html(table, &CmarkFlags::default()).contains("<table>"));
     }
