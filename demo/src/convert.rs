@@ -183,6 +183,7 @@ mod tests {
         assert!(!pure.contains("<br>"));
     }
 
+    #[ignore = "slow (~1 min): proves the depth walk survives 50,000 levels; run with `cargo test -- --ignored`"]
     #[test]
     fn depth_walk_survives_fifty_thousand_levels() {
         // 150,000 bytes of input is unreachable through convert_html_to_md's
