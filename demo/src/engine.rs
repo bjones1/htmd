@@ -187,31 +187,33 @@ impl Engine {
     /// cancel the pending batch's timers, and bypass the debounce -- the
     /// fresh buffer converts on the next animation frame whatever its size.
     pub fn on_buffer_overwrite(&mut self, mode: ConversionMode, text: &str) -> Vec<Action> {
-        self.advance_seq();
-        self.cancel_batch();
         self.mode = mode;
         let target = index_of(mode);
         self.modes[target].buffer = text.to_owned();
         self.modes[target].output_valid = false;
-        if text.is_empty() {
-            return self.clear_active_output();
-        }
-        if text.len() > MAX_INPUT_BYTES {
-            return Vec::new();
-        }
-        let clock = Rc::clone(&self.clock);
-        self.batch = Some(Batch::immediate(clock.now_ms(), &*clock));
-        Vec::new()
+        self.immediate_trigger()
     }
 
-    /// FR-2 "every option change including Reset" (`skip_tags` text edits
-    /// included): advance the sequence, invalidate the inactive mode's
-    /// output, and reconvert the active mode on the same adaptive schedule
-    /// as an edit of its buffer.
+    /// FR-2 "every option change" (ordinary sidebar toggles and
+    /// `skip_tags` text edits): advance the sequence, invalidate the
+    /// inactive mode's output, and reconvert the active mode on the same
+    /// adaptive schedule as an edit of its buffer. The Reset button is not
+    /// this input -- FR-4 makes it immediate ([`Engine::on_reset`]).
     pub fn on_options_change(&mut self) -> Vec<Action> {
         let inactive = index_of(self.mode.opposite());
         self.modes[inactive].output_valid = false;
         self.input_trigger()
+    }
+
+    /// FR-4 Reset (demo-spec.md:113): an option change "followed by
+    /// immediate reconversion". Advances the sequence and invalidates
+    /// outputs like any option change, but bypasses the FR-2 adaptive
+    /// debounce -- the active buffer reconverts on the next animation
+    /// frame whatever its size class.
+    pub fn on_reset(&mut self) -> Vec<Action> {
+        let inactive = index_of(self.mode.opposite());
+        self.modes[inactive].output_valid = false;
+        self.immediate_trigger()
     }
 
     /// FR-2 mode switch: advance the sequence, cancel both timers of the
@@ -328,6 +330,28 @@ impl Engine {
             return Vec::new();
         }
         self.schedule_batch();
+        Vec::new()
+    }
+
+    /// Shared pipeline of the immediate (non-debounced) triggers -- FR-2
+    /// buffer overwrites and FR-4 Reset -- after the buffer mirror was
+    /// updated: advance the sequence and dispatch on the next animation
+    /// frame, replacing any pending batch whatever its size class.
+    fn immediate_trigger(&mut self) -> Vec<Action> {
+        self.advance_seq();
+        let active = self.active_index();
+        self.modes[active].output_valid = false;
+        let len = self.modes[active].buffer.len();
+        if len == 0 {
+            return self.clear_active_output();
+        }
+        self.cancel_batch();
+        if len > MAX_INPUT_BYTES {
+            // FR-7: conversion halts over the ceiling (see `input_trigger`).
+            return Vec::new();
+        }
+        let clock = Rc::clone(&self.clock);
+        self.batch = Some(Batch::immediate(clock.now_ms(), &*clock));
         Vec::new()
     }
 
@@ -709,6 +733,29 @@ mod tests {
         assert_eq!(actions, vec![Action::ClearOutput]);
         assert_eq!(Harness::dispatch_seqs(&h.advance(0)), vec![4]);
         assert_eq!(h.engine.on_conversion_ready(4), CommitOutcome::Commit);
+    }
+
+    #[test]
+    fn reset_on_large_buffer_dispatches_immediately() {
+        let mut h = Harness::new();
+        h.engine.on_edit(&Harness::big_text()); // arms debounce@250 + deadline@900
+        assert_eq!(h.clock.live_timers(), 2);
+        assert!(h.engine.on_reset().is_empty());
+        assert_eq!(h.clock.live_timers(), 1); // both replaced by a next-frame timer
+        let actions = h.advance(0); // no 250 ms wait, per FR-4:113
+        assert_eq!(Harness::dispatch_seqs(&actions), vec![2]);
+        assert_eq!(h.engine.on_conversion_ready(2), CommitOutcome::Commit);
+    }
+
+    #[test]
+    fn option_change_on_large_buffer_still_debounces() {
+        let mut h = Harness::new();
+        h.engine.on_edit(&Harness::big_text()); // seq 1, debounce@250
+        h.engine.on_options_change(); // seq 2, debounce reset to 250
+        assert_eq!(h.clock.live_timers(), 2); // debounce + deadline, no frame timer
+        assert!(h.advance(0).is_empty()); // the split is real, not a blanket bypass
+        let actions = h.advance(250);
+        assert_eq!(Harness::dispatch_seqs(&actions), vec![2]);
     }
 
     #[test]
