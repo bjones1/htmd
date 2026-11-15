@@ -982,4 +982,106 @@ release-build panic trigger), R9-L7 (no time ceiling for "neither hangs"),
 R9-L8 (byte-unit conventions), R9-L9 (the Pure preset hides the fidelity check
 by default), and round 8's browser-floor and editorial findings.
 
-<strong>Total new findings: 9 (blocking 0, medium 4, low 5).</strong>`
+<strong>Total new findings: 9 (blocking 0, medium 4, low 5).</strong>
+
+## Round 11 — open findings (awaiting processing)
+
+Prompting **Big Pickle** (OpenCode agent, fresh context) with <em>"review
+@demo/demo-spec.md"</em> produced the following round-11 output. The review
+checked the post-round-10 specification (commit `52e8094`) against
+`src/options.rs`, `src/lib.rs`, `src/element_handler/code.rs`,
+`src/element_handler/element_util.rs`, `src/element_handler/pre.rs`,
+`src/element_handler/span.rs`, `translation_approach.md`, and the pinned
+`html5ever` 0.39.0, `markup5ever_rcdom` 0.39.0+unofficial, and
+`pulldown-cmark` 0.13.4 sources in the Cargo registry. The runtime probe was
+blocked by Windows Application Control (`os error 4551`), so behavior was
+established by source inspection; `cargo build`, `cargo clippy`, and
+`cargo test` were not run. No previously resolved finding is re-raised
+unchanged; R11-M2 and R11-M5 address gaps left by the round-10 fixes, and
+R10-M1 remains open under carried-over items.
+
+#### What checks out
+
+* The 12 `htmd` options, their variants, and their defaults still match
+  `src/options.rs`, including `preformatted_code: false` and
+  `translation_mode: Pure`.
+* `HtmlToMarkdown::html_to_tree` followed by `tree_to_markdown` is exactly
+  `convert` (`src/lib.rs:148–214`), so FR-7's parse-once depth check is
+  implementable.
+* `markup5ever_rcdom`'s serializer iterates `children` and panics on a
+  `Document` node; `TraversalScope::IncludeNode` and `ChildrenOnly(None)`
+  behave as FR-5 describes, and void elements serialize without a
+  self-closing slash (`lib.rs:623–678`).
+* `similar::TextDiff::from_words` splits on words and whitespace and needs no
+  optional `similar` feature, so FR-5's tokenizer choice is implementable.
+* The fixed `ENABLE_TABLES | ENABLE_MATH` round-trip options avoid the
+  smart-punctuation false diffs FR-5 describes, and `htmd`'s span handler
+  recognizes only its two math `class` values, so it adds no unrelated
+  rewrites.
+* The `skip_tags` empty-list panic is real
+  (`src/element_handler/mod.rs:396–400`), and FR-4's "omit the call" rule
+  avoids it.
+* Round 10's trailing-newline rule for `<pre>` and its `skip_tags` debounce
+  now match the source and the stated behavior.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+[fixed]
+* ~~<strong>R11-M1 — FR-1 enables all 15 `pulldown-cmark` flags, contradicting FR-4 and the Demo Preset (FR-1 line 37; FR-4 lines 74–89 and 108; 8.5 line 260):</strong> FR-1 says Markdown → HTML uses "all 15  `Options::ENABLE_*` flags listed in FR-4", but FR-4 exposes only 7 and  fixes the other 8 off; Reset enables those 7 and disables the remaining 8.  Enabling all 15 would make `ENABLE_GFM`, the metadata-block flags,definition lists, superscript, subscript, and wikilinks change output with  no sidebar control, and the first conversion after a reset would not match FR-1. FR-4 also lists the 8 fixed-off flags as ordinary bullets in the same option list, so they read as controls. <em>Fix: say FR-1 uses the 7 exposed flags with their sidebar/preset values and that the other 8 are never enabled; move the 8 into a clearly labeled "fixed off" paragraph or drop them from the option list.</em>~~
+[fixed]
+*~~ <strong>R11-M2 — The preview still does not remove `<noscript>` or `<template>`, and the new template rationale is inaccurate (FR-1 lines 46–47; 8.6 line 286):</strong> The round-10 fix added `<noscript>` and  `<template>` to the explanation and the 8.6 test but not to the removal  list, which still contains only `<base>`, `<meta>`, `<link>`, and  `target`. `html5ever`'s tree builder defaults scripting_enabled: true` (`tree_builder/mod.rs:47–75`), so `<noscript>...</noscript>` is parsed as  one text node and the walk sees no `<meta>`/`<link>` inside it. The serializer also defaults `scripting_enabled: true`, and its `write_text`  writes `<noscript>` text raw (`serialize/mod.rs:214–227`), so  `<noscript><meta http-equiv="refresh" ...></noscript>` or  `<noscript><a target="_self" ...></noscript>` is emitted unescaped; the  sandboxed preview, which parses with scripting disabled, turns it back  into live markup, defeating the removal. Separately, `RcDom` stores  `<template>` contents in `template_contents`, not `children`; the FR-1 walk  has no rule for that field and the serializer ignores it  (`markup5ever_rcdom-0.39.0+unofficial/lib.rs:642–658`), so the contents are  dropped from the preview rather than becoming a live shadow root, while the  `<template>` element itself remains and 8.6 still requires its absence.  8.6 also misspells `<nonscript>`, so that check does not exercise the real  element. <em>Fix: remove `<noscript>` and `<template>` whole in the  preview walk (or parse with scripting disabled so noscript contents are  visible to the walk, but still remove both elements); correct the rationale  to say template contents are dropped by the serializer; spell `<noscript>`  in 8.6; add a `<noscript>` case carrying `<meta http-equiv="refresh">` and  a `<template shadowrootmode="open">` case with contents.</em>~~
+* <strong>R11-M3 — The persisted `cmark` object stores all 15 flags although
+  FR-4 fixes 8 off (FR-8 line 165; FR-4 lines 74–89):</strong> The schema
+  lists `yaml_style_metadata_blocks`, `pluses_delimited_metadata_blocks`,
+  `old_footnotes`, `gfm`, `definition_list`, `superscript`, `subscript`, and
+  `wikilinks`, and validation only checks that the values are booleans. A
+  stored `gfm: true` is therefore accepted; if the app applies it, it enables
+  an out-of-scope behavior with no sidebar control, and `old_footnotes: true`
+  also sets the `ENABLE_FOOTNOTES` bit
+  (`pulldown-cmark-0.13.4/src/lib.rs:715`), turning footnotes on even when
+  `footnotes` is false. If the app instead ignores the 8, they are dead
+  persisted state that can disagree with the UI and with Reset. Round 6
+  recorded this object as holding the 7 exposed flags, so this is a
+  regression in the schema. <em>Fix: store only the 7 exposed flags; or
+  validate/force the other 8 to `false` on read and state that they are
+  ignored. Update the schema list and the 8.6 invalid-payload tests.</em>
+[fixed]
+* ~~<strong>R11-M4 — The fidelity round trip leaves the non-`translation_mode` `htmd` options unstated (FR-5 lines 114–116; 8.7 line 300):</strong> FR-5  fixes the `pulldown-cmark` options for the HTML → Markdown → HTML round trip but requires only `translation_mode: Faithful` from`htmd`; it does  not say whether `heading_style`, `link_style`, `preformatted_code`, and the  other sidebar options apply to the fidelity conversion or whether it uses  fixed crate defaults. 8.7 pins only `translation_mode: Faithful` and the  fixed round-trip options, so its golden expectations are not reproducible.  The choice is observable: `preformatted_code` changes inline-code handling  (`src/element_handler/code.rs:141–149`, `223–244`); with `true`, a newline  in a `<code>` element becomes a space and the span stays a code span, while  the default serializes the element as raw HTML. That difference survives  the round trip into the canonical HTML and changes the diff. <em>Fix:  state the exact `htmd` option set used for the fidelity conversion (all  sidebar options, or crate defaults plus `Faithful`) and pin every one in  8.7.</em>~~
+[fixed]
+~~* <strong>R11-M5 — The crash marker is removed before the user chooses a recovery action (FR-8 line 156; FR-2 line 59; 8.6 line 287):</strong> On startup with `htmd_cmark_live_crashed` present, FR-8 removes the marker, restores the buffers, and shows the recovery banner without converting. If  the user reloads again before choosing `Convert restored input` or `Clear buffers`, the marker is gone, so startup runs the initial conversion on the  crashing input, panics, and shows the overlay again; the recovery state  survives only one reload and the 8.6 test, which reloads once, passes  anyway. <em>Fix: keep the marker until the user clears the buffers or a  conversion of the restored input succeeds, and clear it in those actions  rather than at startup. Also state whether `Clear buffers clears the output and diff as well as the inputs.</em>~~
+[fixed]
+~~* <strong>R11-M6 — The 8.6 concurrency test introduces an async gap the execution model does not have (FR-2 line 55; 8.6 line 271):</strong> FR-2 says conversion runs synchronously on the main thread and a run's commit is one synchronous step; at most one run is in flight and one is queued. 8.6 slows a conversion with a "300 ms async delay between compute and commit" and has newer input arrive during the delay. A synchronous compute/commit pair cannot yield at that point; if the test hook yields, the run is asynchronous in a way FR-2 does not define. With one in-flight run and one queued run, the newer input cannot produce a "newer output" while the delayed run is still in flight — it can only be queued — so the stale run has nothing newer to overwrite. If the hook busy-waits instead, no input event can arrive. <em>Fix: put the delay at a defined async boundary (before dispatch, or on the iframe `load` path) and test the queue/sequence behavior there, or explicitly define a test-only suspension point in FR-2 and state that the stale run writes nothing and the queued run then commits.</em>~~
+
+#### Low-severity / editorial
+
+* <strong>R11-L1 — 8.6's "no `target` attribute" is unsatisfiable with the
+  injected `<base target="_blank">` (FR-1 line 47; 8.6 line 286):</strong>
+  8.6 requires the injected `srcdoc` to contain no `target` attribute, but
+  FR-1 deliberately injects `<base target="_blank">` after the CSP `<meta>`.
+  If the test inspects the final `srcdoc`, as written, it always finds that
+  target. <em>Fix: require no user-supplied `target` attribute and exclude the
+  demo's own `<base>`, or inspect the content before the base is
+  injected.</em>
+[fixed]
+~~* <strong>R11-L2 — "Use Output as Input" does not identify which output view it copies (FR-2 line 61; FR-3 lines 66–69; 8.5 line 263):</strong> The output pane has a Source tab (the generated Markdown or HTML string) and a Rendered tab (the live preview; in HTML → Markdown it is HTML re-rendered from the Markdown). "Copies the current output" and 8.5's "active output" do not say whether the copied value is the Source string or the Rendered DOM, nor whether the active tab matters. In HTML → Markdown, copying the  Rendered HTML into the opposite (Markdown → HTML) buffer is a different action from copying the Source Markdown into it. <em>Fix: state that the generated Source string is copied regardless of the active tab, or define the tab-dependent behavior.</em>~~
+[fixed]
+~~* <strong>R11-L3 — The `Err` path leaves the output and diff state undefined (FR-7 line 146):</strong> The future-proof wrapper's `Err` branch shows a  non-fatal banner that clears on the next input change, but it does not say  whether the output and diff are cleared, left stale, or marked invalid. If  they remain, "Use Output as Input" can copy the previous input's result  while the current input failed, and the banner can disappear on the next keystroke without a successful conversion. <em>Fix: on `Err`, clear the output/diff or mark them invalid and disable "Use Output as Input"; state  whether the banner survives until a successful conversion.</em>~~
+[fixed]
+~~* <strong>R11-L4 — Editorial defects, mostly from the round-10 edits:</strong> line 37 has a double space in "with  all"; line 106 reads "f the parsed  list"; line 118 runs `).*Accepted limitation:*` together without a space or line break and calls fragment-parser wrappers "Automated"; line 144 has "then then halts"; line 286 misspells `<nonscript>` and its example  `<noscript><a href="https://x.example" target="_self"> and <template shadowrootmode="open">` has unclosed tags; line 300 has "the CommonMark-basics sample is part" where the subject is plural. <em>Fix: correct the spelling, spacing, and agreement.</em>~~
+
+Still open from earlier rounds: R10-M1 (a run that writes nothing or clears
+the preview never fires the `load` that ends the in-flight state), R9-L3,
+R9-L7, R9-L8 (unit convention), R9-L9, and round 8's browser-floor and
+editorial findings. R10-M2, R10-M4, R10-L1, R10-L2, R10-L3, R10-L4, and
+R10-L5 are treated as resolved by the round-10 edits; R10-M3 is only partly
+resolved (see R11-M2).
+
+**Total new findings: 10 (blocking 0, medium 6, low 4).**
+
+Validation: specification and source inspection only. No source or
+specification files were changed by this review. `cargo build`, `cargo
+clippy -- --deny warnings`, and `cargo test` were not run; a runtime probe was
+attempted but blocked by Windows Application Control (`os error 4551`).
