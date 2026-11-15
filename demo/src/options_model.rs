@@ -1,10 +1,6 @@
 //! Sidebar option model: pulldown-cmark flags, htmd options, the
 //! `skip_tags` field parser, and the demo preset (spec FR-4).
 
-// The conversion and UI tasks wired into later milestones are this module's
-// only callers; until they exist, `-D warnings` sees it as dead code.
-#![allow(dead_code)]
-
 use htmd::options::{
     BrStyle, BulletListMarker, CodeBlockFence, CodeBlockStyle, HeadingStyle, HrStyle,
     LinkReferenceStyle, LinkStyle, TranslationMode,
@@ -157,6 +153,8 @@ const SKIP_TAGS_MAX_CHARS: usize = 200;
 /// matching `[a-z][a-z0-9-]*`. Input past 200 characters is ignored.
 /// An empty result means "skip nothing"; the caller must not pass it to
 /// htmd's `skip_tags`, which panics on an empty slice.
+// The UI task that owns the skip_tags field is the only caller.
+#[allow(dead_code)]
 pub fn parse_skip_tags(raw: &str) -> Vec<String> {
     let capped: String = raw.chars().take(SKIP_TAGS_MAX_CHARS).collect();
     let mut tags: Vec<String> = Vec::new();
@@ -178,6 +176,8 @@ fn is_tag_name(tag: &str) -> bool {
 /// The FR-4 "Reset Options to Demo Preset" state: the 7 common cmark flags
 /// on (the remaining 8 off) and htmd options at crate defaults with
 /// `translation_mode: Pure`. The `skip_tags` field is cleared to "".
+// The UI task that owns the reset button is the only caller.
+#[allow(dead_code)]
 pub fn demo_preset() -> (CmarkFlags, HtmdOptions) {
     (
         CmarkFlags {

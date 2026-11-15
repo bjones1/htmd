@@ -1,6 +1,7 @@
 use leptos::mount::mount_to_body;
 
 mod app;
+mod convert;
 mod options_model;
 
 fn main() {
