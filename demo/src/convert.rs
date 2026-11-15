@@ -184,6 +184,20 @@ mod tests {
     }
 
     #[test]
+    fn depth_walk_survives_fifty_thousand_levels() {
+        // 150,000 bytes of input is unreachable through convert_html_to_md's
+        // 100,000-byte gate; the walk is exercised directly. Unclosed divs
+        // nest (a div may contain a div), so html5ever produces 50,000
+        // levels, and the iterative walk must not overflow the stack.
+        let html = "<div>".repeat(50_000);
+        let tree = HtmlToMarkdown::builder()
+            .build()
+            .html_to_tree(&html)
+            .expect("infallible parse");
+        assert_eq!(max_element_depth(&tree), 50_000);
+    }
+
+    #[test]
     fn md_to_html_renders_headings() {
         assert_eq!(
             convert_md_to_html("# Hi", &CmarkFlags::default()),
