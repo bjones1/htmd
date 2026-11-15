@@ -879,3 +879,107 @@ The Demo Preset (and every Reset) sets `Pure`, so the pipeline fidelity check, a
 **Total new findings: 13 (blocking 0, medium 4, low 9).** Fixed this round: all 4 new medium findings, 5 new low findings in full and 2 in part, all 7 open round-6/7 medium findings, all 4 open round-6 low findings, and 4 of the 6 round-8 low findings. Still open: R9-L3 (in part), R9-L7, R9-L8 (units), R9-L9, and round 8's browser-floor and editorial findings.
 
 Validation: specification and review documents only. No Rust source was changed, and build, clippy, and test were not run (Cargo is not installed on the reviewing machine).
+
+
+
+Prompting **Claude Opus 5.5** (Claude Code, fresh context) with <em>"review
+@demo/demo-spec.md"</em> produced the following round-10 output. The review
+checked the post-round-9 specification against `src/lib.rs`,
+`src/dom_walker.rs`, `src/element_handler/pre.rs`, `tests/common/mod.rs`,
+`tests/code_tests.rs`, and the round-9 notes in `review.md`. Cargo is not
+installed on the reviewing machine, so the `html5ever` and `markup5ever_rcdom`
+sources were not opened; claims resting on them are marked as unverified. No
+finding was deemed incorrect or irrelevant, so nothing is struck through; all 9
+findings remain open for processing.
+
+#### What checks out
+
+* FR-4's 12 `htmd` options, their variants, and their defaults still match
+  `src/options.rs`, and the 15-flag count for `pulldown-cmark` 0.13.4 is right.
+* `convert` is exactly `html_to_tree` followed by `tree_to_markdown`
+  (`src/lib.rs:148–214`), so FR-7's parse-once nesting check is implementable.
+  `html_to_tree` uses `parse_document`, which is consistent with "children of
+  `<head>` and `<body>` are depth 1".
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+* <strong>R10-M1 — A conversion that never reloads the iframe stalls the
+  pipeline for good (FR-2, execution model):</strong> a run counts as in flight
+  until the iframe fires `load` for its commit, but a stale run writes nothing,
+  a run whose output is cleared (empty input, the 2 MB limit, an `Err` banner, a
+  size or nesting limit) may not set `srcdoc`, and a mode switch can discard a
+  run still waiting for `load`. None of these gets a `load`, so the queued run
+  never starts and conversion stops for the rest of the session; the 8.6
+  concurrency test hits the stale case directly. <em>Fix: a run that writes
+  nothing, or does not navigate the iframe, ends at commit; define what
+  clearing the preview does to `srcdoc`; ignore a `load` that does not match
+  the current commit.</em>
+* <strong>R10-M2 — Every ordinary code block shows a false diff (FR-5,
+  preserved subtrees):</strong> CommonMark code blocks always end with a line
+  ending, so `pulldown-cmark` renders `<pre><code>x\n</code></pre>`, while the
+  usual input `<pre><code>x</code></pre>` converts to ```` ```\nx\n``` ````
+  (`tests/code_tests.rs`). Inside a preserved subtree nothing trims the extra
+  `\n`, so the corpus's real-world page shows a change on every code block, and
+  the basics sample passes 8.7's zero-diff test only if its HTML happens to
+  include the `\n`. <em>Fix: on both sides, remove one trailing U+000A from the
+  last text inside each `<pre>` (a single trailing newline does not render);
+  add a golden for `<pre><code>x</code></pre>`.</em>
+* <strong>R10-M3 — `<noscript>` and `<template>` bypass preview stripping
+  (FR-1; 8.6 "Preview navigation" and "Preview stripping"):</strong> the
+  sandboxed preview has scripting disabled, so the browser parses `<noscript>`
+  contents as markup, but `html5ever` parses with scripting enabled by default,
+  so the walk sees them as text and strips nothing. If the serializer writes
+  that text raw (believed but unverified), `<noscript><a href="https://x.example"
+  target="_self">click</a></noscript>` loads `x.example` into the preview, and
+  `<link rel=preconnect>`, which CSP does not cover, gets through the same way.
+  `RcDom` stores `<template>` contents apart from its children, so the walk
+  misses them too, while browsers make `<template shadowrootmode="open">` a
+  live shadow root. <em>Fix: remove `<noscript>` and `<template>` elements whole
+  in the preview walk, or parse and serialize with scripting off; add both
+  cases to the 8.6 stripping test.</em>
+* <strong>R10-M4 — A panicking input can lock the user in a crash loop (FR-7,
+  FR-8):</strong> the flush before "Use Output as Input" or a sample load, the
+  500 ms text save, and the `pagehide` flush when the user clicks reload (as the
+  overlay instructs) can all persist the crashing input. Startup converts the
+  restored buffer once, so it panics again, and the only way out is clearing
+  site data by hand. <em>Fix: have the panic hook and the
+  `error`/`unhandledrejection` listeners stop all further storage writes and
+  set a crash-marker key; when the marker is present at startup, restore the
+  workspace without converting and show a banner offering to convert or
+  clear.</em>
+
+#### Low-severity / editorial
+
+* <strong>R10-L1 — Typing in `skip_tags` counts as an option change (FR-4,
+  FR-8):</strong> on a 100 KB input every keystroke runs a full conversion and a
+  synchronous save of the whole workspace, and FR-8 does not say whether a
+  stored `skip_tags` over 200 characters is invalid. <em>Fix: debounce the
+  field like text input and state the stored-length rule.</em>
+* <strong>R10-L2 — Wasm stack headroom at 512 levels is unmeasured
+  (FR-7):</strong> the default stack is 1 MiB and each level runs about six to
+  eight frames (`walk_node` → `walk_element` → handler → `walk_children`).
+  <em>Fix: run the 512-level test with the most stack-hungry element (nested
+  lists, tables, or blockquotes) in both translation modes and the release
+  build, or set the stack size explicitly.</em>
+* <strong>R10-L3 — The fidelity panel and the converter parse the input
+  differently (FR-5):</strong> the panel parses the original as a fragment, but
+  `htmd` parses it as a document (`src/lib.rs:148`), so for full-page input such
+  as the corpus page the doctype, `<html>`/`<body>` attributes, and `<head>`
+  contents are handled differently on the two sides. <em>Fix: canonicalize
+  from the tree `htmd` converted, or state this as a limitation.</em>
+* <strong>R10-L4 — FR-2 gives each mode its own fidelity panel, but FR-5 limits
+  the panel to HTML → Markdown mode.</strong> <em>Fix: editorial.</em>
+* <strong>R10-L5 — Undo after a sample load does not restore the selected
+  sample (FR-6):</strong> a later Reload Sample loads the sample the user just
+  undid. <em>Fix: state whether this is intended.</em>
+
+Still open from round 9: R9-L3 (the `strip = true` trade-off and the
+release-build panic trigger), R9-L7 (no time ceiling for "neither hangs"),
+R9-L8 (byte-unit conventions), R9-L9 (the Pure preset hides the fidelity check
+by default), and round 8's browser-floor and editorial findings.
+
+<strong>Total new findings: 9 (blocking 0, medium 4, low 5).</strong>`
