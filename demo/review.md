@@ -1269,3 +1269,146 @@ by this review; `cargo build`, `cargo clippy`, and `cargo test` were not run.
 list; §6/§8.3 Long-Tasks scoping; §6/§8.3 output-cap clearing; Deliverable 3
 release-profile wasm tests; §6 corpus definition) and the stale round-8/9
 items closed by adjudication.
+
+---
+
+## Round 13 — open findings (awaiting processing)
+
+```text
+You are a fresh-context LLM reviewer performing Round 13 of an iterative specification review for a university assignment. Rounds 1–12 already ran; round 12's five findings were just resolved, and the stale round-8/9 items are closed. Your job: find what is still wrong or weak in the spec. If only trivial or contradictory findings remain, say so plainly — a trivial-findings round is a legitimate and useful outcome.
+
+## The document under review
+
+Read `/home/danial/htmd/demo/demo-spec.md` in full (~312 lines after the round-12 edits). It specifies a browser demo app ("pulldown-cmark / htmd live demo") to be implemented as a standalone Rust crate at `demo/` depending on this repo's `htmd` crate.
+
+## What to check it against
+
+The spec must be implementable exactly as written, against the real crate and the real dependency APIs available locally:
+
+1. The htmd crate in this repo (`/home/danial/htmd/src/`): `src/lib.rs` (`convert`, `HtmlToMarkdown`, `HtmlToMarkdown::builder()` → `.options()`, `.skip_tags()`, `.build()`, `.convert()`, `.html_to_tree()`, `.tree_to_markdown()`), `src/options.rs` (`Options`: 12 fields incl. `translation_mode` variants `Pure`/`Faithful`, numeric ranges for spacing options), `src/element_handler/` (element handling, skip semantics, the empty-`skip_tags` panic guard).
+2. Pinned versions in `/home/danial/htmd/Cargo.toml` and the spec's §6: html5ever 0.39, markup5ever_rcdom 0.39, pulldown-cmark 0.13.4, `similar`, Leptos csr, Trunk.
+3. Internal consistency: every FR (FR-1…FR-8) vs §8 acceptance criteria (§8.5 sample flows, §8.6 concurrency/storage/preview, §8.7 canonicalization goldens); terminology stable; numbers consistent (byte limits, timings, nesting depth, token caps, schema version, corpus sizes); no requirement contradicting another; no acceptance case no FR satisfies. Pay particular attention to the NEWLY EDITED text from round 12 (FR-1 removal list; §6/§8.3 Long-Tasks scoping; §6/§8.3 output-cap clearing; Deliverable 3 release-profile wasm tests; §6 corpus definition; FR-7 demo-panic-test feature; §8.3 1,000 ms ceiling; FR-5 hidden-by-design note) — fresh text is where new contradictions breed.
+4. Implementability in wasm: no filesystem/threads/`Instant` assumptions; iterative walks where recursion would overflow.
+
+Do NOT review style preferences, and do NOT re-litigate findings already struck through or marked resolved in `/home/danial/htmd/demo/review.md` (read rounds 10–12 first to avoid repeats).
+
+## Output
+
+Append to `/home/danial/htmd/demo/review.md` a new section matching the established round format exactly (mirror rounds 12's structure: heading `## Round 13 — open findings (awaiting processing)`, the prompt quoted verbatim in a fenced block, reviewer identity line, "What checks out", "Blocking issues", "Medium-severity issues", "Low-severity / editorial", IDs `R13-B#`/`R13-M#`/`R13-L#` with spec line references and concrete suggested fixes).
+
+CRLF WARNING: the working tree is CRLF (`core.autocrlf=true`). Append with line-ending preservation (e.g. Python `open(path, "a", newline="\r\n")`); verify with `git diff --stat demo/review.md` that only appended lines are new.
+
+Then commit ONLY review.md: `git add demo/review.md && git commit -m "Spec review round 13: N findings (X blocking, Y medium, Z low)"` (real numbers). Do NOT modify demo-spec.md or any other file. Do NOT push.
+
+Finally, report back with ONLY (under 12 lines): counts by severity, one-line summary of each blocking/medium finding (ID + gist + line), whether any finding repeats a struck/resolved one (should be none), your honest judgment whether findings are now trivial/contradictory, the commit SHA, and confirmation demo-spec.md is untouched.
+```
+
+Reviewed by **GLM-5.3** (OpenCode agent, fresh context) with the round-13 prompt quoted
+above. The review checked the post-round-12 specification (308 lines, commit `2421acb`)
+against `src/lib.rs`, `src/options.rs`, `src/element_handler/mod.rs`, the root
+`Cargo.toml`, and the pinned `html5ever` 0.39.0, `markup5ever_rcdom`
+0.39.0+unofficial, and `pulldown-cmark` 0.13.4 sources in the local Cargo registry.
+All round-12 findings were re-verified as fixed in the current text before hunting
+for new ones; `similar` is still absent from the local registry, so FR-5's
+tokenizer claims rest on rounds 11–12's registry verification.
+
+#### What checks out
+
+* All five round-12 fixes are in the text and hold up: FR-1's removal list now
+  includes `<noscript>` and `<template>` whole (line 46), which makes the preview
+  path safe regardless of the parser's `scripting_enabled` default
+  (`html5ever-0.39.0/src/tree_builder/mod.rs:75`,
+  `serialize/mod.rs:45,224`); Long-Tasks monitoring is scoped to Chromium in both
+  §6 (line 211) and §8.3 (line 252); the 2 MB output cap clears both tabs, the
+  fidelity panel, and disables "Use Output as Input" consistently in §6 (line 214)
+  and §8.3 (line 249); Deliverable 3 (line 231) runs the wasm test suite in debug
+  and release with the FR-7 nesting cases `--release`; §6 (line 211) defines the
+  corpus as four named files plus a `README.md` size manifest.
+* FR-4's 12 `htmd` options, variants, defaults, and 1–4 spacing clamps still match
+  `src/options.rs`; the Faithful-mode `br_style` note matches
+  `src/options.rs:63–65`; the empty-`skip_tags` guard is still the `assert!` at
+  `src/element_handler/mod.rs:400`, and FR-4's omit-the-call rule avoids it.
+* All 15 `Options::ENABLE_*` names exist verbatim in pulldown-cmark 0.13.4
+  (`src/lib.rs:651–735`); FR-4's 7-on/8-off preset and FR-8's 15-field `cmark`
+  object agree with that set.
+* `html_to_tree`/`tree_to_markdown` are public and compose `convert`
+  (`src/lib.rs:148–214`), so FR-7's parse-once depth measurement remains
+  implementable; `markup5ever_rcdom` still panics on `Document` serialization
+  (`lib.rs:672`) exactly as FR-5 line 130 warns, and its drop is worklist-based.
+* The wasm constraints hold: no filesystem, thread, or `Instant` assumptions
+  remain; §6 line 213 explicitly bans `similar`'s deadline API for that reason;
+  every tree walk the spec requires (preview strip, canonicalization, depth
+  measurement) is specified as iterative.
+* Numbers stay consistent where they interact: 2,000/2,001; 100,000/100,001;
+  250/900 ms; 500 ms; 512/600; 5,000 tokens; 2,000,000; 1,572,864; 1500 ms;
+  `version: 1` — the one remaining numeric conflict is the budget family raised
+  as R13-M1 below.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+* <strong>R13-M1 — the latency budgets contradict each other for adversarial
+  inputs (§6 lines 212 and 215; §8.3 lines 250 and 252; §8.5 line 264):</strong>
+  §6 line 212 exempts non-corpus inputs ≤ 100 kB from the 100 ms compute budget,
+  and §8.3 line 250 allows the full pipeline for *any* input up to 1,000 ms. Yet
+  §6 line 215 promises that inputs of 2,001–100,000 bytes render in "~350–400 ms
+  after the last keystroke (250 ms debounce + ≤ 100 ms compute and render)", and
+  §8.5 line 264 hardens that to "within 400 ms after the last keystroke" with no
+  corpus carve-out — unsatisfiable for exactly the adversarial inputs (reference
+  -link amplification, a diff near the 5,000-token cap) those same sections
+  define. §8.3 line 252 then grants scheduled conversion runs only "the full
+  100 ms compute budget" as the long-task exemption, so a legal ~1,000 ms
+  forced-tick run dispatched during continuous typing of an adversarial document
+  exceeds the exemption and fails the no-long-task criterion as written.
+  <em>Fix: scope the 400 ms end-to-end claim (§6 line 215, §8.5 line 264) to
+  inputs within the compute budget, and restate §8.3 line 252's exemption as the
+  *applicable* ceiling — the 100 ms compute budget, or the 1,000 ms adversarial
+  ceiling of line 250.</em>
+* <strong>R13-M2 — no CI step or deliverable builds with `demo-panic-test`, but
+  §8.6's crash-loop criterion needs one (FR-7 line 148; Deliverable 3 line 231;
+  §8.6 line 293):</strong> the only deliberate-panic trigger is the opt-in
+  feature's toolbar button, "compiled out of shipped builds" (FR-7 line 148).
+  Deliverable 3's workflow steps (clippy, native test, wasm-bindgen-test in both
+  profiles, `trunk build --release`, size check, fuzz corpus, Playwright matrix,
+  axe scan) never enable a cargo feature, and the Playwright matrix necessarily
+  serves the feature-less build — so "after a deliberate panic on a persisted
+  input" in §8.6 line 293 has no trigger mechanism in any artifact the spec
+  builds. FR-7's "verified with deliberate panics in debug and release builds"
+  has the same gap: no step runs those panics with the feature on.
+  <em>Fix: extend Deliverable 3 — the Playwright crash-recovery cases run against
+  a build with `--features demo-panic-test`, and the deliberate-panic hook
+  verification runs in the wasm-bindgen-test step with the feature enabled in
+  both profiles; the size check and axe scan still use the shipped feature-less
+  build.</em>
+
+#### Low-severity / editorial
+
+* <strong>R13-L1 — "the preset mirrors library defaults" contradicts FR-4
+  (FR-5 line 116 vs FR-4 line 110):</strong> FR-4 explicitly says the pulldown
+  -cmark half of the demo preset "deliberately differs from the crate default
+  `Options::empty()`" (7 flags on), so the round-12 sentence justifying the
+  hidden fidelity panel overclaims: only the `htmd` half mirrors crate defaults
+  (`translation_mode: Pure`). <em>Fix: reword to "the preset's `htmd` options
+  mirror the crate defaults, so `translation_mode` is `Pure`".</em>
+* <strong>R13-L2 — the panic overlay must sit outside the inert root, unstated
+  (FR-7 line 148):</strong> the hook "permanently disables all interactive
+  controls … by setting `inert` on the application root" and then "moves focus
+  to the overlay". Elements inside an `inert` subtree are non-focusable, so if
+  the static overlay element were inside the application root, the focus move
+  fails. The spec never states the overlay lives outside the inert root.
+  <em>Fix: one clause — "the overlay element is a sibling of (outside) the
+  application root that receives `inert`".</em>
+
+**Total new findings: 4 (blocking 0, medium 2, low 2).**
+
+Reviewer's judgment: the findings are now near-trivial. R13-M1 is a real but
+narrow inconsistency between performance criteria that only diverge for
+adversarial inputs; R13-M2 and the two lows are one-sentence fixes. No
+structural, correctness, or implementability problem remains in the spec.
+
+Validation: repository and Cargo-registry inspection only; no runtime probe was
+run. No source or specification files were changed by this review; `cargo
+build`, `cargo clippy`, and `cargo test` were not run.
