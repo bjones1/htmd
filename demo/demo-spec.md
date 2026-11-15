@@ -17,7 +17,7 @@ An interactive, client-side web tool to convert CommonMark (plus selected extens
 
 ## 2. Goals
 
-*   **Convert input automatically** as the user types, enforcing a strict 100 KB ceiling.
+*   **Convert input automatically** as the user types, enforcing a strict 100 kB ceiling.
 *   **Support strict one-way conversion** per mode (Markdown → HTML or HTML → Markdown).
 *   **Expose core configuration flags** with a global "Reset Options to Demo Preset" action.
 *   **Persist the active workspace** state in localStorage to prevent data loss.
@@ -34,7 +34,7 @@ An interactive, client-side web tool to convert CommonMark (plus selected extens
 ## 4. Functional requirements
 
 ### FR-1 — Conversion Modes
-- **Markdown → HTML:** Uses `pulldown-cmark` with the seven exposed `Options::ENABLE_*` flags listed in FR-4; all other flags are fixed off and out of scope.
+- **Markdown → HTML:** Uses `pulldown-cmark` with  all 15 `Options::ENABLE_*` flags listed in FR-4.
 - **HTML → Markdown:** Uses `htmd`. Malformed HTML is handled permissively via `html5ever` without crashing.
 - **Preview isolation:** Every rendered preview lives in an `<iframe>` with all of the following:
     * `srcdoc` assigned through the DOM property, never string-interpolated into surrounding HTML;
@@ -79,6 +79,15 @@ All user-derived text — the Source tab, the FR-5 fidelity columns (diff tokens
     * `ENABLE_SMART_PUNCTUATION` — Smart punctuation
     * `ENABLE_HEADING_ATTRIBUTES` — Heading attributes
     * `ENABLE_MATH` — Math
+    * `ENABLE_YAML_STYLE_METADATA_BLOCKS` — YAML-style metadata blocks
+	* `ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS` — Pluses-delimited metadata blocks
+	* `ENABLE_OLD_FOOTNOTES` — Old footnotes
+	* `ENABLE_GFM` — GitHub Flavored Markdown (GFM)
+	* `ENABLE_DEFINITION_LIST` — Definition lists
+	* `ENABLE_SUPERSCRIPT` — Superscript
+	* `ENABLE_SUBSCRIPT` — Subscript
+	* `ENABLE_WIKILINKS` — Wikilinks
+
 - **`htmd` core options** (verified against `htmd` 0.5.5; defaults are the crate defaults):
     *   `heading_style`: `Atx` (Default), `Setex`
     *   `hr_style`: `Asterisks` (Default), `Dashes`, `Underscores`
@@ -94,9 +103,9 @@ All user-derived text — the Source tab, the FR-5 fidelity columns (diff tokens
     *   `translation_mode`: `Pure` (Default), `Faithful`
 
     The crate options are independent; no combination is invalid. Note: the crate ignores `br_style` in `Faithful` mode (it emits a literal `<br>` there), so the demo disables the `br_style` control while Faithful is active.
-- **`htmd` tag skipping:** a dedicated comma-separated text field maps to `HtmlToMarkdownBuilder::skip_tags`. The field is parsed by splitting on commas, trimming whitespace, lowercasing, then dropping empty parts, duplicates, and entries not matching `[a-z][a-z0-9-]*`; the field is capped at 200 characters. An empty parsed result builds the converter with no skip handler — it never calls `skip_tags` with an empty vector (which panics). Mixed-case input such as `IMG` is accepted and lowercased, because `html5ever` supplies lowercase tag names for HTML elements. Consequently SVG elements whose `html5ever` names are camelCase (`foreignObject`, `clipPath`, `linearGradient`, ...) cannot be skipped; this is an accepted limitation.
+- **`htmd` tag skipping:** a dedicated comma-separated text field maps to `HtmlToMarkdownBuilder::skip_tags`. The field is parsed by splitting on commas, trimming whitespace, lowercasing, then dropping empty parts, duplicates, and entries not matching `[a-z][a-z0-9-]*`; the field is capped at 200 characters. f the parsed list is empty, omit the `skip_tags` call (passing an empty slice panics in `htmd`). Mixed-case input such as `IMG` is accepted and lowercased, because `html5ever` supplies lowercase tag names for HTML elements. Consequently SVG elements whose `html5ever` names are camelCase (`foreignObject`, `clipPath`, `linearGradient`, ...) cannot be skipped; this is an accepted limitation.
 - **Reset action:** the button is labeled "Reset Options to Demo Preset" and restores only the sidebar configuration:
-    * `pulldown-cmark`: all 7 exposed flags enabled — the demo preset deliberately differs from the crate default `Options::empty()`;
+    * `pulldown-cmark`: the 7 common flags (`ENABLE_TABLES`, `ENABLE_FOOTNOTES`, `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS`, `ENABLE_SMART_PUNCTUATION`, `ENABLE_HEADING_ATTRIBUTES`, `ENABLE_MATH`) enabled and the remaining 8 flags disabled — the demo preset deliberately differs from the crate default `Options::empty()`;
     * `htmd`: `translation_mode` set to `Pure`, every other option to its crate default listed above;
     * `skip_tags` cleared;
     followed by immediate reconversion. It does not clear or change input text, active mode, active tabs, scroll positions, loaded samples, or error banners.
@@ -104,7 +113,8 @@ All user-derived text — the Source tab, the FR-5 fidelity columns (diff tokens
 ### FR-5 — Pipeline Fidelity Check (HTML Mode Only)
 The pipeline diff (HTML → Markdown → HTML) runs automatically on input changes exclusively when `translation_mode` is set to `Faithful`. In `Pure` mode the fidelity panel is hidden with an explanatory note, because intentional attribute loss would reduce the diff to noise. To prevent false-positive changes during validation, the engine must execute a word-level text diff strictly on canonicalized HTML strings:
 
-*   **Round-trip rendering:** `htmd`'s Markdown is rendered back with exactly `Options::ENABLE_TABLES | Options::ENABLE_MATH`, ignoring the sidebar — the extensions `htmd` emits and tests. `htmd` backslash-escapes `` \ & * _ ` [ ] $ `` anywhere in text, and `= ~ > - + #`, ordered-list delimiters, and HTML-like `<` only where they would open a construct (`src/dom_walker.rs`); it never escapes `'`, `"`, or `{`, so smart punctuation, strikethrough, and heading attributes would rewrite ordinary text (`don't` → `don’t`) into false diffs.
+*   **Round-trip rendering:** `htmd`'s Markdown is rendered back with exactly `Options::ENABLE_TABLES | Options::ENABLE_MATH`, ignoring the sidebar. These are the only extensions htmd targets, and enabling others (such as smart punctuation or strikethrough) would rewrite unescaped ordinary text (e.g., don't → don’t) into false diffs.
+
 *   **Fragment Parsing:** Parse both the original HTML input and the round-tripped HTML output as fragments via `html5ever::parse_fragment` with a `<body>` context using `markup5ever_rcdom::RcDom`. Fragment parsing places a synthetic `<html>` element under the `RcDom` document; the fragment's top-level nodes are that element's children. Automated `<html>` or `<head>` wrappers are strictly prohibited in the canonical output. Every canonicalization walk is iterative (explicit stack).
 *   **DOM Normalization:**
     *   **Case Folding:** Convert tag names and attribute keys to lowercase for standard HTML elements only. Foreign content namespaces (SVG and MathML) must preserve their native case-sensitivity (e.g., `viewBox`).
@@ -128,7 +138,7 @@ Sample actions:
 
 ### FR-7 — Error Boundaries & Limits
 - **Size limit:** the ceiling is **100,000 UTF-8 bytes** of the input string (measured via `TextEncoder`). Inputs **strictly larger** than the ceiling halt conversion, clear the output and diff, and show the `aria-live="assertive"` banner exactly once per transition into the limit: *"Input exceeds the 100,000-byte maximum for client-side processing."* The oversized text stays in the editor and is persisted; processing resumes automatically once the input is at or below the ceiling.
-- **Nesting limit:** HTML → Markdown input whose element nesting exceeds **512 levels** is rejected before conversion exactly like the size limit: conversion halts, the output and diff are cleared, the banner *"Input exceeds the supported nesting depth."* is shown once per transition into the limit, and processing resumes automatically once the input is back within it. The demo parses the input once with `HtmlToMarkdown::html_to_tree` (`html5ever`'s tokenizer and tree builder are iterative, and `RcDom` drops nodes through a worklist), measures the maximum element depth with an iterative walk (children of `<head>` and `<body>` are depth 1), and passes the same tree to `tree_to_markdown` only when that depth is ≤ 512. Measuring the parsed tree rather than scanning raw tags counts exactly what the converter will walk, so void elements, optional end tags, misnested tags, and `<` inside attributes, comments, or raw text need no special rules. The limit protects the recursive conversion traversal in `src/dom_walker.rs`. Markdown → HTML input is exempt: `pulldown-cmark`'s parser is iterative, and so is FR-1's preview walk.
+- **Nesting limit:** HTML → Markdown input whose element nesting exceeds **512 levels** is rejected before conversion exactly like the size limit: conversion halts, the output and diff are cleared, the banner *"Input exceeds the supported nesting depth."* is shown once per transition into the limit, and processing resumes automatically once the input is back within it. The demo parses the input once with `HtmlToMarkdown::html_to_tree` (`html5ever` parses iteratively without deep recursion), measures the maximum element depth with an iterative walk (children of `<head>` and `<body>` are depth 1), and passes the same tree to `tree_to_markdown` only when that depth is ≤ 512. Measuring the parsed tree rather than scanning raw tags counts exactly what the converter will walk, so void elements, optional end tags, misnested tags, and `<` inside attributes, comments, or raw text need no special rules. The limit protects `htmd`'s recursive conversion traversal. Markdown → HTML input is exempt: `pulldown-cmark`'s parser is iterative, and so is FR-1's preview walk.
 - **Malformed HTML:** input with syntax errors (e.g., unclosed tags) is not a runtime failure. The engine leverages `html5ever`'s permissive parsing to build a best-effort DOM tree without throwing exceptions; `<script>`/`<style>` contents are treated as raw text.
 - **Rust panics:** a single custom panic hook is installed once at startup. It first delegates to `console_error_panic_hook` (only one global hook exists, so it must chain rather than install a second), is null-safe and idempotent (guards element lookups; runs its body once), then un-hides the static fallback overlay element in `index.html` (*"Critical Application Error. Please reload the page."*), permanently disables **all** interactive controls (mode switch, tabs, samples, options, reset, "Use Output as Input") by setting `inert` on the application root, moves focus to the overlay (`role="alertdialog"`), and logs the trace to the console. The hook uses only raw `web-sys` DOM calls, never Leptos signals or other reactive state: that state may be borrowed at the panic site, and re-entering it would panic again and abort before the overlay shows. The release profile uses `panic = "abort"`; the hook runs before the abort trap and is verified with deliberate panics in debug and release builds.
 - **WASM traps & OOM:** low-level traps and out-of-memory errors bypass the Rust panic hook and are intercepted via global `window` `error` and `unhandledrejection` listeners in `index.html`, which show the same static crash overlay. Recovery requires a manual page reload.
@@ -149,7 +159,7 @@ Sample actions:
     * `input_html_to_md`: string (per-mode buffer)
     * `active_tab`: `"rendered"` or `"source"` (global)
     * `scroll_md_to_html`, `scroll_html_to_md`: input scroll offset per mode, number ≥ 0, persisted across reloads, default `0`
-    * `cmark`: object of the 7 FR-4 booleans (`tables`, `footnotes`, `strikethrough`, `task_lists`, `smart_punctuation`, `heading_attributes`, `math`)
+    * `cmark`: object of the 15 FR-4 booleans (`tables`, `footnotes`, `strikethrough`, `task_lists`, `smart_punctuation`, `heading_attributes`, `math`, `yaml_style_metadata_blocks`, `pluses_delimited_metadata_blocks`, `old_footnotes`, `gfm`, `definition_list`, `superscript`, `subscript`, `wikilinks`)
     * `htmd`: object with the FR-4 enum options (`heading_style`, `hr_style`, `br_style`, `link_style`, `link_reference_style`, `code_block_style`, `code_block_fence`, `bullet_list_marker`, `translation_mode`), the integers `ul_bullet_spacing` and `ol_number_spacing` (1–4), and `preformatted_code` (bool)
     * `skip_tags`: string (raw field text)
     * `sample_md_to_html`: `"basics"`, `"math"`, or `null`; `sample_html_to_md`: `"basics"`, `"inline_html"`, `"math"`, or `null` — the per-mode selected sample (FR-6), default `null`
