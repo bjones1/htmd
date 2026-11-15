@@ -1087,3 +1087,165 @@ Validation: specification and source inspection only. No source or
 specification files were changed by this review. `cargo build`, `cargo
 clippy -- --deny warnings`, and `cargo test` were not run; a runtime probe was
 attempted but blocked by Windows Application Control (`os error 4551`).
+
+## Round 12 — open findings (awaiting processing)
+
+```text
+You are a fresh-context LLM reviewer performing Round 12 of an iterative specification review for a university assignment. Earlier rounds (1–11) already ran; round 11's two open findings were adjudicated (struck as moot/resolved) in the current file state. Your job: find what is still wrong or weak in the spec.
+
+## The document under review
+
+Read `/home/danial/htmd/demo/demo-spec.md` in full (about 307 lines). It specifies a browser demo app ("pulldown-cmark / htmd live demo") that will be implemented as a standalone Rust crate at `demo/` depending on this repo's `htmd` crate.
+
+## What to check it against
+
+The spec must be implementable exactly as written, against the real crate and the real dependency APIs available locally:
+
+1. The htmd crate in this repo (`/home/danial/htmd/src/`): `src/lib.rs` (`convert`, `HtmlToMarkdown`, `HtmlToMarkdown::builder()` → `.options()`, `.skip_tags()`, `.build()`, `.convert()`, `.html_to_tree()`, `.tree_to_markdown()`), `src/options.rs` (`Options` struct: 12 fields incl. `translation_mode` with variants `Pure`/`Faithful`, `ul_bullet_spacing`/`ol_number_spacing` numeric ranges), `src/element_handler/` (element handling, skip semantics).
+2. Pinned dependency versions in `/home/danial/htmd/Cargo.toml` and the spec's own §6 dependency list: html5ever 0.39, markup5ever_rcdom 0.39 (check `html5ever`'s driver API: `parse_fragment`, `ParseOpts`, `RcDom`, and `markup5ever_rcdom`'s serializer support), pulldown-cmark 0.13.4 (check `Options` flag constants — the spec's §6/FR-4 lists 15 flags incl. `ENABLE_TABLES`, `ENABLE_FOOTNOTES`, `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS`, `ENABLE_SMART_PUNCTUATION`, `ENABLE_HEADING_ATTRIBUTES`, `ENABLE_MATH`, plus `ENABLE_…` older/YAML/definition tags — verify all 15 exist under those exact names in 0.13.x).
+3. Internal consistency: every FR (FR-1…FR-8) vs §8 acceptance criteria (§8.5 sample flows, §8.6 concurrency/storage/preview cases, §8.7 canonicalization golden cases); terminology stable across sections; no requirement that contradicts another; no acceptance case that no FR satisfies; numbers consistent (byte limits, debounce timings, nesting depth, token caps, schema version).
+4. Implementability in wasm: anything assuming APIs unavailable in a browser (no filesystem, no threads by default, no `Instant`), iterative-walk requirements where recursion would overflow, and the like.
+
+Do NOT review style preferences, and do NOT re-litigate findings already struck through or marked resolved in `/home/danial/htmd/demo/review.md` (read its round 10/11 sections first to know what's already been found and fixed — repeating them wastes the round).
+
+## Output
+
+Append to `/home/danial/htmd/demo/review.md` a new section matching the established format of earlier rounds (read how rounds 10/11 are structured and mirror it exactly — heading level, subsections like "What checks out" / "Blocking issues" / "Medium-severity issues" / "Low-severity / editorial", finding IDs `R12-B#`/`R12-M#`/`R12-L#` with spec line references and concrete suggested fixes). Start the section with the review prompt you were given, quoted verbatim in a fenced block (the record must show the prompt used).
+
+CRLF WARNING: the working tree is CRLF (`core.autocrlf=true`). Append your section with a method that preserves the file's existing line endings (e.g. Python `open(path, "a", newline="\r\n")` or equivalently careful appending); verify with `git diff --stat demo/review.md` that only your appended lines are new.
+
+Then commit ONLY review.md: `git add demo/review.md && git commit -m "Spec review round 12: N findings (X blocking, Y medium, Z low)"` (fill in real numbers). Do NOT modify demo-spec.md or any other file. Do NOT push.
+
+Finally, report back with ONLY (under 12 lines): the counts by severity, a one-line summary of each blocking/medium finding (ID + gist + line), whether any finding repeats a struck/resolved one (should be none), the commit SHA, and confirmation that demo-spec.md is untouched in your commit.
+```
+
+Reviewed by **GLM-5.3** (OpenCode agent, fresh context) with the round-12 prompt quoted
+above. The review checked the post-round-11 specification (commit `0e354b4`, 307
+lines) against `src/lib.rs`, `src/options.rs`, `src/element_handler/mod.rs`, the
+root `Cargo.toml`, the pinned `html5ever` 0.39.0, `markup5ever_rcdom`
+0.39.0+unofficial, and `pulldown-cmark` 0.13.4 sources in the local Cargo
+registry, and the MDN browser-compat-data record for the Long Tasks API. The
+`similar` crate is not in the local registry; FR-5's tokenizer claims rest on
+round 11's registry verification and were not re-checked. Round 11's findings
+are struck/resolved and are not re-raised; R12-M1 records that the R11-M2 fix
+did not reach the normative text, which is a claim about the current file, not
+a repeat of the round-11 finding.
+
+#### What checks out
+
+* All 15 `Options::ENABLE_*` names in FR-4/§6 exist verbatim in pulldown-cmark
+  0.13.4 (`src/lib.rs:651–735`), and FR-1's "all 15 flags according to their
+  current sidebar state" is consistent with FR-4's 15-checkbox sidebar and
+  FR-8's 15-field `cmark` object after the R11-M3 adjudication.
+* FR-4's 12 `htmd` options, variants, and defaults still match
+  `src/options.rs`; the builder surface the spec relies on (`.options()`,
+  `.skip_tags()`, `.build()`, `convert`, `html_to_tree`, `tree_to_markdown`)
+  exists in `src/lib.rs`; the empty-`skip_tags` panic guard is still the
+  `assert!` at `src/element_handler/mod.rs:396–400`, and the Faithful-mode
+  `br_style` note matches `src/options.rs`.
+* `html5ever` 0.39 exposes `parse_fragment`, `ParseOpts`, and
+  `serialize`/`SerializeOpts`/`TraversalScope` as FR-1/FR-5 assume.
+  `markup5ever_rcdom`'s serializer is itself iterative (a `VecDeque` worklist,
+  `lib.rs:623–682`) and panics on the `Document` node exactly as FR-5 warns,
+  so the 50,000-blockquote preview path has no recursive-overflow step left in
+  it (the walk and the serializer are both worklist-based); `RcDom`'s `attrs`
+  and `children` are `RefCell`s, so in-place attribute sorting, `target`
+  removal, and child removal are implementable.
+* The R10-M1 stall scenario is resolved by the current FR-2 wording: clearing
+  the preview assigns `""` to `srcdoc` without waiting for a `load`, discarding
+  an in-flight run immediately releases the slot, and non-matching `load`
+  events are ignored.
+* Numbers remain consistent across sections (2,000/2,001; 100,000/100,001;
+  250/900 ms; 500 ms; 512/600; 5,000 tokens; 2,000,000; 1,572,864; 1500 ms;
+  `version: 1`), and the §6 dependency list covers everything FR-5 needs.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+* <strong>R12-M1 — the preview walk still removes only `<base>`, `<meta>`,
+  `<link>`, and `target`; the `<noscript>`/`<template>` claims are unbacked and
+  8.6's stripping test cannot pass (FR-1 lines 45–46; 8.6 line 291):</strong>
+  the normative rule is "removes every `<base>`, `<meta>`, and `<link>` element
+  (including their contents) and every `target` attribute", but the next
+  sentence claims this also "prevents raw `<noscript>` text from being
+  re-parsed as live markup" and "strips `<template>` shells", and 8.6 requires
+  the srcdoc to contain no user-supplied `<noscript>` or `<template>` element.
+  Neither claim follows from the rule: `TreeBuilderOpts::default()` sets
+  `scripting_enabled: true` (`html5ever-0.39.0/src/tree_builder/mod.rs:71–80`),
+  so `<noscript>` contents parse as one text node and no meta/link/base
+  *elements* exist inside it for the walk to remove; `SerializeOpts::default()`
+  is also `scripting_enabled: true` and `HtmlSerializer::write_text` then
+  writes noscript text raw (`html5ever-0.39.0/src/serialize/mod.rs:42–50,
+  214–227`), so 8.6's own payload
+  `<noscript><meta http-equiv="refresh" …></noscript>` survives as raw text and
+  is re-parsed as live markup by the scriptless sandbox. For `<template>`, the
+  rcdom serializer iterates only `children` and ignores `template_contents`
+  (`markup5ever_rcdom-0.39.0+unofficial/lib.rs:640–658`), so an empty
+  `<template></template>` shell remains and 8.6 fails as written. The R11-M2
+  fix updated the rationale and the 8.6 cases but not the removal list, so the
+  gap persists. <em>Fix: add `<noscript>` and `<template>` to the walk's
+  removal list (removed whole, like `<base>`/`<meta>`/`<link>`); optionally
+  serialize the preview with `SerializeOpts { scripting_enabled: false, .. }`
+  so any surviving noscript-shaped text is escaped; 8.6 already tests the
+  right payloads.</em>
+* <strong>R12-M2 — the Long Tasks API does not exist in Firefox or Safari, so
+  §6's jank monitoring and 8.3's long-task criterion cannot run on two of the
+  three supported engines (§6 lines 211 and 225; 8.3 line 251; 8.2 line
+  244):</strong> MDN browser-compat-data records `PerformanceLongTaskTiming`
+  as Chrome 58+/Edge only — Firefox `false` (bug 1348405), Safari `false`,
+  non-standard, experimental. §6 mandates "Long-task jank is monitored with the
+  Long Tasks API" while setting floors of Firefox ≥ 120 and Safari ≥ 17, and
+  8.3's "no long task attributable to keystroke handling" checkbox lives in a
+  section whose suites (8.2) must pass on Chromium, Firefox, and WebKit. As
+  written the measurement is unimplementable on Firefox/WebKit, and a
+  Playwright assertion registering a `longtask` observer would throw or never
+  yield entries there. <em>Fix: scope the Long-Tasks-API monitoring (and any
+  automated long-task assertion) to Chromium — e.g. "monitored with the Long
+  Tasks API on Chromium; on Firefox/WebKit verified via Playwright tracing or
+  manual observation" — or name a fallback metric available on all three
+  engines.</em>
+
+#### Low-severity / editorial
+
+* <strong>R12-L1 — the 2 MB output cap leaves the Source tab and "Use Output
+  as Input" state undefined (§6 line 214; 8.3 line 249; FR-2 line
+  60):</strong> "output … is cleared instead of previewed" can mean the whole
+  output is cleared (both tabs; "Use Output as Input" disabled via the
+  empty-output rule) or only the preview is skipped while the Source tab still
+  shows the oversized string (leaving the button enabled to copy 2 MB of
+  HTML). The readings diverge in observable behavior. <em>Fix: state whether
+  the Source text is kept or cleared with the preview, and mirror it in
+  8.3.</em>
+* <strong>R12-L2 — the 512-level nesting verification is scoped to the release
+  wasm build, but no CI step runs the wasm tests in release (FR-7 line 146;
+  8.6 line 274; Deliverable 3 line 231):</strong> Deliverable 3 lists "the
+  `wasm-bindgen-test` suite against headless Chromium" with no profile, while
+  FR-7/8.6 pin the no-stack-overflow claim to "the release `wasm32` build". A
+  debug-profile run uses much larger stack frames and can false-fail at 512
+  levels; if the nesting tests are skipped instead, the release-scoped
+  criterion is never exercised in CI. <em>Fix: state that the wasm-bindgen-test
+  step (or at least the nesting cases) runs with `--release` in
+  `demo-ci.yaml`.</em>
+* <strong>R12-L3 — the benchmark corpus is gated on but never delivered (§6
+  line 211; 8.3 line 248; §7 lines 227–233):</strong> 8.3 requires every
+  document in `demo/bench/corpus/` to convert under 100 ms, and §6 loosely
+  defines the corpus as "the scaled-up samples and a saved real-world page",
+  but no deliverable commits or generates those files and "scaled-up" has no
+  target sizes, so the 100 ms-per-document budget is not reproducible from the
+  spec. <em>Fix: add the corpus (file list, sizes, and how the samples are
+  scaled) to the Deliverables or to §6.</em>
+
+Still open from earlier rounds: R9-L3 (in part), R9-L7, R9-L8 (unit
+convention), R9-L9, and round 8's browser-floor and editorial findings.
+R10-M1 is resolved by the current FR-2 wording (see above). All round-11
+findings remain struck/resolved; R12-M1 is raised against the current removal
+list, not as a re-opening of R11-M2.
+
+**Total new findings: 5 (blocking 0, medium 2, low 3).**
+
+Validation: repository, Cargo-registry, and MDN browser-compat-data inspection
+only; no runtime probe was run. No source or specification files were changed
+by this review; `cargo build`, `cargo clippy`, and `cargo test` were not run.
