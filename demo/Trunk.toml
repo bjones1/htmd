@@ -1,0 +1,7 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+[tools]
+wasm-bindgen = "0.2.130"
+wasm-opt = "version_131"

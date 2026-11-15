@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>htmd demo</title>
+    <link data-trunk rel="rust" data-bin="htmd-demo" data-wasm-opt="z" />
+    <style>
+      #crash-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #111;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+      }
+      /* `display: flex` above would otherwise override the hidden attribute. */
+      #crash-overlay[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-root"></div>
+    <div
+      id="crash-overlay"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="crash-overlay-title"
+      aria-describedby="crash-overlay-description"
+      hidden
+    >
+      <h1 id="crash-overlay-title">Critical Application Error.</h1>
+      <p id="crash-overlay-description">Please reload the page.</p>
+    </div>
+    <script>
+      (function () {
+        "use strict";
+        function revealCrashOverlay() {
+          var overlay = document.getElementById("crash-overlay");
+          if (overlay) overlay.hidden = false;
+        }
+        window.addEventListener("error", function (event) {
+          console.error("Uncaught error:", event.error || event.message);
+          revealCrashOverlay();
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          console.error("Unhandled promise rejection:", event.reason);
+          revealCrashOverlay();
+        });
+      })();
+    </script>
+  </body>
+</html>
