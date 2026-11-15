@@ -1426,3 +1426,119 @@ build`, `cargo clippy`, and `cargo test` were not run.
 **Round 13 resolution:** all 4 findings fixed in demo-spec.md (§6/§8.3/§8.5
   timing scoping; Deliverable 3 demo-panic-test CI build; FR-5 preset wording;
   FR-7 overlay placement).
+
+
+---
+
+## Round 14 — open findings (awaiting processing)
+
+```text
+You are a fresh-context LLM reviewer performing Round 14 of an iterative specification review for a university assignment. Rounds 1–13 already ran; round 13's four findings were just resolved (timing scoping, demo-panic-test CI build, FR-5 preset wording, FR-7 overlay placement). Round 13's reviewer judged the remaining issues near-trivial. Your job: verify the round-13 fixes landed correctly and find anything still wrong. If only trivial or contradictory findings remain, say so plainly — that is the expected outcome and a legitimate result.
+
+## The document under review
+
+Read `/home/danial/htmd/demo/demo-spec.md` in full (~314 lines). It specifies a browser demo app ("pulldown-cmark / htmd live demo") to be implemented as a standalone Rust crate at `demo/` depending on this repo's `htmd` crate.
+
+## What to check it against
+
+The spec must be implementable exactly as written, against the real crate and dependency APIs available locally:
+
+1. The htmd crate (`/home/danial/htmd/src/`): `src/lib.rs` (`convert`, `HtmlToMarkdown`, builder `.options()`/`.skip_tags()`/`.build()`, `.convert()`, `.html_to_tree()`, `.tree_to_markdown()`), `src/options.rs` (12 fields, `Pure`/`Faithful`, spacing ranges), `src/element_handler/` (skip semantics, empty-`skip_tags` panic guard).
+2. Pinned versions in `/home/danial/htmd/Cargo.toml` and §6: html5ever 0.39, markup5ever_rcdom 0.39, pulldown-cmark 0.13.4, `similar`, Leptos csr, Trunk.
+3. Internal consistency: FR-1…FR-8 vs §8 acceptance criteria; numbers consistent; no contradictions — especially around the round-12/13 edited text (removal list, Long-Tasks scoping, output-cap clearing, corpus definition, 400 ms/1,000 ms timing scoping, demo-panic-test feature, overlay placement).
+4. Implementability in wasm.
+
+Do NOT review style preferences. Do NOT re-litigate struck/resolved findings in `/home/danial/htmd/demo/review.md` (read rounds 10–13 first).
+
+## Output
+
+Append to `/home/danial/htmd/demo/review.md` a section `## Round 14 — open findings (awaiting processing)` mirroring the established round format exactly (prompt quoted verbatim in a fenced block, reviewer identity, "What checks out", "Blocking issues", "Medium-severity issues", "Low-severity / editorial", IDs `R14-B#`/`R14-M#`/`R14-L#` with line refs and concrete fixes).
+
+CRLF WARNING: working tree is CRLF — append with line-ending preservation (e.g. Python `open(path, "a", newline="\r\n")`); verify `git diff --stat demo/review.md` shows only appended lines.
+
+Then commit ONLY review.md: `git add demo/review.md && git commit -m "Spec review round 14: N findings (X blocking, Y medium, Z low)"` (real numbers). Do NOT modify demo-spec.md. Do NOT push.
+
+Report back ONLY (under 12 lines): counts by severity, one-line summary of any blocking/medium findings, confirmation the four round-13 fixes landed correctly, whether any finding repeats a struck/resolved one, your explicit judgment whether all remaining findings are trivial/contradictory, the commit SHA, and confirmation demo-spec.md is untouched.
+```
+
+Reviewed by **GLM-5.3** (OpenCode agent, fresh context) with the round-14 prompt quoted
+above. The review re-verified all four round-13 fixes in the current text (308 lines,
+commit `ff027d1`) before hunting for new ones, against `src/lib.rs`, `src/options.rs`,
+the `src/element_handler/` inventory and its panic guard, and the root `Cargo.toml`.
+`similar` is not a dependency of this repository, so FR-5's `from_words` claims rest on
+rounds 11–13's Cargo-registry verification.
+
+#### What checks out
+
+* All four round-13 fixes landed correctly: the 400 ms end-to-end budget is now scoped
+  to corpus-scale documents with adversarial inputs explicitly bounded by the
+  1,000 ms ceiling, which §8.3 states supersedes the 400/100 ms budgets, and §8.3's
+  long-task exemption grants scheduled runs "the full applicable ceiling" (§6 line
+  215; §8.3 lines 250 and 252; §8.5 line 264); Deliverable 3 (line 231) runs the §8.6
+  crash-recovery cases against a `demo-panic-test` build that is never enabled in the
+  shipped Pages build; FR-5 (line 116) now reads "the preset's `htmd` options mirror
+  the crate defaults"; FR-7 (line 148) places the overlay outside the inert
+  application root so it stays operable and focusable.
+* FR-4's 12 options, variants, defaults, and 1–4 spacing clamps still match
+  `src/options.rs` (fields 4–22, defaults 27–40, clamp docs 12–19); the Faithful-mode
+  `br_style` note matches `src/options.rs:63–65`.
+* The builder surface FR-4/FR-7 rely on exists as described: `.options()`
+  (`src/lib.rs:241`), `.skip_tags()` (248), `.build()` (285), `convert` (212),
+  `html_to_tree` (148, `parse_document`), and `tree_to_markdown` (170, returns
+  `String`); the empty-slice panic guard is the `assert!(!tags.is_empty())` at
+  `src/element_handler/mod.rs:400`, which FR-4's omit-the-call rule avoids.
+* `Cargo.toml` matches §6's pins: htmd 0.5.5, html5ever 0.39, markup5ever_rcdom 0.39,
+  pulldown-cmark 0.13.4. The handler inventory (no `del`/`s`, checkbox `input`,
+  `sup`/`sub`, or `dl`/`dt`/`dd` handlers; tables in `table*.rs`/`td_th.rs`/`tr.rs`,
+  math in `span.rs`) supports FR-5 line 120's "the only extensions htmd targets"
+  claim, so the fixed `ENABLE_TABLES | ENABLE_MATH` round-trip set remains sound.
+* Numbers stay consistent everywhere they interact (2,000/2,001; 100,000/100,001;
+  250/900 ms; 500 ms; 512/600; 5,000 tokens; 2,000,000; 1,572,864; 1500 ms; 200
+  characters; `version: 1`), and the FR-8 schema's `cmark` (15 fields) and `htmd`
+  (12 fields) objects match FR-4's sidebar exactly.
+* Wasm constraints hold: no filesystem, thread, or `Instant` assumptions remain
+  (§6 line 213 bans `similar`'s deadline for exactly that reason), and every required
+  walk (preview strip, canonicalization, depth measurement) is specified iterative.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+None.
+
+#### Low-severity / editorial
+
+* <strong>R14-L1 — FR-7's "verified with deliberate panics in debug and release
+  builds" still has no wired verification in either profile (FR-7 line 148 vs
+  Deliverable 3 line 231):</strong> R13-M2's fix wired the §8.6 crash-recovery
+  Playwright cases to a `demo-panic-test` build, but that build's profile is
+  unspecified, and no other CI step enables the feature — the wasm-bindgen-test step
+  runs both profiles feature-less. The second clause of R13-M2's finding (the
+  hook-before-abort verification "in debug and release builds") therefore still has
+  no CI home. This is the unapplied half of R13-M2's suggested fix, not a re-opening
+  of the half that landed. <em>Fix: one clause in Deliverable 3 — the deliberate-panic
+  hook verification runs in the wasm-bindgen-test step with
+  `--features demo-panic-test` in both debug and release profiles (or the Playwright
+  crash-recovery build runs in both profiles).</em>
+* <strong>R14-L2 — "focus … is restored after errors resolve" is vacuous (§6 line
+  223):</strong> the only error path that moves focus is the panic overlay, which is
+  terminal — the application root is `inert`, all controls are permanently disabled,
+  and recovery requires a manual reload (FR-7 lines 148–149). Non-fatal banners
+  (size/nesting limits, the wrapper `Err`, quota, multi-tab) never take focus, so no
+  focus-moving error ever "resolves"; the clause cannot be satisfied, falsified, or
+  tested. <em>Fix: drop the clause, or define the restoring path (e.g., "non-fatal
+  errors never move focus; the overlay path ends in a reload").</em>
+
+**Total new findings: 2 (blocking 0, medium 0, low 2).**
+
+Reviewer's judgment: only trivial findings remain, which is the expected outcome at
+this stage. Both lows are one-clause fixes — R14-L1 completes a fix whose primary
+half already landed, and R14-L2 deletes an untestable clause. No structural,
+correctness, implementability, wasm-feasibility, or numeric-consistency problem
+remains in the specification.
+
+Validation: repository and source inspection only; no runtime probe was run. No
+source or specification files were changed by this review; `cargo build`, `cargo
+clippy`, and `cargo test` were not run (no code under review changed).
