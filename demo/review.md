@@ -1350,8 +1350,8 @@ None.
 
 #### Medium-severity issues
 
-* <strong>R13-M1 — the latency budgets contradict each other for adversarial
-  inputs (§6 lines 212 and 215; §8.3 lines 250 and 252; §8.5 line 264):</strong>
+* ~~<strong>R13-M1 — the latency budgets contradict each other for adversarial
+  inputs (§6 lines 212 and 215; §8.3 lines 250 and 252; §8.5 line 264):</strong>~~
   §6 line 212 exempts non-corpus inputs ≤ 100 kB from the 100 ms compute budget,
   and §8.3 line 250 allows the full pipeline for *any* input up to 1,000 ms. Yet
   §6 line 215 promises that inputs of 2,001–100,000 bytes render in "~350–400 ms
@@ -1367,9 +1367,12 @@ None.
   inputs within the compute budget, and restate §8.3 line 252's exemption as the
   *applicable* ceiling — the 100 ms compute budget, or the 1,000 ms adversarial
   ceiling of line 250.</em>
-* <strong>R13-M2 — no CI step or deliverable builds with `demo-panic-test`, but
+  **Status:** fixed (§6 end-to-end latency and §8.3 compute budget scoped to
+  corpus-scale documents; the §8.3 1,000 ms ceiling stated as the superseding
+  adversarial bound; §8.5 aligned).
+* ~~<strong>R13-M2 — no CI step or deliverable builds with `demo-panic-test`, but
   §8.6's crash-loop criterion needs one (FR-7 line 148; Deliverable 3 line 231;
-  §8.6 line 293):</strong> the only deliberate-panic trigger is the opt-in
+  §8.6 line 293):</strong>~~ the only deliberate-panic trigger is the opt-in
   feature's toolbar button, "compiled out of shipped builds" (FR-7 line 148).
   Deliverable 3's workflow steps (clippy, native test, wasm-bindgen-test in both
   profiles, `trunk build --release`, size check, fuzz corpus, Playwright matrix,
@@ -1383,24 +1386,31 @@ None.
   verification runs in the wasm-bindgen-test step with the feature enabled in
   both profiles; the size check and axe scan still use the shipped feature-less
   build.</em>
+  **Status:** fixed (Deliverable 3: the §8.6 crash-recovery cases run against a
+  build with `demo-panic-test` enabled, never enabled in the shipped Pages
+  build).
 
 #### Low-severity / editorial
 
-* <strong>R13-L1 — "the preset mirrors library defaults" contradicts FR-4
-  (FR-5 line 116 vs FR-4 line 110):</strong> FR-4 explicitly says the pulldown
+* ~~<strong>R13-L1 — "the preset mirrors library defaults" contradicts FR-4
+  (FR-5 line 116 vs FR-4 line 110):</strong>~~ FR-4 explicitly says the pulldown
   -cmark half of the demo preset "deliberately differs from the crate default
   `Options::empty()`" (7 flags on), so the round-12 sentence justifying the
   hidden fidelity panel overclaims: only the `htmd` half mirrors crate defaults
   (`translation_mode: Pure`). <em>Fix: reword to "the preset's `htmd` options
   mirror the crate defaults, so `translation_mode` is `Pure`".</em>
-* <strong>R13-L2 — the panic overlay must sit outside the inert root, unstated
-  (FR-7 line 148):</strong> the hook "permanently disables all interactive
+  **Status:** fixed (FR-5 now reads “the preset's `htmd` options mirror the
+  crate defaults”).
+* ~~<strong>R13-L2 — the panic overlay must sit outside the inert root, unstated
+  (FR-7 line 148):</strong>~~ the hook "permanently disables all interactive
   controls … by setting `inert` on the application root" and then "moves focus
   to the overlay". Elements inside an `inert` subtree are non-focusable, so if
   the static overlay element were inside the application root, the focus move
   fails. The spec never states the overlay lives outside the inert root.
   <em>Fix: one clause — "the overlay element is a sibling of (outside) the
   application root that receives `inert`".</em>
+  **Status:** fixed (FR-7: the overlay lives outside the inert application root
+  and receives the moved focus).
 
 **Total new findings: 4 (blocking 0, medium 2, low 2).**
 
@@ -1412,3 +1422,7 @@ structural, correctness, or implementability problem remains in the spec.
 Validation: repository and Cargo-registry inspection only; no runtime probe was
 run. No source or specification files were changed by this review; `cargo
 build`, `cargo clippy`, and `cargo test` were not run.
+
+**Round 13 resolution:** all 4 findings fixed in demo-spec.md (§6/§8.3/§8.5
+  timing scoping; Deliverable 3 demo-panic-test CI build; FR-5 preset wording;
+  FR-7 overlay placement).
