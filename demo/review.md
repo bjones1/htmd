@@ -1510,9 +1510,9 @@ None.
 
 #### Low-severity / editorial
 
-* <strong>R14-L1 — FR-7's "verified with deliberate panics in debug and release
+* ~~<strong>R14-L1 — FR-7's "verified with deliberate panics in debug and release
   builds" still has no wired verification in either profile (FR-7 line 148 vs
-  Deliverable 3 line 231):</strong> R13-M2's fix wired the §8.6 crash-recovery
+  Deliverable 3 line 231):</strong>~~ R13-M2's fix wired the §8.6 crash-recovery
   Playwright cases to a `demo-panic-test` build, but that build's profile is
   unspecified, and no other CI step enables the feature — the wasm-bindgen-test step
   runs both profiles feature-less. The second clause of R13-M2's finding (the
@@ -1522,14 +1522,18 @@ None.
   hook verification runs in the wasm-bindgen-test step with
   `--features demo-panic-test` in both debug and release profiles (or the Playwright
   crash-recovery build runs in both profiles).</em>
-* <strong>R14-L2 — "focus … is restored after errors resolve" is vacuous (§6 line
-  223):</strong> the only error path that moves focus is the panic overlay, which is
+  **Status:** fixed (Deliverable 3: the crash-recovery cases run with the
+  `demo-panic-test` feature enabled in both debug and release profiles).
+* ~~<strong>R14-L2 — "focus … is restored after errors resolve" is vacuous (§6 line
+  223):</strong>~~ the only error path that moves focus is the panic overlay, which is
   terminal — the application root is `inert`, all controls are permanently disabled,
   and recovery requires a manual reload (FR-7 lines 148–149). Non-fatal banners
   (size/nesting limits, the wrapper `Err`, quota, multi-tab) never take focus, so no
   focus-moving error ever "resolves"; the clause cannot be satisfied, falsified, or
   tested. <em>Fix: drop the clause, or define the restoring path (e.g., "non-fatal
   errors never move focus; the overlay path ends in a reload").</em>
+  **Status:** fixed (§6: focus is restored after a non-terminal error resolves;
+  the panic overlay is terminal until a manual reload).
 
 **Total new findings: 2 (blocking 0, medium 0, low 2).**
 
@@ -1542,3 +1546,8 @@ remains in the specification.
 Validation: repository and source inspection only; no runtime probe was run. No
 source or specification files were changed by this review; `cargo build`, `cargo
 clippy`, and `cargo test` were not run (no code under review changed).
+
+**Round 14 resolution:** both trivial findings fixed (Deliverable 3 dual-profile
+demo-panic-test runs; §6 focus clause scoped to non-terminal errors). The
+specification review converged at round 14: zero blocking, zero medium, two
+trivial lows — fixed. No findings remain open from rounds 1–14.
