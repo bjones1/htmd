@@ -7,7 +7,7 @@ Contributions
 * Miras Shaltayev: wrote the initial draft of this document.
 * Armanzhan Onggarbay: 
 * Nurlybek Orynbassar: wrote the "Whitespace" section.
-* Aidyn Tazhibay: wrote the "Escaping" section.
+* Aidyn Tazhibay: wrote the "Test helpers" section.
 
 Approach
 --------
@@ -26,9 +26,27 @@ Markdown is compared exactly. Only HTML is compared with the "Whitespace" rules.
 
 ### Test helpers
 
-`assert_faithful(html, expected_markdown, expected_round_trip)` in `tests/common/mod.rs` checks all three properties, the round trip first, so a broken translation shows the harm it does (a paragraph turned into a heading) rather than a different string. `assert_faithful_options` also takes the htmd options and the pulldown-cmark options (`ENABLE_TABLES` for a pipe table, `ENABLE_MATH` for `$`). `assert_faithful_unstable` and its `_options` variant take a fourth argument, the expected second Markdown, for a case which fails property 3 by design or through a standard deviation.
+Four helpers in `tests/common/mod.rs` check the three properties of one case. Each converts with `convert_faithful_options`, renders with `render_markdown`, and compares HTML with `assert_html_equivalent` from the "Whitespace" section.
+
+| Helper | Arguments |
+| ------ | --------- |
+| `assert_faithful` | `html, expected_markdown, expected_round_trip` |
+| `assert_faithful_options` | `html, htmd_options, cmark_options, expected_markdown, expected_round_trip` |
+| `assert_faithful_unstable` | `html, expected_markdown, expected_round_trip, expected_second_markdown` |
+| `assert_faithful_unstable_options` | `html, htmd_options, cmark_options, expected_markdown, expected_round_trip, expected_second_markdown` |
+
+**Options.** The helpers without `_options` use htmd's `Options::default()` and pulldown-cmark's `Options::all()`, so the round trip reads every extension pulldown-cmark knows, and a missing escape for any of them shows. A case uses an `_options` helper only when it needs other htmd options (for example `HeadingStyle::Setex`), or when an extension reads text which htmd does not target: `ENABLE_SMART_PUNCTUATION` turns `"a"` into curly quotes. Such a call removes only that extension (`Options::all() - Options::ENABLE_SMART_PUNCTUATION`) and says why in one line. The same htmd options are used for both conversions.
+
+**Order of checks.** Each helper stops at the first failure and panics with a message which names the property and shows the input HTML, the Markdown, and the two values it compared:
+
+1. The conversion succeeds.
+2. Property 2: the rendered HTML is equivalent to `expected_round_trip`. This comes first, so a broken translation shows the harm it does (a paragraph turned into a heading) rather than a different string.
+3. Property 1: the Markdown equals `expected_markdown` exactly.
+4. Property 3: converting the rendered HTML gives `expected_markdown` again. In the `_unstable` helpers it gives `expected_second_markdown` instead, which must differ from `expected_markdown` (otherwise the case belongs in the stable helper), and which must itself be stable: one more trip gives it again.
 
 The expected round trip is always given. When the trip loses nothing, it is the input HTML with the standard deviations below.
+
+**Tests of the helpers.** `tests/test_helpers_tests.rs` holds, for each helper, one case which passes, and one `#[should_panic]` case for each check above which that helper makes, including an `_unstable` call on a stable case. `round_trip` and `render_markdown` stay as they are until the migration removes their last callers.
 
 ### Known deviations
 
