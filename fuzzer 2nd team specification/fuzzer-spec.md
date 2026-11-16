@@ -277,9 +277,13 @@ A case is deterministically identified by (master seed, case index):
 
 * Use `rand_chacha::ChaCha8Rng`, pinned in `Cargo.lock`. The algorithm is
   required; replacing it invalidates every stored seed.
-* Derive each case seed as `master_seed.wrapping_add(case_index as u64)` and
-  initialize its PRNG with `SeedableRng::seed_from_u64`. Use it in sequence for
-  all draws and retries.
+* Initialize each case's PRNG with `SeedableRng::seed_from_u64(master_seed)`,
+  then call `set_stream(case_index)`; case indices are zero-based. Use that
+  PRNG in sequence for all of the case's draws and retries.
+* Do not derive a case seed by arithmetic on the master seed and case index.
+  Adding them makes nearby master seeds repeat each other's cases: under the
+  default plan, master seeds 1, 2, 3, and 42 would produce only 1,041 distinct
+  cases out of 4,000 per combination.
 * Record the generator version in every failure artifact. Increment it when
   changing the grammar, element tiers, or content domains below. Stored input is
   the definitive replay path; seed replay is valid only within one version.
@@ -346,16 +350,14 @@ Apply these content-model rules:
 * All generated elements have matching closing tags unless they are HTML void
   elements. The serializer emits void elements without closing tags.
 
-Links require `href`; images require `src` and may have `alt`. Section 11.5
-defines valid values. Generate cases missing required attributes only as
-explicit fallback probes, not valid link or image coverage.
+Section 11.5 defines which attributes each element carries and their values.
 
 ### 11.4 Bounds
 
 Fix and log for every run:
 
 * maximum tree depth, default 6; root elements have depth 1
-* maximum children per node, default 4
+* children per non-void element, default 1 to 4
 * maximum text length per node, default 64 characters
 
 The depth bound is required because blockquote and list nesting is unbounded in
@@ -363,31 +365,93 @@ the grammar and list translation depends on depth.
 
 ### 11.5 Attribute domain
 
-Attributes are part of the grammar. In `Faithful` mode, attributes a Markdown
-construct cannot preserve select HTML serialization. For every eligible tag,
-generate attributed and unattributed forms at least once per seed. Do not assume
-an attribute is interchangeable across elements.
+Attributes are part of the grammar. In `Faithful` mode a handler translates its
+element only when Markdown can express every attribute the element carries; an
+attribute outside the element's translatable set selects HTML serialization.
+The set differs per element:
 
-Generate no attributes or one of the following:
+| Element                                                 | Translated to Markdown when it carries                         |
+| ------------------------------------------------------- | -------------------------------------------------------------- |
+| `a`                                                     | `href`, optionally with `title`                                |
+| `img`                                                   | `src` and `alt`, optionally with a non-empty `title`           |
+| `ol`                                                    | no attributes, or `start` alone                                |
+| `code` inside `pre`                                     | no attributes, or `class` alone with a `language-<name>` token |
+| `p`, `h1`–`h6`, `ul`, `li`, `blockquote`, `hr`, `pre`   | no attributes                                                  |
+| inline `code`, `strong`, `b`, `em`, `i`                 | no attributes                                                  |
+| `table`, `thead`, `tbody`, `tr`, `th`, `td`             | no attributes                                                  |
+| `span`, `br`, `caption`, `div`, `section`, `q`, `input` | never; always serialized as HTML                               |
 
-* Global attributes: `id`, `class`, or `title`.
-* Element-specific attributes: `href` on `a`; `src` and `alt` on `img`;
-  `colspan` on `td`/`th`; `start` on `ol`; and `type="checkbox"` on `input`.
-* Empty-value cases only for attributes that permit empty values, such as
-  `class`, `title`, and `alt`.
+An attribute on any table part serializes the whole `table` as HTML. The last
+row includes tags whose registered handlers (section 11.2) never translate in
+`Faithful` mode: `br` and `caption` always serialize, and `span` translates only
+math, which section 5 excludes; do not generate the classes `math math-inline`
+or `math math-display`. A generator self-test (section 11.7) converts one
+translated and one serialized example for each row, so a handler change that
+moves this line fails a test instead of silently shifting coverage.
 
-Use valid deterministic values: `https://example.test/...` or relative paths for
-`href` and `src`; non-empty plain text for `alt`, `title`, `id`, and `class`;
-positive decimal integers 1–4 for `colspan` and `start`. Escape quotes and
-ampersands per HTML attribute syntax. Explicitly classify additional attribute
-edge cases; do not count them as valid hyperlink or image coverage.
+Draw each element in one of these forms, each at least once per applicable tag
+and seed:
+
+* Translatable: exactly a set the table allows. Cover every allowed set, so `a`
+  occurs with `href` alone and with both `href` and `title`.
+* Extra attribute: a translatable form plus one attribute outside the set,
+  which selects HTML serialization: `id`, `class`, or `title`, or `colspan` on a
+  table cell. Never-translated elements draw the unattributed form and the form
+  with one such attribute.
+* Edge: a form from the edge table below.
+
+Each attribute has its own value domain; choose uniformly within it:
+
+| Attribute                                | Values                                                                             | Path     |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- | -------- |
+| `href` on `a`, `src` on `img`            | `https://example.test/page`, `dir/page.html`, `?a=b&c=d#e`, `a(b)`, `a*b_c`, empty | Markdown |
+| `title` on `a` or `img`                  | any non-empty value of section 11.6's pool                                         | Markdown |
+| `alt` on `img`                           | any value of section 11.6's pool, including empty                                  | Markdown |
+| `start` on `ol`                          | `2`, `3`, `42`, `999999999`                                                        | Markdown |
+| `class` on `code` inside `pre`           | `language-rust`, `language-py3`                                                    | Markdown |
+| `id` as an extra attribute               | any value of the pool's plain-word class                                           | HTML     |
+| `class` or `title` as an extra attribute | any value of the pool, including empty                                             | HTML     |
+| `colspan` on `td` or `th`                | `1`, `2`                                                                           | HTML     |
+| `type` on `input`                        | `checkbox`                                                                         | HTML     |
+
+No `colspan` value is translated: it is an HTML-path probe, not table coverage.
+Serialize attributes in the order drawn, translatable attributes first, with
+double-quoted values; escape `&` and `"` as `&amp;` and `&quot;`.
+
+Version 1 of the `href` and `src` domain excludes spaces, non-ASCII characters,
+and `[`, `]`, `\`, `<`, `>`, `"`, `|`, and `` ` ``. `pulldown-cmark`
+percent-encodes them when rendering, so under section 7's exact comparison they
+would mismatch on the renderer's encoding, not on `htmd`'s output. Add them
+together with a URL-equivalence rule in section 7.
+
+Edge forms sit at the boundary of what Markdown can express:
+
+| Edge form                                                       | Observed result                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `a` without `href`, with or without `title`                     | Element dropped; only its content is written                        |
+| `a` with `href` and an empty `title`                            | `title` dropped                                                     |
+| `img` without `alt`, or with an empty `title`                   | Kept as HTML                                                        |
+| `ol` with `start="1"`                                           | `start` dropped; the renderer omits a start of 1                    |
+| `ol` with `start` of `0`, `-3`, `abc`, or empty                 | Written as `1.`; the value is lost                                  |
+| `ol` with `start="1000000000"`                                  | Ten-digit number is not a list marker; the list becomes a paragraph |
+| `ul` with `start="3"`                                           | `start` dropped                                                     |
+| `code` inside `pre` with `class="language-rust extra"`          | `extra` dropped                                                     |
+| `code` inside `pre` with `class="plain"` or `class="language-"` | Kept as HTML                                                        |
+
+Count edge forms separately from translated-path coverage: an `a` without
+`href` is not link coverage. The results were observed with `htmd` 0.5.5 and
+`pulldown-cmark` 0.13.4. Forms that drop or change data report `Round-Trip
+Mismatch` until an `htmd` fix or a section 8 allowlist entry covers them; triage
+each through section 13.
 
 ### 11.6 Text domain
 
-Text pool version 1 has equally likely classes; choose one complete value from
-the selected class for each text node without trimming. Use the same pool for
-both profiles; GFM-specific coverage comes from their generated structures.
-Classes and representative values:
+Text pool version 1 has equally likely classes; for each text node choose a
+class, then one complete value from it uniformly, without trimming. Use the same
+pool for both profiles; GFM-specific coverage comes from their generated
+structures. The classes and values below are the whole pool: changing any value
+creates a new pool version, and every value fits section 11.4's text-length
+bound.
 
 * Plain words and mixed words: `Hello`, `abc123`, and
   `abcdefghijklmnopqrstuvwxyz012345`.
@@ -399,12 +463,13 @@ Classes and representative values:
   `![alt](image.png)`, `<span>raw</span>`, and `~~deleted~~`.
 * GFM and extension markers: `| cell |`, `- [ ] task`, `$x^2$`, and `$$x^2$$`.
 * Character references: `&amp;`, `&#10;`, and `&nbsp;`.
-* Whitespace: empty text, a single space, multiple spaces, tabs, newlines,
-  leading and trailing spaces, and mixed runs such as `two  spaces`.
-* Unicode: `Привет`, punctuation adjacent to emphasis delimiters, combining
-  marks, and characters outside the basic multilingual plane, which
-  `src/util/unicode.rs` and `src/util/unicode_punctuation.rs` classify when
-  deciding flanking and escaping.
+* Whitespace, written as JSON strings: `""`, `" "`, `"   "`, `"\t"`, `"\n"`,
+  `" leading"`, `"trailing "`, and `"two  spaces"`.
+* Unicode: `Привет`; `«quoted»` and `—dash—`, whose edge punctuation meets
+  emphasis delimiters; U+0065 U+0301, an `e` with a combining acute accent; and
+  U+1F600, outside the basic multilingual plane. `src/util/unicode.rs` and
+  `src/util/unicode_punctuation.rs` classify these when deciding flanking and
+  escaping.
 
 These are text-node values, not markup. Escape literal `&`, `<`, and `>` exactly
 once as `&amp;`, `&lt;`, and `&gt;`; do not escape serializer delimiters or
@@ -433,6 +498,10 @@ Required self-tests verify:
 * Exhausting 100 candidates reports a generator failure.
 * Two runs of 100 cases with seed 0, identical versions, and identical
   configuration produce byte-identical ordered inputs.
+* A case generated alone from its (master seed, case index) pair is
+  byte-identical to the same case within a full run.
+* For each row of section 11.5's translatable-set table, one translated and one
+  serialized example take the stated path at the pinned `htmd` version.
 
 Use controlled candidate fixtures for retry and exhaustion tests. Generator
 failures must not be reported as `htmd` conversion defects.
