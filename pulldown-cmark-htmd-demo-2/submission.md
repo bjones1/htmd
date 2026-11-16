@@ -5,7 +5,7 @@ Team name: pulldown-cmark / htmd demo 2
 
 The specification consists of the file
 [htmddemo2-spec.md](htmddemo2-spec.md). The implementation is in
-[`playground/`](../playground/README.md).
+[`playground/`](../playground/README.md). Files as "acceptance-criteria.md", "instructor-feedback.md", "submission-template.md" are deemed unnecessary for final submission, as they were derived from the initial pull request feedback and literate-programming-book repository and are not included in the final commits.
 
 Team members:
 
@@ -17,7 +17,7 @@ Team members:
 
 Review rounds are numbered across the whole project. Rounds 1–3 were the
 draft's spec reviews, round 4 was the instructor's review of the draft pull
-request, and rounds 5–9 were the final submission's spec reviews.
+request, and rounds 5–10 were the final submission's spec reviews.
 Implementation review rounds are numbered separately.
 
 The spec's Build constraint publishes to the team's fork
@@ -177,64 +177,107 @@ GitHub userids: dkaimekin and dkaimekinmasters
 #### Contributions
 
 Rewrote the spec after the instructor's review (round 4); ran spec review
-rounds 5, 6, 8 and 9 and made the resulting fixes; generated the first
+rounds 5, 6, 8, 9 and 10 and made the resulting fixes; generated the first
 implementation in `playground/` (core, engine and app crates, build script,
-and Pages workflow).
+and Pages workflow) and ran implementation review round 3.
 
 #### Specification review rounds
 
 | Round | Findings | Main changes made |
 | --- | --- | --- |
+| 4 (instructor's review of the draft) | 15 (an overall review, 11 inline spec comments, 3 submission comments) | Rewrote the spec to state behavior, not implementation: added the Markdown → HTML direction with a one-editor direction switch, listed every htmd and pulldown-cmark option with its control and default, added expected-results tables checked against htmd 0.5.5 and pulldown-cmark 0.13.4, and dropped the API tables, repository layout, Leptos idioms, file tree, CI and implementation-order sections. |
 | 5 | 30 (12 inconsistencies, 15 incomplete scenarios, 3 vague objectives); 13 fixed, 17 left as low-priority implementation detail | Kept large input out of permalinks and Share; defined the round-trip criterion; Markdown presets turn on their extension; switch, Copy and Share use up-to-date output; rendered tabs cannot restyle the page and links do nothing; one source for defaults; two-way footnote coupling; Copy input on crash; measurable size and speed targets. |
 | 6 (converters run) | 12 (7 findings, 5 smaller points); 11 fixed, 5 earlier open points left to the implementer | A separate 32,768-character limit for links; saved state kept after `#`; no history entries except hand edits; switch and Copy unavailable while output is stale; 6 verified Expected results rows; footnote preset wording; both library versions in the header; hangs out of scope. |
 | 8 (repetition and one plausible result) | 25 (8 repeated rules, 3 contradictions from repetition, 3 conciseness cuts, 9 open behaviors, 2 smaller points); 25 fixed, 2 of the cuts adapted | Cut the acceptance criteria to 2, moving their test inputs into Safety; defined the *default example* once; removed repeated rules; specified invalid addresses, how long "Convert anyway" lasts, crash recovery, a large direction switch, when Examples and Clear confirm, code-point length and what the timing covers, number-field clamping, tab selection across a switch, Markdown preset names and order, header links, and Share's manual-copy fallback. |
 | 9 ([latest-review.md](latest-review.md), converters run) | 8 (1 contradiction, 3 gaps, 4 trivial points); 4 fixed, 4 trivial points left | Tabs keep their last content only while conversion is paused, not after a crash; noted that the skip tags `SCRIPT` row relies on the playground ignoring case; the double-switch criterion ignores a trailing newline; an address with no saved state loads the default example, and a loaded address replaces pending keystrokes. |
+| 10 (converters checked by the implementation's tests) | 9 spec findings (2 low, 7 trivial), plus 10 on this file | No spec changes yet: proposed one-line fixes for the "published package" wording, which the Pages workflow contradicts, and for what Share copies after an invalid link; left 7 trivial points; listed this file's per-member gaps, inverted strikethrough and wrong size figure for the team. |
 
 #### Last specification review
 
-Prompting Claude Fable 5.2 with:
+Prompting Claude Opus 5.5, in Claude Code, with:
 
-> Review the spec at @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md .
-> Evaluate against @pulldown-cmark-htmd-demo-2/acceptance-criteria.md and
-> submission template.
+> Perform one last specification review on my behalf. Assess the
+> @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md and
+> @pulldown-cmark-htmd-demo-2/submission.md against
+> @pulldown-cmark-htmd-demo-2/acceptance-criteria.md and
+> @pulldown-cmark-htmd-demo-2/submission-template.md .
 
-produced the round 9 review, in full in [latest-review.md](latest-review.md).
-No finding was judged incorrect, so nothing is struck through:
+produced the round 10 review, shortened here. No finding was judged
+incorrect, so nothing is struck through:
 
-> **Converters run.** Every row under Expected results, and the Round trip,
-> gives the stated output with htmd 0.5.5 and pulldown-cmark 0.13.4. The
-> option defaults and the 15 extensions match the libraries.
+> **Converters checked.** Every Expected results row, the Round trip and both
+> acceptance criteria pass as automated tests in
+> `playground/engine/tests/spec.rs`, built with pulldown-cmark 0.13.6.
 >
-> **Findings, fixed:**
+> **Spec, low (one-line fixes):**
 >
-> 1. Crash and stale output contradict each other: tabs were to keep their
->    last content while the output is stale, but stale includes "after a
->    crash", when a message replaces the output pane.
-> 2. The skip tags `SCRIPT` row is not htmd's own output: htmd matches tag
->    names by case, so the row holds only through the playground's Skip tags
->    rule.
-> 3. The double-switch criterion fails on a trailing newline, which is not
->    "whitespace between tags".
-> 4. Two address rules were missing: what Back or Forward to an address with
->    no saved state shows, and whether a loaded address or a pending typing
->    update wins.
+> 1. "Does not change … its published package" contradicts the Build
+>    constraint: the Pages workflow lives in `.github/workflows/`, which
+>    `cargo package` includes in htmd's crate.
+> 2. What Share copies after an invalid link is unspecified: the address
+>    keeps the invalid link until the next update, so Share could copy it.
 >
-> **Trivial points, left as they are:**
+> **Spec, trivial (left as they are):** whether the timing counts as a
+> status change to announce; a long Skip tags text alone can exceed the
+> address limit; Reference style changes a preset only with referenced
+> links; and round 9's four trivial points.
 >
-> 5. "Valid tag name" under Skip tags is not defined.
-> 6. The 10 ms speed target names the browser but no hardware.
-> 7. The spec does not say whether the address still updates after a crash.
-> 8. The Pages address belongs to the team's fork, while the pull request
->    targets the instructor's fork.
+> **Verdict:** with the two one-line fixes, only trivial findings remain.
+>
+> **submission.md:** per-member gaps in the final section (no final spec
+> review for Ademi, no own implementation review for Daniil or Aruzhan, no
+> saved output for Aruzhan's last spec review); strikethrough in the draft
+> marks fixed findings, the opposite of the assignment's meaning; the 871 KB
+> size figure should be CI's 576,635 bytes; and smaller wording and
+> consistency points.
 
 #### Implementation review rounds
 
-Daniil generated the implementation; its review rounds are listed under
-Ademi Bakhytova.
+Daniil generated the implementation; rounds 1 and 2 are listed under Ademi
+Bakhytova.
+
+| Round | Findings | Main changes made |
+| --- | --- | --- |
+| 3 (at `0c9bcb1`) | 7 (3 low, 4 trivial); none fixed | No code changes: recorded that iOS Safari zooms into the editor and option fields, whose text is under 16 px; that the Pages deploy fails until Pages is enabled on the fork; and that `implementation-review.md` overstates the site's size; left 4 trivial points. |
 
 #### Last implementation review
 
-See Ademi Bakhytova.
+Prompting Claude Opus 5.5, in Claude Code, with:
+
+> Perform one last implementation review round on my behalf. Add your
+> findings in the implementation review rounds on my behalf. Record the
+> implementation review under "last implementation review" on my behalf.
+> Assess the @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md and
+> @pulldown-cmark-htmd-demo-2/submission.md against
+> @pulldown-cmark-htmd-demo-2/acceptance-criteria.md and
+> @pulldown-cmark-htmd-demo-2/submission-template.md .
+
+produced the round 3 review, shortened here. No finding was judged
+incorrect, so nothing is struck through:
+
+> **Checks run.** `cargo test --locked` passes 32 tests, including every
+> Expected results row, the Round trip and both acceptance criteria. CI's
+> size check measures the site at 576,635 bytes with gzip. Round 1's fixes
+> (Share after an invalid link, the status live region, one output panel,
+> no ARIA menu claim, the size check) hold. Earlier in-browser checks found
+> the Article example converts in 0.2 ms, hostile HTML in the rendered tabs
+> makes no requests, and a stack overflow shows the crash message.
+>
+> **Low:**
+>
+> 1. The editor (0.88rem) and the option fields (0.92rem) are under 16 px,
+>    so iOS Safari zooms the page when one is focused (Constraints:
+>    Browsers, phone).
+> 2. The deploy job fails on every push to `main` because GitHub Pages is
+>    not enabled on the fork, so the Build constraint is not met yet.
+> 3. `implementation-review.md` gives the site as about 871 KB with gzip;
+>    that is the raw wasm before `wasm-bindgen`, not the published site.
+>
+> **Trivial, left as they are:** a very long Skip tags text alone can push
+> the address past 32,768 characters; browser behavior (typing pause,
+> address, sandbox) has no automated test; the workflow's actions target
+> the deprecated Node.js 20; and round 2's points on timing and live-region
+> announcements.
 
 ### Ademi Bakhytova
 
