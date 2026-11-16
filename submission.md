@@ -1,21 +1,27 @@
-# Project 2 submission: htmd subscript 2
+Project 2 submission
+====================
+
+Team name: htmd subscript 2
 
 Team: Pavel Shegay, Viacheslav Sokolov, Arsen Zhanserkenov. Arsen Sailau did
 not take part in this submission.
 
-## Contributions
+The specification is the "Subscript" section of
+[translation_approach.md](translation_approach.md).
 
-- Pavel Shegay: Subscript section framing and introduction, including the example showing how to escape a literal `~` in text.
-- Viacheslav Sokolov: the rules for translating `<sub>` to tildes or keeping it
-  as HTML (characters on both sides of each delimiter, character references,
-  neighboring tildes), first as table rows and then, after the instructor
-  review, as prose.
-- Arsen Zhanserkenov: empty and whitespace-only `<sub>`, nesting, and the
-  Approach steps.
-
-## Build check
+Draft submission
+----------------
 
 ### Viacheslav Sokolov
+
+GitHub userid: SokolovVD-IT
+
+#### Contributions
+
+The table rows and explanation of when `<sub>` becomes `~a~` and when it must
+stay HTML (in-word positions, punctuation, whitespace at the edges).
+
+#### Build and run test
 
 Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Verify that you can
 compile and run the project in the current git repo.` produced:
@@ -30,12 +36,97 @@ compile and run the project in the current git repo.` produced:
 >
 > The working tree remains clean.
 
+#### Specification review rounds
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 4 (1 accepted, 3 rejected) | Reworded the sentence on why in-word subscripts need HTML so it no longer claims that nothing can fix them. |
+
+#### Last specification review
+
+Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review only lines
+745-774 of translation_approach.md (the table rows I added to the Subscript
+section and the three explanation paragraphs below the table). Check them
+against the pulldown-cmark subscript extension (Options::ENABLE_SUBSCRIPT) and
+CommonMark left/right-flanking delimiter rules. Do not edit any files. List any
+factual errors, unclear wording, or missing cases as numbered findings.`
+produced the following output; strikethrough indicates LLM output that I
+deemed incorrect or irrelevant.
+
+1. ~~The negative example `a ~b~c` is not a valid failure case under
+   CommonMark/pulldown-cmark subscript rules. The opener is left-flanking
+   because it is preceded by a space, and the closer is right-flanking even
+   when followed by a letter, so this should be treated as a valid subscript,
+   not as a literal-text case. The prose currently says it "fails for the same
+   reason on one side," which contradicts the delimiter-flanking model.~~
+   (pulldown-cmark 0.13.4 renders `a ~b~c` as literal text.)
+2. ~~The rule sentence is oversimplified and not the actual algorithm: "A
+   single `~` opens a subscript only if the character before it is whitespace,
+   punctuation, or the start of the line, and closes it only if the character
+   after it is whitespace, punctuation, or the end of the line" is not the
+   CommonMark left/right-flanking rule. The real test is both sides of the
+   delimiter run together: opener/closer validity depends on
+   left-flanking/right-flanking, not on a one-sided check of just the adjacent
+   character. This matters because cases like `x.~2~` are valid even though
+   the closer is not followed by whitespace/punctuation.~~ (In `x.~2~` the
+   closer is followed by the end of the line, which the rule covers; for a
+   single `~` the stated rule gives the same result as the flanking rules.)
+3. The explanation "Nothing written next to the tildes can fix this" is too
+   absolute and inconsistent with the surrounding point that the parser looks
+   at the characters outside the element. In fact, changing the neighboring
+   characters can make the same content valid: `H ~2~ O` is a valid subscript,
+   while `H~2~O` is not. The document is describing the outside-neighbor test
+   correctly, but then states the opposite too strongly.
+4. ~~The section is missing a key positive case that shows the real boundary
+   behavior: examples such as `a ~b~c` or `x.~2~` are exactly the cases
+   CommonMark uses to demonstrate that the check is on the characters outside
+   the delimiters, not on the content inside. Right now the doc only presents
+   the blocking cases and omits the corresponding valid "one-side letter,
+   other-side space/punctuation" cases that explain the rule.~~ (Based on
+   finding 1; `x.~2~` is already a row of the table.)
+
 ### Pavel Shegay
+
+GitHub userid: pavelshegay3
+
+#### Contributions
+
+Subscript section framing and introduction, including the example showing how
+to escape a literal `~` in text.
+
+#### Build and run test
 
 Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Verify that you can compile and run the project in the current git repo.` produced:
 > Verified successfully: `cargo build --locked` compiled the project, and `cargo run --locked --example simple` ran the simple example and exited with code 0. No source files were changed.
 
+#### Specification review rounds
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 2 | Updated the Subscript introduction in `translation_approach.md` to clarify that tilde syntax is a proposed pulldown-cmark extension encoding, not behavior htmd currently emits, and to qualify strikethrough by its required option. |
+| 2 | 2 | Updated the Subscript introduction in `translation_approach.md` to explain single-tilde delimiter constraints and clarify that the examples are proposed behavior, not current htmd output. |
+| 3 | 0 | No changes, confirmed round 2 fixes. |
+
+#### Last specification review
+
+Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the “introduction” subsection of “Subscript” in translation_approach.md for round 3. Check it against the CommonMark spec, pulldown-cmark with ENABLE_SUBSCRIPT, and the existing “Emphasis and strong emphasis” section. Write any numbered findings to review_round_3.md. Do not edit translation_approach.md. If there are no findings, record that and briefly say whether another review round seems necessary.`
+produced the following output:
+
+> The introduction now distinguishes CommonMark from pulldown-cmark's
+> `ENABLE_SUBSCRIPT` extension, notes the single-tilde flanking and intraword
+> constraint, clarifies that the examples are proposed rather than current
+> htmd output, and qualifies strikethrough by `ENABLE_STRIKETHROUGH`. No
+> further changes to `translation_approach.md` are indicated by this review.
+
 ### Arsen Zhanserkenov
+
+GitHub userid: TODO (Arsen: add your GitHub userid)
+
+#### Contributions
+
+Empty and whitespace-only `<sub>`, nesting, and the Approach steps.
+
+#### Build and run test
 
 Verified in this Codex session on 2026-11-10 using Rust/Cargo 1.99.1
 on Windows (MSVC toolchain):
@@ -48,43 +139,58 @@ on Windows (MSVC toolchain):
 `git diff --check` also passed. These checks validate the current project;
 they do not establish that the proposed Subscript encoding is implemented.
 
-## Review rounds
-
-### Viacheslav Sokolov
-
-| Round | Findings | Main changes made |
-| ----- | -------- | ----------------- |
-| 1 | 4 (1 accepted, 3 rejected) | Reworded the sentence on why in-word subscripts need HTML so it no longer claims that nothing can fix them. |
-| 2 | 2 (2 accepted) | After the instructor review, rewrote the rows and explanation as prose rules; encoded edge whitespace as a reference to the original character and kept HTML next to another element's tilde delimiter. |
-| 3 | 7 (2 accepted, 5 rejected) | Defined the neighboring characters as those of the emitted Markdown and removed a repeated statement of the `_` rule. |
-
-Implementation review:
-
-| Round | Findings | Main changes made |
-| ----- | -------- | ----------------- |
-| 1 | 0 | No changes. The reviewer ran `cargo test`, `cargo clippy -- --deny warnings` and a CRLF check, and found no contradiction with the spec or pulldown-cmark 0.13.4. |
-
-### Pavel Shegay
-
-| Round | Findings | Main changes made                                                                                                                                                                                                                     |
-| ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | 2        | Updated the Subscript introduction in `translation_approach.md` to clarify that tilde syntax is a proposed pulldown-cmark extension encoding, not behavior htmd currently emits, and to qualify strikethrough by its required option. |
-| 2     | 2        | Updated the Subscript introduction in `translation_approach.md` to explain single-tilde delimiter constraints and clarify that the examples are proposed behavior, not current htmd output.                                           |
-| 3     | 0        | No changes, confirmed round 2 fixes.                                                                                                                                                                                              |
-| 4     | 0        | Added a link to the emphasis rules, clarified that `~` follows `_` rather than `*`, noted that literal tildes must be escaped outside `<sub>`, distinguished `ENABLE_STRIKETHROUGH` from `ENABLE_SUBSCRIPT`, and changed “examples” to “rules.” |
-
-### Arsen Zhanserkenov
+#### Specification review rounds
 
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
 | 1 (Codex self-review) | 1 accepted | Clarified that selecting HTML in an earlier step prevents later delimiter selection; escaping still applies to the content. |
 | 2 (Codex self-review) | 0 additional static findings | Checked the added table rows against the final algorithm and the existing inline/adjacency rules. Runtime validation was not performed. |
-| 3 (Codex review) | 1 accepted | Specified that Pure drops an empty subscript after moving its edge whitespace, avoiding the non-subscript `~~` form. |
-| 4 (Codex review) | 0 serious findings | Confirmed the final Pure and Faithful rules, including the conservative fallback for unavailable neighboring output. |
 
-## Last review
+#### Last specification review
+
+This was a Codex self-review within the editing session, not an independent
+Copilot Fusion review. The user requested completion of Arsen's part; no
+separate review prompt or external reviewer response is claimed.
+
+Scope: the empty/whitespace-only and nesting explanations, the added table
+rows, and the Approach steps in the Subscript section. The review compared
+them with the document's raw HTML inline and emphasis rules and inspected
+[pulldown-cmark 0.13.4 delimiter checks](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2138-L2223).
+
+1. Accepted and fixed: make the HTML fallback terminal for delimiter selection,
+   while still applying text escaping to content inside retained tags.
+
+Final static pass: no additional findings in the added material. Nested and
+adjacent subscripts preserve wrappers; element children use the stated
+conservative fallback; the algorithm explicitly describes proposed Faithful
+behavior. `git diff --check` passed. The Markdown examples have not been run
+through pulldown-cmark in this environment, and the subsequent project build
+checks passed as recorded above.
+
+Final submission
+----------------
 
 ### Viacheslav Sokolov
+
+GitHub userid: SokolovVD-IT
+
+#### Contributions
+
+Rewrote the `~a~` versus HTML rules as prose after the instructor review
+(character references, neighboring tildes), and implemented `<sub>` in htmd
+with its tests.
+
+#### Specification review rounds
+
+Only rounds after the instructor's draft review; round numbers continue from
+the draft submission.
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 2 | 2 (2 accepted) | After the instructor review, rewrote the rows and explanation as prose rules; encoded edge whitespace as a reference to the original character and kept HTML next to another element's tilde delimiter. |
+| 3 | 7 (2 accepted, 5 rejected) | Defined the neighboring characters as those of the emitted Markdown and removed a repeated statement of the `_` rule. |
+
+#### Last specification review
 
 Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review only the
 paragraphs I wrote in the Subscript section of translation_approach.md (from
@@ -160,32 +266,13 @@ indicates LLM output that I deemed incorrect or irrelevant.
 >    fallback. The prose would be clearer if the "actual flanking algorithm"
 >    and the "conservative HTML fallback" were separated more sharply.
 
-### Pavel Shegay
+#### Implementation review rounds
 
-For round 4, prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the updated introduction subsection of “Subscript” in translation_approach.md. Since the previous review, I added a link to “Emphasis and strong emphasis,” clarified that a single ~ follows the rules for _ rather than *, stated that literal tildes must be escaped in ordinary Markdown text outside <sub> too, clarified that ENABLE_STRIKETHROUGH is separate from ENABLE_SUBSCRIPT, and changed “The examples below” to “The rules below.” Check these changes for accuracy and clarity against CommonMark and pulldown-cmark with ENABLE_SUBSCRIPT. Do not edit any files. List any serious issues as numbered findings.` produced:
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 0 | No changes. The reviewer ran `cargo test`, `cargo clippy -- --deny warnings` and a CRLF check, and found no contradiction with the spec or pulldown-cmark 0.13.4. |
 
-> No serious issues found. The introduction accurately describes the proposed subscript syntax, its delimiter constraint, literal-tilde escaping, and the separate strikethrough option. No further review round seems necessary.
-
-### Arsen Zhanserkenov
-
-Prompting Codex (GPT-5) with `Review only Arsen Zhanserkenov's current changes
-in the Subscript section of translation_approach.md: the empty and
-whitespace-only handling, nesting explanation, and Approach rules for
-TranslationMode::Pure and TranslationMode::Faithful. Check them for internal
-contradictions and against the existing "Emphasis and strong emphasis" rules.
-Do not edit any files. List serious problems as numbered findings.` produced:
-
-> No numbered findings.
->
-> Pure mode now ignores attributes, moves edge whitespace outside the generated
-> single-tilde delimiters, combines adjacent subscripts under the documented
-> adjacent-inline rule, and drops an element with no remaining content instead
-> of emitting `~~`. Faithful mode retains tags for empty or whitespace-edge
-> content, comments, nested subscripts, attributes, adjacent subscripts, and
-> unavailable neighboring output. The future delimiter check is explicitly
-> separated from the current conservative fallback.
-
-### Implementation: Viacheslav Sokolov
+#### Last implementation review
 
 Prompting Copilot Fusion, Standard (Fusion selected GPT-6 Luna), with
 `Review round 1 of the <sub> implementation on branch subscript-spec (commit
@@ -209,7 +296,87 @@ so and whether another review round seems necessary.` produced:
 >
 > Another review round does not seem necessary.
 
-## Implementation
+### Pavel Shegay
+
+GitHub userid: pavelshegay3
+
+#### Contributions
+
+Revised the introduction after the instructor review: a link to the emphasis
+rules, `~` following `_` rather than `*`, escaping literal tildes outside
+`<sub>`, and the separate strikethrough option.
+
+#### Specification review rounds
+
+Only rounds after the instructor's draft review; round numbers continue from
+the draft submission.
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 4 | 0 | Added a link to the emphasis rules, clarified that `~` follows `_` rather than `*`, noted that literal tildes must be escaped outside `<sub>`, distinguished `ENABLE_STRIKETHROUGH` from `ENABLE_SUBSCRIPT`, and changed “examples” to “rules.” |
+
+#### Last specification review
+
+For round 4, prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the updated introduction subsection of “Subscript” in translation_approach.md. Since the previous review, I added a link to “Emphasis and strong emphasis,” clarified that a single ~ follows the rules for _ rather than *, stated that literal tildes must be escaped in ordinary Markdown text outside <sub> too, clarified that ENABLE_STRIKETHROUGH is separate from ENABLE_SUBSCRIPT, and changed “The examples below” to “The rules below.” Check these changes for accuracy and clarity against CommonMark and pulldown-cmark with ENABLE_SUBSCRIPT. Do not edit any files. List any serious issues as numbered findings.` produced:
+
+> No serious issues found. The introduction accurately describes the proposed subscript syntax, its delimiter constraint, literal-tilde escaping, and the separate strikethrough option. No further review round seems necessary.
+
+#### Implementation review rounds
+
+TODO (Pavel): table of implementation review rounds.
+
+#### Last implementation review
+
+TODO (Pavel): LLM, prompt, and output of the last implementation review.
+
+### Arsen Zhanserkenov
+
+GitHub userid: TODO (Arsen: add your GitHub userid)
+
+#### Contributions
+
+Documented Pure mode, empty-subscript handling, and the conservative delimiter
+fallback, and aligned the Approach with review feedback.
+
+#### Specification review rounds
+
+Only rounds after the instructor's draft review; round numbers continue from
+the draft submission.
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 3 (Codex review) | 1 accepted | Specified that Pure drops an empty subscript after moving its edge whitespace, avoiding the non-subscript `~~` form. |
+| 4 (Codex review) | 0 serious findings | Confirmed the final Pure and Faithful rules, including the conservative fallback for unavailable neighboring output. |
+
+#### Last specification review
+
+Prompting Codex (GPT-5) with `Review only Arsen Zhanserkenov's current changes
+in the Subscript section of translation_approach.md: the empty and
+whitespace-only handling, nesting explanation, and Approach rules for
+TranslationMode::Pure and TranslationMode::Faithful. Check them for internal
+contradictions and against the existing "Emphasis and strong emphasis" rules.
+Do not edit any files. List serious problems as numbered findings.` produced:
+
+> No numbered findings.
+>
+> Pure mode now ignores attributes, moves edge whitespace outside the generated
+> single-tilde delimiters, combines adjacent subscripts under the documented
+> adjacent-inline rule, and drops an element with no remaining content instead
+> of emitting `~~`. Faithful mode retains tags for empty or whitespace-edge
+> content, comments, nested subscripts, attributes, adjacent subscripts, and
+> unavailable neighboring output. The future delimiter check is explicitly
+> separated from the current conservative fallback.
+
+#### Implementation review rounds
+
+TODO (Arsen): table of implementation review rounds.
+
+#### Last implementation review
+
+TODO (Arsen): LLM, prompt, and output of the last implementation review.
+
+Implementation
+--------------
 
 Implemented by Viacheslav Sokolov with Claude Code (Claude Opus 5.5) in VS Code.
 Prompt: `Implement the Subscript section of translation_approach.md in htmd,
