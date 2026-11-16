@@ -8,16 +8,27 @@ use common::{
     CMARK_OPTIONS, assert_faithful, assert_faithful_options, assert_faithful_unstable,
     assert_faithful_unstable_options,
 };
-use htmd::options::Options;
+use htmd::options::{HeadingStyle, Options};
 
 const STABLE_HTML: &str = "<p>a</p>";
 const STABLE_MARKDOWN: &str = "a";
 
-// `<code>` keeps its line feed only as HTML; the second conversion sees a
-// space, which a code span can spell.
+// htmd writes this `<code>` as raw HTML; the second conversion, given the same
+// text, writes a code span. This instability is an htmd bug: the line feed is
+// already lost in the first Markdown, so the raw HTML keeps nothing a code span
+// could not. A fix in htmd needs a new unstable input here.
 const UNSTABLE_HTML: &str = "<p><code>a\nb</code></p>";
 const UNSTABLE_MARKDOWN: &str = "<code>a b</code>";
 const UNSTABLE_SECOND_MARKDOWN: &str = "`a b`";
+
+// The passing `_options` cases use setext headings, whose Markdown differs
+// from the default, so they fail unless the options reach the conversion.
+fn setext_options() -> Options {
+    Options {
+        heading_style: HeadingStyle::Setex,
+        ..Default::default()
+    }
+}
 
 // `assert_faithful`
 
@@ -39,7 +50,7 @@ fn faithful_check_3_fails() {
 }
 
 #[test]
-#[should_panic(expected = "property 3:")]
+#[should_panic(expected = "property 3: converting the round trip")]
 fn faithful_check_4_fails() {
     assert_faithful(UNSTABLE_HTML, UNSTABLE_MARKDOWN, UNSTABLE_HTML);
 }
@@ -49,11 +60,11 @@ fn faithful_check_4_fails() {
 #[test]
 fn faithful_options_passes() {
     assert_faithful_options(
-        STABLE_HTML,
-        &Options::default(),
+        "<h1>a</h1>",
+        &setext_options(),
         CMARK_OPTIONS,
-        STABLE_MARKDOWN,
-        STABLE_HTML,
+        "a\n=",
+        "<h1>a</h1>",
     );
 }
 
@@ -82,7 +93,7 @@ fn faithful_options_check_3_fails() {
 }
 
 #[test]
-#[should_panic(expected = "property 3:")]
+#[should_panic(expected = "property 3: converting the round trip")]
 fn faithful_options_check_4_fails() {
     assert_faithful_options(
         UNSTABLE_HTML,
@@ -134,7 +145,7 @@ fn faithful_unstable_check_3_fails() {
 }
 
 #[test]
-#[should_panic(expected = "property 3:")]
+#[should_panic(expected = "property 3: converting the round trip")]
 fn faithful_unstable_check_4_fails() {
     assert_faithful_unstable(UNSTABLE_HTML, UNSTABLE_MARKDOWN, UNSTABLE_HTML, "`a`");
 }
@@ -144,12 +155,12 @@ fn faithful_unstable_check_4_fails() {
 #[test]
 fn faithful_unstable_options_passes() {
     assert_faithful_unstable_options(
-        UNSTABLE_HTML,
-        &Options::default(),
+        "<h1><code>a\nb</code></h1>",
+        &setext_options(),
         CMARK_OPTIONS,
-        UNSTABLE_MARKDOWN,
-        UNSTABLE_HTML,
-        UNSTABLE_SECOND_MARKDOWN,
+        "<code>a b</code>\n================",
+        "<h1><code>a\nb</code></h1>",
+        "`a b`\n=====",
     );
 }
 
@@ -193,7 +204,7 @@ fn faithful_unstable_options_check_3_fails() {
 }
 
 #[test]
-#[should_panic(expected = "property 3:")]
+#[should_panic(expected = "property 3: converting the round trip")]
 fn faithful_unstable_options_check_4_fails() {
     assert_faithful_unstable_options(
         UNSTABLE_HTML,

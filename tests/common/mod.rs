@@ -168,12 +168,7 @@ fn check_faithful(
     expected_round_trip: &str,
     expected_second_markdown: Option<&str>,
 ) {
-    let convert = |html: &str| {
-        convert_faithful_options(html, htmd_options.clone())
-            .expect("the Faithful conversion cannot fail")
-    };
-
-    let markdown = convert(html);
+    let markdown = convert_or_panic(html, htmd_options);
     let round_trip = render_markdown(&markdown, cmark_options);
 
     if !html_compare::html_equivalent(&round_trip, expected_round_trip) {
@@ -194,7 +189,7 @@ fn check_faithful(
          expected: {expected_markdown:?}"
     );
 
-    let second_markdown = convert(&round_trip);
+    let second_markdown = convert_or_panic(&round_trip, htmd_options);
     let expected_second = expected_second_markdown.unwrap_or(expected_markdown);
     assert!(
         second_markdown == expected_second,
@@ -205,12 +200,21 @@ fn check_faithful(
 
     if let Some(second) = expected_second_markdown {
         let second_round_trip = render_markdown(second, cmark_options);
-        let third_markdown = convert(&second_round_trip);
+        let third_markdown = convert_or_panic(&second_round_trip, htmd_options);
         assert!(
             third_markdown == second,
             "property 3: the second Markdown is not stable\n  html:       {html:?}\n  \
-             markdown:   {second:?}\n  converted:  {second_round_trip:?}\n  \
-             actual:     {third_markdown:?}\n  expected:   {second:?}"
+             markdown:   {markdown:?}\n  second:     {second:?}\n  \
+             converted:  {second_round_trip:?}\n  actual:     {third_markdown:?}\n  \
+             expected:   {second:?}"
         );
     }
+}
+
+/// Check 1's conversion. A fn rather than a closure, since `#[track_caller]`
+/// does not reach through a closure to the test which failed.
+#[track_caller]
+fn convert_or_panic(html: &str, htmd_options: &Options) -> String {
+    convert_faithful_options(html, htmd_options.clone())
+        .expect("the Faithful conversion cannot fail")
 }
