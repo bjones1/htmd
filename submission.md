@@ -531,3 +531,91 @@ Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Escap
 >   section, which the scope sentence already defers to.
 > * A `<p>` holding a comment, `<div>` and `<dl>` are HTML blocks with no
 >   escapes, as the scope sentence says.
+
+Final submission
+----------------
+
+### Miras Shaltayev
+
+GitHub userid: miras-kbtu
+
+#### Contributions
+
+Applied the instructor's pull request comments to `testing_approach.md` outside the "Whitespace" section (Faithful-only scope, removal of the "Escaping" section, known deviations, and a procedure to convert the existing tests), revised that part over six LLM review rounds, and cut it back to remove overspecification before the last round.
+
+#### Specification review rounds
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 20 | Pure mode removed; "Approach" heading added; comparison helper named and written first; property 3 uses the same options; lossy cases which also fail idempotency; conversion steps made explicit for each test file |
+| 2 | 20 | Idempotency classified by Markdown, not HTML; `assert_faithful_unstable` added; standard deviations listed; root `<p>` around a block element recorded as a loss; rule for a wrong expectation; `event_tests.rs` and turndown files decided |
+| 3 | 15 | Adjacent-list merging removed from the standard deviations; `<thead>` limited to a first row of `<th>`; the second Markdown must be stable; the migration finds every kind of Faithful call; Pure turndown cases kept |
+| 4 | 16 | Wrong `<code>` example and wrong cause of the standard deviations fixed; root `<p>` around a block uses `assert_faithful_unstable`; one bug rule for all properties |
+| 5 | 18 | Whole file reviewed; `#[ignore]` limited to the failing case; tests with custom handlers not converted; stale references to `round_trip` removed; nine "Whitespace" findings passed to its author |
+| 6 | 15 | Spec cut back from about 2,450 to 1,490 words before this round; standard deviations which fail property 3 use `assert_faithful_unstable`; the `<p>` deviation limited to content with no block element; `ENABLE_TABLES` and `ENABLE_MATH` required; an unexplained loss is a bug |
+
+#### Last specification review
+
+Claude Opus 5.5 (Claude Code), in a new session, with the prompt: "Review /Users/iomiras/uni/htmd/testing_approach.md. Do not edit any file; give your findings in your final message." This is the output of round 6. Strikethrough marks findings which I deemed irrelevant, since they ask for implementation detail which the spec leaves to the implementer. Findings 1 and 8 concern the "Contributions" list and the "Whitespace" section, which their authors own; finding 14 needs no change.
+
+> Review: testing_approach.md (working-tree version, uncommitted diff vs HEAD f4ee316). Read-only; no repo file edited. Read the spec, tests/common/mod.rs, tests/*.rs, translation_approach.md, git diff, and submission.md (to check the claimed round-2 fixes). Built a throwaway probe crate (htmd path dep + pulldown-cmark 0.13.4). It runs convert → render → convert.
+>
+> HIGH
+>
+> 1. L10: Contributions still credits Aidyn Tazhibay for the "Escaping" section. The working-tree diff deletes that whole section (old L90-125). submission.md says the removal was intended (instructor comment). Fix: change Aidyn's line, or note that the section was removed. L8 (Armanzhan Onggarbay) is still empty.
+>
+> 2. L35 vs L29/L41: a standard deviation can fail property 3, so "needs no reason" contradicts the procedure. Probe: `<a href="a b">x</a>` → MD `[x](<a b>)` → RT `<p><a href="a%20b">x</a></p>` → MD2 `[x](a%20b)`. L35 says percent-encoding needs no reason. But only `assert_faithful_unstable` passes this case, and L29 limits that helper to "a case which fails property 3 by design" (here the cause is pulldown-cmark, not htmd's design). L41 also says no property is skipped without a reason. Fix: say that a standard deviation which changes the second Markdown uses `assert_faithful_unstable` with a fixed reason, or with no reason.
+>
+> 3. L35: the claim that round-2 finding 3 was applied is false. submission.md says "root `<p>` around a block element recorded as a loss" was applied. The text only says "inline content comes back inside `<p>`", with no exception. When the wrapped content holds a block element (`a<del>x<hr>y</del>c`), the `<p>` changes the DOM. The hand-written expected string parses the same way, so property 2 passes and the loss stays hidden. Property 3 then fails, and L35 gives no guidance. The same broad wording also covers loose `<li><p>`. Probe: `<ul><li>a</li></ul><ul><li>b</li></ul>` → MD `*   a\n\n*   b` → RT is one loose list `<ul><li><p>a</p></li><li><p>b</p></li></ul>`. That is a real loss (two lists merge, which looks like an htmd bug against CommonMark). But a reader can file the added `<p>` as "standard". Fix: limit the `<p>` deviation to where it is added (root, blockquote) and to content with no block element. State that list merging is not covered.
+>
+> 4. ~~L45/L47-49: the migration of `turndown_cases_tests.rs` cannot be done as written. All ~140 cases are data in tests/html/turndown_test_index.html, and one `#[test] run_cases` runs them. A case has `html` and `md` fields only, with no field for an expected round trip. Step 2 ("write both expected strings by hand") has no place to put the round trip. The `#[ignore]` rule (L39) cannot isolate one data case. 28 cases are Pure and the defaults are Setex, so these cases need `_options`. Fix: give the storage for the round trip (for example a new element per case, which `load_test_cases` reads). Or state that turndown cases check properties 1 and 3 only, and give the reason. Round-2 finding 9 raised this. The new text adds the file to the migration but does not solve it.~~
+>
+> MEDIUM
+>
+> 5. L29: the spec does not say which pulldown-cmark options a test must use. It gives `ENABLE_TABLES`/`ENABLE_MATH` only "for example". The rule was in the deleted Escaping section (old rule 5). Probe: `<table><tr><th>h</th></tr><tr><td>a</td></tr></table>` with `CommonMarkOptions::empty()` → RT `<p>| h |\n| - |\n| a |</p>` → MD2 `| h | | - | | a |` (unstable). So every pipe-table test fails under plain `assert_faithful`, and a writer can record that as a deviation. htmd always escapes `$`, so without `ENABLE_MATH` the trip cannot catch a missing `$` escape. Fix: add one rule. A test which emits a pipe table uses `ENABLE_TABLES`. A test with `$` uses `ENABLE_MATH`. Other extensions are out of scope.
+>
+> 6. L37 vs L39: the boundary between "other deviation" and "bug" depends on who writes the design text. L37 says "If no section explains it, add one first". So a test writer can turn any bug into "by design" by writing a section in translation_approach.md. Fix: say who approves a new section, or say that an unexplained loss is a bug by default.
+>
+> 7. ~~L45-51: the procedure removes all guidance about the existing helpers. Old text named `assert_round_trips`, `assert_math_round_trips`, `assert_paragraph_survives`, and `round_trip_pure_table` (Pure, must stay). `round_trip_setext`, `round_trip` and `render_markdown` in tests/common/mod.rs also exist. Now the spec does not say if they are deleted, kept, or rewritten as wrappers. `round_trip` is used in basic_tests.rs and link_tests.rs. `round_trip_pure_table` (basic_tests.rs:724) is Pure, and "Leave other modes unchanged" covers it only by implication.~~
+>
+> 8. Whitespace "Rules for tests" item 2 (L91) says that a lossless expected round trip "is the input HTML itself". L31 says it is "the input HTML with the standard deviations". These contradict. submission.md says this cross-reference (round-2 finding 15) was skipped on purpose. It is still a contradiction for a reader.
+>
+> LOW
+>
+> 9. ~~L29: "`assert_faithful_unstable` and its `_options` variant take a fourth argument". The `_options` variant takes a sixth argument. No signature or argument order is given for any helper. The old text had one.~~
+>
+> 10. ~~L29: the spec does not say what `assert_faithful_unstable` checks after MD2. For example, does MD2 have to be stable on a third pass?~~
+>
+> 11. ~~L29/L45: the spec does not say where the comparison helper and its own tests live. A `#[test]` in tests/common/mod.rs runs once in each test binary that has `mod common;` (10 files). New helpers there also need `#[allow(dead_code)]`, as the existing helpers have. The spec also does not say what the helper prints on a mismatch.~~
+>
+> 12. ~~L47: "Find its Faithful assertions on one input" does not cover loop tests. `blocks_inside_inlines` (translation_approach_tests.rs:27) collects failures over many combinations. A panic-on-first helper changes that behavior.~~
+>
+> 13. ~~L39: "a comment which names the issue" names no tracker or format.~~
+>
+> 14. L21-23: the properties name `convert_faithful` and `render_markdown(x)` with one argument. The options variants call `convert_faithful_options`, and `render_markdown` takes an options argument. This is acceptable as shorthand.
+>
+> 15. ~~L29: the spec says that the round trip is checked first. It does not give the order of properties 1 and 3.~~
+>
+> Verified OK: event_tests.rs has 6 tests, all with `add_handler` (L51 correct). turndown_online_demo_tests.rs uses `Options` without Faithful, so it is Pure (L51 correct). The migration list covers all 10 test files. `<b>`/`<i>`→`<strong>`/`<em>`, the `<thead>`, and the percent-encoding deviations are real. `<pre>a</pre>` round-trips as an unchanged HTML block. `<pre><code>a</code></pre>` → `<pre><code>a\n</code></pre>` is covered by Whitespace item 1, exception 2. Blockquote `<p>` wrap, `<br>`, headings, `$` (with and without math), `<del>` and `<ol start>` are stable under property 3. No text still points to the removed Escaping section, except Contributions L10.
+
+#### Implementation review rounds
+
+(Table showing implementation review rounds)
+
+#### Last implementation review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
+
+### Armanzhan Onggarbay
+
+(Same sections as Miras Shaltayev)
+
+### Nurlybek Orynbassar
+
+(Same sections as Miras Shaltayev)
+
+### Aidyn Tazhibay
+
+(Same sections as Miras Shaltayev)
