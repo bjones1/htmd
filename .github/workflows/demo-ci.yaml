@@ -106,7 +106,8 @@ jobs:
   browser-tests:
     name: Playwright (${{ matrix.browser }})
     needs: build
-    runs-on: ubuntu-latest
+    # Match the Ubuntu version supported by the pinned Playwright release.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
