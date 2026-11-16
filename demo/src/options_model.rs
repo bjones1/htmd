@@ -29,6 +29,20 @@ pub struct CmarkFlags {
 }
 
 impl CmarkFlags {
+    /// FR-5:120's fixed round-trip renderer flags: exactly
+    /// `ENABLE_TABLES | ENABLE_MATH`, ignoring the sidebar. These are
+    /// the only extensions `htmd` targets; rendering the round-trip
+    /// side under other sidebar flags (smart punctuation,
+    /// strikethrough, ...) would rewrite unescaped ordinary text into
+    /// false diffs.
+    pub fn tables_math() -> Self {
+        CmarkFlags {
+            tables: true,
+            math: true,
+            ..CmarkFlags::default()
+        }
+    }
+
     /// The equivalent `pulldown_cmark` options bitset.
     pub fn to_pulldown(self) -> pulldown_cmark::Options {
         let flags = [
@@ -380,6 +394,13 @@ mod tests {
             | pulldown_cmark::Options::ENABLE_SUBSCRIPT
             | pulldown_cmark::Options::ENABLE_WIKILINKS;
         assert_eq!(all_on.to_pulldown(), expected);
+    }
+
+    #[test]
+    fn tables_math_is_exactly_tables_and_math() {
+        let expected =
+            pulldown_cmark::Options::ENABLE_TABLES | pulldown_cmark::Options::ENABLE_MATH;
+        assert_eq!(CmarkFlags::tables_math().to_pulldown(), expected);
     }
 
     #[test]

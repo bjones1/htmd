@@ -7,8 +7,10 @@ use std::rc::Rc;
 
 use crate::options_model::{CmarkFlags, HtmdOptions};
 
-/// The FR-7 client-side processing ceiling, in UTF-8 bytes.
-const MAX_INPUT_BYTES: usize = 100_000;
+/// The FR-7 client-side processing ceiling, in UTF-8 bytes. The single
+/// shared definition: the size gate here, the engine's halt path, and
+/// the UI's banner transitions all cite it.
+pub const MAX_INPUT_BYTES: usize = 100_000;
 
 /// The FR-7 maximum element nesting depth.
 const MAX_ELEMENT_DEPTH: usize = 512;

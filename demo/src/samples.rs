@@ -390,13 +390,10 @@ mod tests {
         }
     }
 
-    /// FR-5:120's fixed round-trip renderer flags.
+    /// FR-5:120's fixed round-trip renderer flags, promoted to
+    /// [`CmarkFlags::tables_math`].
     fn tables_math() -> CmarkFlags {
-        CmarkFlags {
-            tables: true,
-            math: true,
-            ..Default::default()
-        }
+        CmarkFlags::tables_math()
     }
 
     fn variant(id: SampleId, mode: ConversionMode) -> &'static str {
@@ -735,5 +732,50 @@ mod tests {
         assert!(faithful.contains(r#"<span class="hl">"#));
         assert!(faithful.contains("<br>"));
         assert!(faithful.contains(r#"<div class="note" data-kind="raw">"#));
+    }
+
+    #[test]
+    fn fidelity_round_trip_renders_with_fixed_flags_not_the_sidebar() {
+        // FR-5:120: even with every sidebar cmark flag enabled, the
+        // round-trip side renders with exactly ENABLE_TABLES |
+        // ENABLE_MATH, so text pulldown-cmark would rewrite under other
+        // flags (smart punctuation's dots and dashes) cannot become a
+        // false diff. Rendering the same Markdown with the sidebar's
+        // flags *would* diverge, which is what the fixed flags prevent.
+        use crate::fidelity::{WordDiff, word_diff};
+        let html = r#"<p>Wait... he said "ok" -- really?</p>"#;
+        let md = convert_html_to_md(html, &faithful_defaults(), &[]).unwrap();
+
+        let fixed = convert_md_to_html(&md, &tables_math());
+        assert_eq!(
+            word_diff(&canonicalize(html), &canonicalize(&fixed)),
+            WordDiff::Inclusive
+        );
+
+        let sidebar = CmarkFlags {
+            tables: true,
+            footnotes: true,
+            strikethrough: true,
+            task_lists: true,
+            smart_punctuation: true,
+            heading_attributes: true,
+            math: true,
+            yaml_style_metadata_blocks: true,
+            pluses_delimited_metadata_blocks: true,
+            old_footnotes: true,
+            gfm: true,
+            definition_list: true,
+            superscript: true,
+            subscript: true,
+            wikilinks: true,
+        };
+        let rewritten = convert_md_to_html(&md, &sidebar);
+        assert!(
+            matches!(
+                word_diff(&canonicalize(html), &canonicalize(&rewritten)),
+                WordDiff::Changes(_)
+            ),
+            "the control: sidebar flags really do rewrite this text"
+        );
     }
 }

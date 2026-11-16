@@ -32,6 +32,7 @@ web-sys = { version = "0.3.107", features = [
     "HtmlInputElement",
     "HtmlSelectElement",
     "HtmlTextAreaElement",
+    "Performance",
     "Storage",
     "StorageEvent",
     "Window",

@@ -17,7 +17,7 @@ use leptos::prelude::*;
 use send_wrapper::SendWrapper;
 use wasm_bindgen::JsCast;
 
-use crate::convert::{convert_html_to_md, convert_md_to_html};
+use crate::convert::{MAX_INPUT_BYTES, convert_html_to_md, convert_md_to_html};
 use crate::engine::{Action, CommitOutcome, ConversionMode, Engine, EngineEvent};
 use crate::fidelity::{DiffToken, WordDiff, canonicalize, word_diff};
 use crate::limits::{BannerKind, Banners};
@@ -29,9 +29,6 @@ use crate::storage::{
     ActiveTab, BannerSignal, LoadOutcome, Mode as StoredMode, RecoveryChoice, StorageController,
     StorageEvent, Store,
 };
-
-/// FR-7's client-side processing ceiling, in UTF-8 bytes of the input.
-const MAX_INPUT_BYTES: usize = 100_000;
 
 /// §6:214 — Markdown → HTML output over this many UTF-8 bytes is cleared
 /// instead of previewed, both tabs, banner shown.
@@ -202,6 +199,11 @@ struct Core {
     /// Set while the FR-8 recovery banner's "Convert restored input"
     /// run is in flight; its success removes the crash marker.
     recovery_converting: bool,
+    /// Which mode's buffer each FR-7 limit banner was entered for: a
+    /// commit or an in-range edit of one mode's buffer says nothing
+    /// about the other mode's, so banner exits are scoped to it.
+    size_banner_mode: Option<ConversionMode>,
+    nesting_banner_mode: Option<ConversionMode>,
 }
 
 /// The shared core. `SendWrapper` because Leptos views (including their
@@ -313,7 +315,7 @@ fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) 
                         preview,
                         valid: true,
                     });
-                    conversion_succeeded(c, ui);
+                    conversion_succeeded(c, ui, mode);
                 }
                 CommitOutcome::Stale => {}
             }
@@ -323,29 +325,32 @@ fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) 
             let skip = parse_skip_tags(&c.skip_tags_raw);
             match convert_html_to_md(&buffer, &opts, &skip) {
                 Err(blocked) => {
-                    enter_banner(c, ui, blocked.into());
+                    enter_limit_banner(c, ui, blocked.into(), mode);
                     queue.extend(c.engine.on_limit_entered());
                     clear_output(c, ui);
                 }
                 Ok(markdown) => match c.engine.on_conversion_ready(seq) {
                     CommitOutcome::Commit => {
-                        // FR-3: the Rendered tab re-renders the Markdown
-                        // with the sidebar's cmark flags.
-                        let rerendered = convert_md_to_html(&markdown, &cmark);
-                        let preview = build_srcdoc(&rerendered);
+                        // FR-3:71 — the Rendered tab re-renders the
+                        // Markdown with the sidebar's cmark flags.
+                        let preview = build_srcdoc(&convert_md_to_html(&markdown, &cmark));
                         ui.output(mode).set(ModeOutput {
                             source: markdown.clone(),
                             preview,
                             valid: true,
                         });
                         if opts.translation_mode == TranslationMode::Faithful {
-                            // FR-5 pipeline: canonicalize both sides,
-                            // diff, render. The forward conversion above
-                            // already used the sidebar options with
-                            // Faithful forced (the panel only exists in
-                            // Faithful mode).
+                            // FR-5:120 — the round-trip side renders with
+                            // exactly ENABLE_TABLES | ENABLE_MATH,
+                            // ignoring the sidebar: other flags (smart
+                            // punctuation, strikethrough, ...) rewrite
+                            // unescaped ordinary text into false diffs.
+                            // The forward conversion above already used
+                            // the sidebar options with Faithful active.
+                            let roundtrip =
+                                convert_md_to_html(&markdown, &CmarkFlags::tables_math());
                             let original = canonicalize(&buffer);
-                            let roundtrip = canonicalize(&rerendered);
+                            let roundtrip = canonicalize(&roundtrip);
                             let diff = match word_diff(&original, &roundtrip) {
                                 WordDiff::Inclusive => FidelityDiff::Inclusive,
                                 WordDiff::TooLarge => FidelityDiff::TooLarge,
@@ -359,7 +364,7 @@ fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) 
                         } else {
                             ui.fidelity.set(FidelityPanel::default());
                         }
-                        conversion_succeeded(c, ui);
+                        conversion_succeeded(c, ui, mode);
                     }
                     CommitOutcome::Stale => {}
                 },
@@ -368,13 +373,17 @@ fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) 
     }
 }
 
-/// Shared tail of every successful commit: banners that the resumed
-/// processing disproves clear (FR-7), and a pending recovery conversion
-/// removes the crash marker (FR-8:160).
-fn conversion_succeeded(c: &mut Core, ui: &Ui) {
-    ui.cap_banner.set(false);
-    exit_banner(c, ui, BannerKind::SizeLimit);
-    exit_banner(c, ui, BannerKind::NestingLimit);
+/// Shared tail of every successful commit: the output-cap banner and
+/// the limit banners entered for `mode`'s own buffer clear (FR-7
+/// scoping — the other mode's banners are not this commit's business),
+/// and a pending recovery conversion removes the crash marker
+/// (FR-8:160).
+fn conversion_succeeded(c: &mut Core, ui: &Ui, mode: ConversionMode) {
+    if mode == ConversionMode::MarkdownToHtml {
+        ui.cap_banner.set(false);
+    }
+    exit_limit_banner(c, ui, BannerKind::SizeLimit, mode);
+    exit_limit_banner(c, ui, BannerKind::NestingLimit, mode);
     if c.recovery_converting {
         c.recovery_converting = false;
         if !panic_hook::storage_halted() {
@@ -394,14 +403,30 @@ fn clear_output(c: &mut Core, ui: &Ui) {
     }
 }
 
-fn enter_banner(c: &mut Core, ui: &Ui, kind: BannerKind) {
+/// Enter a limit banner on behalf of `mode`'s buffer; the banner state
+/// itself is shared, the association with the buffer is not.
+fn enter_limit_banner(c: &mut Core, ui: &Ui, kind: BannerKind, mode: ConversionMode) {
     c.banners.enter(kind);
+    *banner_mode_slot(c, kind) = Some(mode);
     sync_banners(c, ui);
 }
 
-fn exit_banner(c: &mut Core, ui: &Ui, kind: BannerKind) {
-    c.banners.exit(kind);
-    sync_banners(c, ui);
+/// Exit a limit banner only when it was entered for `mode`'s buffer: a
+/// successful commit or an in-range edit of one mode's buffer says
+/// nothing about the other mode's (FR-7 scoping).
+fn exit_limit_banner(c: &mut Core, ui: &Ui, kind: BannerKind, mode: ConversionMode) {
+    if banner_mode_slot(c, kind) == &Some(mode) {
+        c.banners.exit(kind);
+        *banner_mode_slot(c, kind) = None;
+        sync_banners(c, ui);
+    }
+}
+
+fn banner_mode_slot(c: &mut Core, kind: BannerKind) -> &mut Option<ConversionMode> {
+    match kind {
+        BannerKind::SizeLimit => &mut c.size_banner_mode,
+        BannerKind::NestingLimit => &mut c.nesting_banner_mode,
+    }
 }
 
 /// Mirror the banner state machine into the region's signals; the
@@ -439,6 +464,26 @@ fn apply_buffer_write(ui: &Ui, mode: ConversionMode, text: &str) {
     ui.editor_text.set(text.to_owned());
 }
 
+/// The engine tail of every non-sample buffer overwrite ("Use Output
+/// as Input", Undo, the recovery conversion): the overwrite input
+/// first, then FR-7's ceiling check the engine's immediate path cannot
+/// announce — an oversized buffer halts conversion with the banner
+/// shown once and the target mode's output cleared, instead of silent
+/// no-conversion over stale output.
+fn overwrite_with_ceiling_check(
+    c: &mut Core,
+    ui: &Ui,
+    mode: ConversionMode,
+    text: &str,
+) -> Vec<Action> {
+    let mut actions = c.engine.on_buffer_overwrite(mode, text);
+    if text.len() > MAX_INPUT_BYTES {
+        enter_limit_banner(c, ui, BannerKind::SizeLimit, mode);
+        actions.extend(c.engine.on_limit_entered());
+    }
+    actions
+}
+
 // ---------- editor (textarea) ----------
 
 fn editor_element() -> Option<web_sys::HtmlTextAreaElement> {
@@ -466,14 +511,14 @@ fn on_editor_input(core: &CoreRef, ui: &Ui, ev: web_sys::Event) {
     let oversized = value.len() > MAX_INPUT_BYTES;
     let actions = match (oversized, ui.size_banner.get_untracked()) {
         (true, false) => {
-            enter_banner(&mut c, ui, BannerKind::SizeLimit);
+            enter_limit_banner(&mut c, ui, BannerKind::SizeLimit, mode);
             c.engine.on_limit_entered()
         }
         // Still over the ceiling: the engine refuses to arm a batch, but
         // the buffer mirror must follow the edit.
         (true, true) => c.engine.on_edit(&value),
         (false, _) => {
-            exit_banner(&mut c, ui, BannerKind::SizeLimit);
+            exit_limit_banner(&mut c, ui, BannerKind::SizeLimit, mode);
             c.engine.on_edit(&value)
         }
     };
@@ -718,7 +763,7 @@ fn on_use_output(core: &CoreRef, ui: &Ui) {
     }
     apply_buffer_write(ui, target, &output.source);
     let text = output.source.clone();
-    let actions = c.engine.on_buffer_overwrite(target, &text);
+    let actions = overwrite_with_ceiling_check(&mut c, ui, target, &text);
     drop(c);
     ui.undo_visible.set(undo);
     run_actions(core, ui, actions);
@@ -743,7 +788,7 @@ fn on_undo(core: &CoreRef, ui: &Ui) {
         c.storage.on_text_edit(storage_mode(mode), &text);
     }
     apply_buffer_write(ui, mode, &text);
-    let actions = c.engine.on_buffer_overwrite(mode, &text);
+    let actions = overwrite_with_ceiling_check(&mut c, ui, mode, &text);
     drop(c);
     run_actions(core, ui, actions);
 }
@@ -765,7 +810,7 @@ fn on_recovery_convert(core: &CoreRef, ui: &Ui) {
     }
     let mode = c.engine.mode();
     let text = ui.buffer(mode).get_untracked();
-    let actions = c.engine.on_buffer_overwrite(mode, &text);
+    let actions = overwrite_with_ceiling_check(&mut c, ui, mode, &text);
     drop(c);
     run_actions(core, ui, actions);
 }
@@ -868,6 +913,8 @@ pub fn App() -> impl IntoView {
         use_output_undo: None,
         skip_tags_raw: String::new(),
         recovery_converting: false,
+        size_banner_mode: None,
+        nesting_banner_mode: None,
     };
     let outcome = bootstrap.storage.load();
     let core_ref: CoreRef = SendWrapper::new(Rc::new(RefCell::new(bootstrap)));
@@ -887,7 +934,7 @@ pub fn App() -> impl IntoView {
                 let (md, html) = (ui.buf_md.get_untracked(), ui.buf_html.get_untracked());
                 let convert = outcome == LoadOutcome::Restored;
                 if convert && ui.buffer(mode).get_untracked().len() > MAX_INPUT_BYTES {
-                    enter_banner(&mut c, &ui, BannerKind::SizeLimit);
+                    enter_limit_banner(&mut c, &ui, BannerKind::SizeLimit, mode);
                 }
                 if outcome == LoadOutcome::CrashRecovery {
                     ui.recovery.set(true);
@@ -1637,5 +1684,211 @@ fn htmd_select(ui: Ui, field: HtmdField) -> impl IntoView {
             <label for=id.clone()>{field.label()}</label>
             {input}
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clock::WebClock;
+    use crate::storage::MemoryStore;
+
+    /// A native `Ui` + `Core` pair. The production clocks never fire
+    /// without a browser, so dispatched runs are released by feeding the
+    /// armed `EngineEvent` straight back into the engine — exactly what
+    /// the timer callback does on the web.
+    struct Harness {
+        ui: Ui,
+        core: CoreRef,
+    }
+
+    fn harness() -> Harness {
+        let ui = Ui::new();
+        let engine_clock: Rc<WebClock<EngineEvent>> = Rc::new(WebClock::new(|_: EngineEvent| {}));
+        let storage_clock: Rc<WebClock<StorageEvent>> =
+            Rc::new(WebClock::new(|_: StorageEvent| {}));
+        let core: CoreRef = SendWrapper::new(Rc::new(RefCell::new(Core {
+            engine: Engine::new(engine_clock),
+            banners: Banners::new(),
+            samples: SampleState::new(),
+            storage: StorageController::new(Box::new(MemoryStore::new()), storage_clock),
+            use_output_undo: None,
+            skip_tags_raw: String::new(),
+            recovery_converting: false,
+            size_banner_mode: None,
+            nesting_banner_mode: None,
+        })));
+        Harness { ui, core }
+    }
+
+    impl Harness {
+        /// The active mode's pending batch fires (whichever role its
+        /// input class armed), its run converts, commits, and the
+        /// matching iframe load releases the in-flight slot.
+        fn run_pending_batch(&self) {
+            let seq = {
+                let mut c = self.core.borrow_mut();
+                let seq = c.engine.seq();
+                let mut actions = c.engine.on_event(EngineEvent::Immediate);
+                actions.extend(c.engine.on_event(EngineEvent::Debounce));
+                actions.extend(c.engine.on_event(EngineEvent::Deadline));
+                drop(c);
+                run_actions(&self.core, &self.ui, actions);
+                seq
+            };
+            let mut c = self.core.borrow_mut();
+            let actions = c.engine.on_iframe_load(seq);
+            drop(c);
+            run_actions(&self.core, &self.ui, actions);
+        }
+    }
+
+    /// An MD input at most 1 byte under the ceiling whose output crosses
+    /// it: a "<p>{99_999 a's}</p>\n" render is 100_007 bytes.
+    fn amplifying_markdown() -> String {
+        format!("a{}", "a".repeat(99_998))
+    }
+
+    #[test]
+    fn html_commit_does_not_clear_the_md_buffers_size_banner() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            // The MD buffer goes over the ceiling: the banner is entered
+            // for the MD buffer (the transition `on_editor_input` makes).
+            h.ui.buf_md.set("x".repeat(100_001));
+            {
+                let mut c = h.core.borrow_mut();
+                enter_limit_banner(
+                    &mut c,
+                    &h.ui,
+                    BannerKind::SizeLimit,
+                    ConversionMode::MarkdownToHtml,
+                );
+            }
+            assert!(h.ui.size_banner.get());
+
+            // The HTML mode receives a buffer write and commits it.
+            h.ui.buf_html.set("<p>ok</p>".to_owned());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c
+                    .engine
+                    .on_buffer_overwrite(ConversionMode::HtmlToMarkdown, "<p>ok</p>");
+            }
+            h.run_pending_batch();
+            assert!(h.ui.out_html.get().valid, "the HTML run committed");
+
+            // The MD banner survives the other mode's commit...
+            assert!(
+                h.ui.size_banner.get(),
+                "an HTML commit says nothing about the MD buffer"
+            );
+            // ...and is not re-announced by surviving it.
+            assert_eq!(h.core.borrow_mut().banners.take_announced().count(), 0);
+
+            // Positive control: back in MD mode, a successful commit of
+            // an in-range MD buffer clears the MD banner.
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_mode_switch(); // back to MD, mirror empty: clear only
+                let _ = c.engine.on_edit("back under");
+            }
+            h.ui.buf_md.set("back under".to_owned());
+            h.run_pending_batch();
+            assert!(h.ui.out_md.get().valid, "the MD run committed");
+            assert!(!h.ui.size_banner.get());
+        });
+    }
+
+    #[test]
+    fn use_output_into_oversized_target_halts_with_banner() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            // Commit an MD input whose output is over the 100,000-byte
+            // input ceiling (but far under the 2 MB display cap).
+            let md = amplifying_markdown();
+            assert!(md.len() <= MAX_INPUT_BYTES);
+            h.ui.buf_md.set(md.clone());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_edit(&md);
+            }
+            h.run_pending_batch();
+            let output = h.ui.out_md.get();
+            assert!(output.valid);
+            assert!(output.source.len() > MAX_INPUT_BYTES);
+
+            // Copying it into the HTML buffer hits the ceiling: banner
+            // on, target output cleared, no dispatch ever runs — and the
+            // oversized text is still persisted (FR-7:145).
+            on_use_output(&h.core, &h.ui);
+            assert!(h.ui.size_banner.get());
+            assert!(!h.ui.out_html.get().valid);
+            assert!(h.ui.out_html.get().source.is_empty());
+            assert_eq!(
+                h.core.borrow().storage.workspace().input_html_to_md.len(),
+                output.source.len()
+            );
+            h.run_pending_batch(); // no batch was armed: nothing commits
+            assert!(!h.ui.out_html.get().valid);
+
+            // Typing the HTML buffer back under the ceiling exits the
+            // banner and resumes conversion.
+            h.ui.buf_html.set("<p>small again</p>".to_owned());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_edit("<p>small again</p>");
+            }
+            h.run_pending_batch();
+            assert!(!h.ui.size_banner.get());
+            assert!(h.ui.out_html.get().valid);
+        });
+    }
+
+    #[test]
+    fn recovery_convert_with_oversized_buffer_halts_and_keeps_recovery_pending() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            // Crash-recovery state: an oversized restored MD buffer and
+            // the user pressing "Convert restored input".
+            h.ui.buf_md.set("x".repeat(100_001));
+            h.core.borrow_mut().recovery_converting = true;
+            on_recovery_convert(&h.core, &h.ui);
+            assert!(h.ui.size_banner.get());
+            assert!(!h.ui.recovery.get(), "the banner itself hides on click");
+            assert!(!h.ui.out_md.get().valid);
+            // No commit happened, so the crash marker's removal is still
+            // deferred (FR-8:160: "once conversion succeeds").
+            assert!(h.core.borrow().recovery_converting);
+        });
+    }
+
+    #[test]
+    fn undo_restoring_an_oversized_buffer_halts_with_banner() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            // A "Use Output as Input" undo slot holding an oversized
+            // earlier buffer of the HTML mode.
+            let oversized = "x".repeat(100_001);
+            h.ui.buf_html.set("current".to_owned());
+            h.core
+                .borrow_mut()
+                .use_output_undo
+                .replace((ConversionMode::HtmlToMarkdown, oversized));
+            h.ui.undo_visible.set(true);
+            on_undo(&h.core, &h.ui);
+            assert!(h.ui.size_banner.get());
+            assert!(!h.ui.undo_visible.get());
+            assert_eq!(
+                h.core.borrow().storage.workspace().input_html_to_md.len(),
+                100_001
+            );
+            h.run_pending_batch(); // halted: nothing commits
+            assert!(!h.ui.out_html.get().valid);
+        });
     }
 }

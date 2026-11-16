@@ -6,6 +6,8 @@
 
 use std::rc::Rc;
 
+use crate::convert::MAX_INPUT_BYTES;
+
 /// FR-2's immediate-conversion ceiling: inputs at or below this many UTF-8
 /// bytes skip the debounce and convert on the next animation frame.
 const IMMEDIATE_MAX_BYTES: usize = 2_000;
@@ -16,10 +18,6 @@ const DEBOUNCE_MS: u32 = 250;
 /// FR-2's forced deadline, measured from the first edit of the current
 /// batch ("the first edit not yet included in a dispatched run").
 const FORCED_DEADLINE_MS: u64 = 900;
-
-/// FR-7's client-side processing ceiling. Over it conversion halts; the
-/// banner and the explicit output clear belong to [`Engine::on_limit_entered`].
-const MAX_INPUT_BYTES: usize = 100_000;
 
 /// Time source and timer registry. Production code wraps `web_sys`
 /// timers; tests use a manual clock. The event vocabulary is a type
