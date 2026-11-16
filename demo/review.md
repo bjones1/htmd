@@ -1555,6 +1555,80 @@ trivial lows — fixed. No findings remain open from rounds 1–14.
 
 **Post-round-14 amendment (controller ruling):** §6/FR-7 release-profile strip wording corrected to strip=false + wasm-opt — Task 0 empirically verified rustc strip=true breaks wasm-opt 116–133 (memory.copy/target_features); recorded for transparency after convergence.
 
+## Round 15 — open findings
+
+```text
+review demo/demo-spec.md.
+```
+
+Reviewed by **GPT-6.1 Sol Extra High** for **Nurlybek Aimagambetov** with the
+exact prompt quoted above. Scope: the complete current `demo/demo-spec.md`,
+checked for internal consistency against its acceptance criteria and the
+repository's `src/options.rs`, conversion API, and relevant demo code. Earlier
+review findings were checked to avoid repeating resolved issues.
+
+#### What checks out
+
+* FR-4's 12 `htmd` options, variants, and defaults match `src/options.rs`.
+  The Faithful-mode `br_style` exception and the empty-`skip_tags` guard agree
+  with the crate's API and implementation.
+* FR-7's parse-once nesting check is supported by the public `html_to_tree`
+  and `tree_to_markdown` methods. The size-limit boundary and output-clearing
+  rules agree with the corresponding §8.6 acceptance cases.
+* The Round 14 dual-profile crash-recovery requirement remains in Deliverable
+  3, with `demo-panic-test` excluded from the shipped Pages build. The preview
+  removal list and the user-supplied-attribute exclusions match §8.6.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+* **R15-M1 — Canonicalization deletes significant spaces between top-level
+  inline elements (`demo/demo-spec.md:128`; §8.7:303,306).** FR-5 drops every
+  whitespace-only text node that is a child of the fragment root, regardless
+  of its neighbors. Consequently, `<span>a</span> <span>b</span>` and
+  `<span>a</span><span>b</span>` both canonicalize to the latter string, even
+  though their default rendering reads `a b` and `ab`, respectively. The
+  fidelity check can therefore hide a real word-boundary loss. The existing
+  `whitespace_only_text_dropped_at_fragment_root` test in
+  `demo/src/fidelity/canonicalize.rs:724` confirms that the demo follows this
+  specification rule; it is a specification defect rather than an accidental
+  implementation deviation. **Suggested fix:** drop fragment-root whitespace
+  at the outer edges or beside block elements, while retaining one collapsed
+  space between inline siblings. Add a negative golden case requiring these
+  two fragments to remain distinct; keep the existing trailing-block-newline
+  and empty-fragment goldens.
+
+#### Low-severity / editorial
+
+* **R15-L1 — Reset's banner-preservation promise conflicts with the storage
+  banner lifecycle (`demo/demo-spec.md:113,176–178,265`).** FR-4 says Reset
+  does not clear or change error banners, and §8.5 requires banners to remain
+  untouched. However, FR-8 requires an immediate write on an option action
+  and requires the next successful write to clear a prior save-failure
+  banner. If a write fails transiently and Reset's write succeeds, the same
+  banner must both remain and disappear. **Suggested fix:** say Reset does
+  not dismiss banners directly, while its save and reconversion follow the
+  normal banner lifecycles. Apply that qualification to §8.5 and add an
+  acceptance case for Reset after a transient storage failure.
+
+**Total new findings: 2 (blocking 0, medium 1, low 1).**
+
+Reviewer's judgment: the specification is detailed and largely consistent,
+but the fidelity normalization rule can mask a visible text change. The other
+finding is a narrow contradiction in the Reset wording. Both findings remain
+open; this review records suggested changes without modifying the spec.
+
+Validation: `cargo build`, `cargo clippy -- --deny warnings`, and `cargo test`
+all passed. The targeted command `cargo test --manifest-path demo/Cargo.toml
+whitespace_only_text_dropped_at_fragment_root` also passed (1 test), confirming
+the current whitespace rule. These checks do not establish browser rendering,
+accessibility, or performance compliance; no browser suite was run. Only
+`demo/review.md` and Nurlybek's review entries in `demo/submission.md` were
+updated.
+
 ## Implementation review round 1 — open findings (awaiting processing)
 
 ```text
@@ -2317,3 +2391,181 @@ depth and line-ending notes; IR3-L4/L5 README Clippy and trigger accuracy;
 IR3-L6 deploy-safe concurrency) and 1 adjudicated (IR3-M1, blocked on
 Nurlybek's pending browser/Playwright tests). Zero blocking; no findings remain
 open from IR3 except the adjudicated browser-test work.
+
+## Implementation review round 4
+
+```text
+Review the implementation in demo/ by comparing it to demo/demo-spec.md.
+
+
+add it to:\
+submission.md, under **Implementation review rounds (Nurlybek Aimagambetov, leave main changes made column empty) and Last implementation review.**\
+review\.md, under implementation review number 3.
+
+use implementation round 4 for the title.
+```
+
+Reviewed by **OpenAI Codex (GPT-6)** for **Nurlybek Aimagambetov** with the
+exact prompt quoted above. Scope: the current implementation under `demo/`
+(`src/`, `index.html`, Cargo/Trunk configuration, benchmark corpus, README,
+and Playwright suite), plus `.github/workflows/demo-ci.yaml`, compared with
+`demo/demo-spec.md` FR-1–FR-8 and §5–§8. Earlier findings and their resolutions
+were read first; resolved specification rulings are not reopened. This is a
+review only: the findings below remain open, with suggested fixes.
+
+#### What checks out
+
+* Both conversion directions, all 15 `pulldown-cmark` flags, the 12 `htmd`
+  options, the Pure demo preset, and Faithful's disabled line-break control
+  match FR-1/FR-4. Empty parsed `skip_tags` omits the builder call.
+* The preview uses the `srcdoc` DOM property, `sandbox=""`, its accessible
+  title, and `referrerpolicy="no-referrer"`. `preview.rs` parses fragments,
+  strips the specified elements and target attributes iteratively, and
+  injects the required CSP followed by the demo's own base element. Source
+  and fidelity text use ordinary Leptos text nodes.
+* HTML conversion parses once, checks the parsed tree's depth before
+  `tree_to_markdown`, and has native boundary/shape tests. Faithful fidelity
+  uses fixed tables/math round-trip flags, canonicalizes both sides, and
+  bounds the changed token middle before diffing. The storage controller
+  validates the versioned schema and tests quota, external-write, and
+  crash-marker transitions. The UI wiring defects below are separate from
+  these passing module tests.
+* The previously missing Playwright matrix and axe scans now exist:
+  `demo-ci.yaml:106–154` runs Chromium, Firefox, and WebKit against the release
+  artifact, and deployment depends on those jobs. Axe covers five UI states;
+  the corpus timing suite reads all four committed documents and exercises
+  HTML in both Pure and Faithful modes. Manifest byte sizes match the files:
+  19,859; 20,019; 20,060; and 70,545 bytes. The release profile, pinned Trunk
+  tools, public project path, and strict gzip-size gate match §6/§7.
+
+**Carried forward — IR3-M1 is only partly addressed.** The new matrix, axe
+scans, and corpus measurements close those portions. Deliverable 3 still
+requires headless-Chromium `wasm-bindgen-test` runs in debug and release,
+release-wasm nesting proofs, crash-recovery runs with `demo-panic-test` in
+both profiles, and a malformed-input fuzz corpus. `demo/Cargo.toml:1–52`
+contains no `wasm-bindgen-test` dependency; `demo-ci.yaml:35–169` has no such
+jobs or feature-enabled test builds. `demo/README.md:103–120,203–214`
+correctly describes the missing wasm suite. Finish these remaining jobs and
+fixtures before treating IR3-M1 as closed; this is an existing finding, not
+counted again below.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+* **IR4-M1 — Panic disables an empty container instead of the application
+  (`demo/src/main.rs:21`; `demo/index.html:219`;
+  `demo/src/panic_hook.rs:83–88`).** The static `#app-root` is empty, but
+  `mount_to_body(app::App)` appends the application to `<body>`, outside that
+  element. The panic hook sets `inert` only on the empty div, leaving the
+  actual mode controls, editor, tabs, samples, and options outside the inert
+  subtree. The overlay covers them visually, but FR-7 requires all controls
+  to become permanently inoperable; moving focus and `aria-modal` do not make
+  those siblings inert. The intended `#app-root` layout rules also miss the
+  application. **Suggested fix:** mount `App` into the existing `#app-root`,
+  keeping the crash overlay outside it, and test a deliberate panic in both
+  profiles by asserting every application control is within the inert root
+  and cannot receive keyboard focus.
+
+* **IR4-M2 — Reset or an option change can bypass the input-size ceiling
+  after the first oversized edit (`demo/src/app.rs:563–576,674,705,343–348`;
+  `demo/src/engine.rs:342–350,365–379`).** On the first transition above
+  100,000 bytes, the editor handler updates the UI buffer but calls only
+  `engine.on_limit_entered()`, leaving the engine's buffer mirror at its
+  previous in-range value. Reset or an option change then schedules using
+  that old length; conversion reads the oversized UI buffer instead. In
+  Markdown → HTML mode there is no second input-size check at dispatch, so
+  100,001 bytes convert, refill the cleared output, and clear the size
+  banner. An isolated native reproduction confirmed this sequence.
+  **Suggested fix:** synchronize the engine buffer on every edit, including
+  the first oversized one, and enforce the input ceiling against the actual
+  dispatched buffer before either conversion path. Add an app-level
+  regression for paste-over-limit followed by Reset, an option change, and
+  switching away/back; output must remain empty until input is in range.
+
+* **IR4-M3 — Invalid output remains copyable during the debounce window
+  (`demo/src/app.rs:554–583,663–676,814–819,1050–1055`;
+  `demo/src/engine.rs:342–345`).** Edits and option changes invalidate only
+  the engine's internal `output_valid`; the UI's separate `ModeOutput.valid`
+  stays true until a commit or clear. Both the button's disabled predicate
+  and `on_use_output` consult that stale UI flag. After a successful
+  conversion, change a >2,000-byte buffer and click the button before its
+  250 ms conversion: the previous Source is copied into the other mode and
+  the pending conversion is cancelled by the switch. This violates FR-2's
+  explicit invalid-output guard. An isolated native reproduction copied the
+  stale result and switched modes. **Suggested fix:** invalidate the reactive
+  output on every buffer/option change and check the same authoritative
+  validity in the click handler. Test that the button remains disabled
+  between an edit/option change and the matching successful commit.
+
+* **IR4-M4 — Cross-mode sample Undo snapshots the wrong buffer
+  (`demo/src/app.rs:757–761`; `demo/src/samples.rs:275–292,355–358`).**
+  `on_sample_click` passes the current mode's buffer to `SampleState::load`,
+  whose contract requires the target mode's buffer. With distinct Markdown
+  and HTML buffers, click Inline HTML while in Markdown → HTML, then Undo:
+  the HTML buffer becomes the Markdown buffer's old text, losing the HTML
+  text the sample replaced. If the Markdown buffer is empty, no Undo is
+  offered even when non-empty HTML was overwritten. An isolated native
+  reproduction restored `Saved Markdown` instead of `<p>Saved HTML</p>`.
+  **Suggested fix:** resolve the sample's target mode before taking the
+  snapshot and pass that mode's buffer. Add an app/Playwright case for the
+  §8.5 cross-mode Inline HTML action with distinct buffers, including an
+  empty current buffer and a non-empty target buffer.
+
+* **IR4-M5 — Performance tests do not enforce the required end-to-end,
+  startup, or keystroke-jank budgets
+  (`demo/e2e/performance.spec.ts:14–32,35–94`;
+  `demo/e2e/fixtures.ts:22–31`; `demo/playwright.config.ts:17`).** Every timing
+  assertion reads only `htmd:convert`, which ends when synchronous conversion
+  work returns (`demo/src/app.rs:332–336`). It excludes scheduling/debounce,
+  reactive DOM updates, and preview loading. The suite therefore does not
+  enforce the ≤2 kB 100 ms keystroke-to-render bound, the corpus 400 ms
+  end-to-end bound, or the 1500 ms initialization bound (§6, §8.3). It also
+  has no Long Tasks observer/assertion for keystroke handling, as §8.3
+  requires; retaining traces only on failures does not automatically verify
+  successful Firefox/WebKit runs. This is missing validation, not evidence
+  that the runtime actually exceeds those budgets. **Suggested fix:** retain
+  the compute measures, add timing from the input event to the matching
+  preview load/paint and from navigation start to conversion-ready, and add
+  Chromium Long Tasks assertions with conversion intervals distinguished
+  from keystroke handling. Record the Firefox/WebKit trace/manual jank pass.
+
+#### Low-severity / editorial
+
+* **IR4-L1 — Skip-tags typing cancels its own 500 ms save debounce
+  (`demo/src/app.rs:681–689,663–672`;
+  `demo/src/storage.rs:388–390,410–419`).** The input handler first calls
+  `on_skip_tags_edit`, correctly arming the text-save timer, then immediately
+  calls `on_options_changed`, whose `set_options` flush cancels that timer
+  and writes synchronously. Each keystroke therefore serializes and saves
+  the whole workspace, contrary to FR-4:108's explicit 500 ms save rule.
+  An isolated native probe of this call chain observed one write before any
+  timer fired. **Suggested fix:** trigger engine invalidation/reconversion
+  separately for skip-tags text edits, leaving persistence on
+  `on_skip_tags_edit`; ordinary checkbox/select interactions should retain
+  their immediate flush. Test the app's handler chain, since the existing
+  controller-only debounce test does not exercise the extra flush.
+
+**Total new findings: 6 (blocking 0, medium 5, low 1).** IR3-M1 remains
+partly outstanding separately. All six new findings await processing.
+
+Reviewer's judgment: the core conversion modules and new browser-test
+infrastructure cover much of the specification. The main remaining defects
+are in the application wiring: terminal inertness, enforcement of the input
+ceiling, output validity, and cross-mode Undo. Passing module tests do not
+establish these UI contracts.
+
+Validation: root `cargo build`, `cargo clippy -- --deny warnings`, and
+`cargo test` all passed. The demo's `cargo test --locked --manifest-path
+demo/Cargo.toml -- --quiet` passed with **173 passed, 0 failed, 2 ignored**
+(`RUST_MIN_STACK=16777216`); its locked wasm32 Clippy command with warnings
+denied also passed. Four focused specification assertions in an isolated
+copy under `demo/target/` failed as described in IR4-M2/M3/M4/L1; the tracked
+Rust sources were not edited. The root/container mismatch was checked
+against the pinned Leptos `mount_to_body` implementation. Browser tests,
+Trunk, the gzip artifact check, and manual accessibility/performance passes
+were not run: Node/npm and Trunk are unavailable on this shell's PATH. Only
+`demo/review.md` and Nurlybek's implementation-review entries in
+`demo/submission.md` were updated.
