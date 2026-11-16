@@ -3,6 +3,12 @@ name = "htmd-demo"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# FR-7:148 / Deliverable 3: opt-in toolbar panic button used to verify
+# the crash overlay in debug and release builds; compiled out of the
+# shipped Pages build.
+demo-panic-test = []
+
 [dependencies]
 console_error_panic_hook = "0.1"
 htmd = { path = "../" }
