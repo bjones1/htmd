@@ -5,10 +5,11 @@ use htmd::options::{
     BrStyle, BulletListMarker, CodeBlockFence, CodeBlockStyle, HeadingStyle, HrStyle,
     LinkReferenceStyle, LinkStyle, TranslationMode,
 };
+use serde::{Deserialize, Serialize};
 
 /// The 15 `pulldown_cmark::Options::ENABLE_*` flags of pulldown-cmark 0.13,
 /// one sidebar checkbox each.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CmarkFlags {
     pub tables: bool,
     pub footnotes: bool,
@@ -81,21 +82,103 @@ impl CmarkFlags {
     }
 }
 
+// The `htmd` option enums live in the library crate, which does not
+// depend on serde. These remote-derive mirrors plug into the fields of
+// [`HtmdOptions`] via `#[serde(with = ...)]` (serde's supported way to
+// (de)serialize foreign types for foreign traits), so FR-8's stored
+// schema can embed `HtmdOptions` without duplicating its field list or
+// touching the library crate. Unit variants serialize as their names,
+// e.g. `"Atx"`, matching FR-4's option spellings.
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "HeadingStyle")]
+enum HeadingStyleDef {
+    Atx,
+    Setex,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "HrStyle")]
+enum HrStyleDef {
+    Dashes,
+    Asterisks,
+    Underscores,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "BrStyle")]
+enum BrStyleDef {
+    TwoSpaces,
+    Backslash,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "CodeBlockStyle")]
+enum CodeBlockStyleDef {
+    Indented,
+    Fenced,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "CodeBlockFence")]
+enum CodeBlockFenceDef {
+    Tildes,
+    Backticks,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "BulletListMarker")]
+enum BulletListMarkerDef {
+    Asterisk,
+    Dash,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "LinkStyle")]
+enum LinkStyleDef {
+    Inlined,
+    InlinedPreferAutolinks,
+    Referenced,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "LinkReferenceStyle")]
+enum LinkReferenceStyleDef {
+    Full,
+    Collapsed,
+    Shortcut,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "TranslationMode")]
+enum TranslationModeDef {
+    Pure,
+    Faithful,
+}
+
 /// The 12 options of `htmd::options::Options`, one sidebar control each;
 /// `Default` equals the crate defaults.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct HtmdOptions {
+    #[serde(with = "HeadingStyleDef")]
     pub heading_style: HeadingStyle,
+    #[serde(with = "HrStyleDef")]
     pub hr_style: HrStyle,
+    #[serde(with = "BrStyleDef")]
     pub br_style: BrStyle,
+    #[serde(with = "LinkStyleDef")]
     pub link_style: LinkStyle,
+    #[serde(with = "LinkReferenceStyleDef")]
     pub link_reference_style: LinkReferenceStyle,
+    #[serde(with = "CodeBlockStyleDef")]
     pub code_block_style: CodeBlockStyle,
+    #[serde(with = "CodeBlockFenceDef")]
     pub code_block_fence: CodeBlockFence,
+    #[serde(with = "BulletListMarkerDef")]
     pub bullet_list_marker: BulletListMarker,
     pub ul_bullet_spacing: u8,
     pub ol_number_spacing: u8,
     pub preformatted_code: bool,
+    #[serde(with = "TranslationModeDef")]
     pub translation_mode: TranslationMode,
 }
 

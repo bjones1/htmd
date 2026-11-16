@@ -26,19 +26,21 @@ const FORCED_DEADLINE_MS: u64 = 900;
 const MAX_INPUT_BYTES: usize = 100_000;
 
 /// Time source and timer registry. Production code wraps `web_sys`
-/// timers; tests use a manual clock.
-pub trait Clock {
+/// timers; tests use a manual clock. The event vocabulary is a type
+/// parameter so other subsystems (FR-8 storage debouncing) reuse this
+/// one abstraction instead of defining their own clock.
+pub trait Clock<Ev = EngineEvent> {
     /// Milliseconds since an arbitrary origin.
     fn now_ms(&self) -> u64;
     /// Fire `event` once, `delay_ms` from now; cancelled tokens never fire.
-    fn schedule(&self, delay_ms: u32, event: EngineEvent) -> TimerToken;
+    fn schedule(&self, delay_ms: u32, event: Ev) -> TimerToken;
     /// Retract a scheduled event.
     fn cancel(&self, token: TimerToken);
 }
 
 /// Opaque handle to a scheduled [`Clock`] event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TimerToken(u64);
+pub struct TimerToken(pub(crate) u64);
 
 /// Timer-fired events re-entering the engine via [`Engine::on_event`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
