@@ -17,7 +17,7 @@ Team members:
 
 Review rounds are numbered across the whole project. Rounds 1–3 were the
 draft's spec reviews, round 4 was the instructor's review of the draft pull
-request, and rounds 5–10 were the final submission's spec reviews.
+request, and rounds 5–11 were the final submission's spec reviews.
 Implementation review rounds are numbered separately.
 
 The spec's Build constraint publishes to the team's fork
@@ -286,17 +286,69 @@ GitHub userid: adeemss
 #### Contributions
 
 Ran implementation review rounds 1 and 2 and made the resulting fixes to
-`playground/` and its workflow; reorganized this file by team member,
-following the template, and corrected its draft and final sections.
+`playground/` and its workflow; ran spec review round 11; reorganized this
+file by team member, following the template, and corrected its draft and
+final sections.
 
 #### Specification review rounds
 
-None in the final submission; Ademi's spec review (round 2) was part of the
-draft.
+| Round | Findings | Main changes made |
+| --- | --- | --- |
+| 11 | 6 spec findings (2 low, 4 trivial), plus 5 on this file | No spec changes: confirmed with `cargo package --list` that the Pages workflow and this folder enter htmd's crate, contradicting "does not change … its published package"; Share after an invalid link is still unspecified; both are round 10's low findings, still open; struck through the wrong size figure in Ademi's round 2 quote. |
 
 #### Last specification review
 
-None in the final submission.
+Prompting Claude Opus 5.5, in Claude Code, with:
+
+> Perform one last specification review on my behalf. Assess the
+> @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md and
+> @pulldown-cmark-htmd-demo-2/submission.md against
+> @pulldown-cmark-htmd-demo-2/acceptance-criteria.md and
+> @pulldown-cmark-htmd-demo-2/submission-template.md .
+
+produced the following output. No finding was judged incorrect, so nothing
+is struck through:
+
+> **Spec unchanged since round 9.** Every Expected results row, the Round
+> trip and both acceptance criteria pass as tests in
+> `playground/engine/tests/spec.rs`.
+>
+> **Low, still open from round 10:**
+>
+> 1. "Does not change … its published package" (Constraints) is false:
+>    `cargo package --list` at the repository root lists
+>    `.github/workflows/playground.yaml` and every file in
+>    `pulldown-cmark-htmd-demo-2/`. Suggested wording: "does not change
+>    htmd's library code or its existing build, lint, and test results".
+> 2. What Share copies after an invalid link (Permalinks) is unspecified;
+>    the implementation copies the page's current state. Suggested: "After
+>    an invalid link, Share first records the state the page shows."
+>
+> **Trivial, left as they are:**
+>
+> 3. "Nothing the user does … adds an entry to the browser history", yet
+>    Start over is a navigation; the implementation replaces the entry, which
+>    satisfies the rule.
+> 4. pulldown-cmark resolves to 0.13.6 while the Expected results name
+>    0.13.4; every row still passes, and the header shows the version used.
+> 5. "While conversion is paused, every tab keeps its last content" and the
+>    empty output after a large direction switch or address are compatible
+>    only because the latter is stated as an exception.
+> 6. Earlier trivial points: "valid tag name", the 10 ms target's hardware,
+>    the address after a crash, the fork's Pages address, a long Skip tags
+>    text exceeding the address limit, and Reference style needing a
+>    referenced link to change a preset.
+>
+> **Verdict:** with the two one-line fixes above, only trivial findings
+> remain.
+>
+> **submission.md:** `implementation-review.md`, linked from Ademi's
+> section, was deleted in commit `906f35e`; Ademi's round 2 quote gives the
+> site as about 871 KB with gzip, which was the raw wasm before
+> `wasm-bindgen` (CI measures 576,635 bytes); the draft's strikethrough
+> marks fixed findings, the opposite of the assignment's meaning; Daniil's
+> final spec table includes round 4, a review of the draft; the full outputs
+> of rounds 2, 3 and 7 are not saved.
 
 #### Implementation review rounds
 
@@ -313,13 +365,14 @@ Prompting Claude Opus 5.5, in Claude Code, in Russian; in English:
 > @pulldown-cmark-htmd-demo-2/htmddemo2-spec.md and fix the problems found.
 
 produced the round 2 review, in full in
-[implementation-review.md](implementation-review.md). No finding was judged
-incorrect, so nothing is struck through:
+[implementation-review.md](implementation-review.md); strikethrough marks a
+figure found incorrect in spec review round 11 (it measured the raw wasm
+before `wasm-bindgen`; CI measures the site at 576,635 bytes with gzip):
 
 > **Checks run.** `cargo test --locked` passes 32 tests, including every
 > Expected results row, the Round trip and both acceptance criteria; clippy
-> gives no warnings natively or for wasm32; the site is about 871 KB with
-> gzip, under the 1 MB limit; the htmd library is unchanged.
+> gives no warnings natively or for wasm32; ~~the site is about 871 KB with
+> gzip~~, under the 1 MB limit; the htmd library is unchanged.
 >
 > **Trivial points, left as they are:**
 >
