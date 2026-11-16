@@ -732,3 +732,90 @@ its ends lie in math mode, where whitespace has no significance, and condition 3
 catches the one significant trailing whitespace, a control space. LaTeX reads a
 single newline as a space, and math mode ignores the space which replaces a
 comment, so only a comment in text mode renders differently (see step 1).
+
+### Subscript
+CommonMark has no subscript syntax. With pulldown-cmark's subscript extension
+(`Options::ENABLE_SUBSCRIPT`), a single-tilde pair such as `~a~` represents
+subscript when its delimiters satisfy pulldown-cmark's flanking rules. For
+details, see [Emphasis and strong emphasis](#emphasis-and-strong-emphasis): a
+single `~` follows the rules for `_`, not `*`, and cannot delimit text within a
+word, so `H~2~O` is not parsed as subscript. When this extension is enabled,
+literal tildes in ordinary Markdown text, including text outside `<sub>`, must
+be escaped as `\~`. The rules below describe proposed output, not htmd's current
+output: in Faithful mode, htmd currently preserves `<sub>` as HTML. Enabling
+`Options::ENABLE_SUBSCRIPT` does not enable strikethrough; a double tilde,
+`~~a~~`, is strikethrough only when `Options::ENABLE_STRIKETHROUGH` is enabled.
+
+Translating `<sub>` to tildes depends on the characters on both sides of each
+delimiter. Using the notation of the emphasis section, consider `1~233..34~5`,
+where `1` and `5` are the characters of the emitted Markdown just before and
+after the element, after escaping and raw HTML (a missing character at the
+start or end of a line counts as whitespace), `2` and `4` are the first and
+last characters of its content, and `3` is the rest of the content. To encode:
+
+1. If `2` or `4` is whitespace, encode that character as a numeric character
+   reference, such as `&#32;` for a space or `&#160;` for a no-break space; a
+   subscript cannot begin or end with whitespace.
+2. If `1` is neither whitespace nor punctuation, encode `1` as a character
+   reference, so the opening `~` follows the `;` of the reference. Likewise, if
+   `5` is neither whitespace nor punctuation, encode `5`, so the closing `~` is
+   followed by the `&` of the reference. For example, `H<sub>2</sub>O` becomes
+   `&#72;~2~&#79;`. A literal `~` next to the element is safe, since it is
+   escaped as `\~`; but if `1` or `5` is a `~` delimiter of another element,
+   such as the end of a strikethrough, serialize the element as HTML, because
+   the tildes would join into one longer run (`~~x~~~a~` is literal text).
+3. Escape every literal `~` in the content as `\~`.
+
+An empty subscript has no such encoding: `~~` is a strikethrough delimiter, not
+a subscript holding nothing.
+
+Step 4 of the approach below says when these steps apply.
+
+An empty or whitespace-only subscript keeps its tags and its whitespace
+(subject to the general whitespace collapsing rules). Removing the tags loses
+an element; delimiters around no content do not encode that element. These
+checks precede delimiter selection, as in the emphasis approach.
+
+Nested subscripts keep every `<sub>` wrapper. Encoding both levels of
+`<sub><sub>a</sub></sub>` as single tildes would produce `~~a~~`, which cannot
+preserve the two subscript levels. As a conservative design choice, a subscript
+containing a comment keeps its own tags, and a subscript with a subscript
+ancestor keeps its tags too. Children are still translated in an inline context
+under their own rules: an `<em>` child can become `*a*` inside the retained
+`<sub>` wrapper. This is raw HTML inline processing, not a verbatim HTML block.
+Adjacent subscripts retain separate wrappers, following the adjacent-inline rule
+in the emphasis section.
+
+Approach:
+
+The following specifies proposed Faithful output with `ENABLE_SUBSCRIPT`
+enabled in the reader. `TranslationMode::Pure` ignores attributes, translates
+children in an inline context, moves leading and trailing whitespace outside the
+subscript, and surrounds the remaining content with single `~` delimiters.
+If no content remains, it drops the element rather than writing `~~`.
+Adjacent subscripts are combined under the adjacent-inline rule in the emphasis
+section.
+
+1. Retain the opening and closing `<sub>` tags, including attributes, if the
+   element has any attribute, has a comment child, has a `<sub>` ancestor, or
+   belongs to a run of adjacent subscripts. Translate children in an inline
+   context under the general raw HTML inline rules.
+2. Otherwise, translate children in an inline context using the normal inline
+   whitespace rules. If the result is empty or begins or ends with Unicode
+   whitespace, retain the tags. Do not trim or move this whitespace outside the
+   element. This includes whitespace-only content and deliberately favors HTML
+   over special encodings.
+3. Escape literal text in the translated content as ordinary Markdown text,
+   including literal `~` as `\~`. This tilde escaping also applies to ordinary
+   text outside subscripts and between retained raw HTML inline tags; literal
+   contexts follow their own rules. Escaping does not apply to generated
+   subscript delimiters.
+4. Retain the HTML tags whenever the characters outside the element are
+   unknown. This conservative rule avoids emitting delimiter runs whose parsing
+   depends on unavailable neighboring output.
+
+A future implementation with access to neighboring output may instead check
+the subscript extension's single-tilde flanking rules against the emitted
+characters, including escapes and raw HTML tags, and emit `~` delimiters only
+when both checks pass. Missing outside characters at an inline container
+boundary would act as whitespace.
