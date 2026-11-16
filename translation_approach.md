@@ -792,6 +792,7 @@ The following specifies proposed Faithful output with `ENABLE_SUBSCRIPT`
 enabled in the reader. `TranslationMode::Pure` ignores attributes, translates
 children in an inline context, moves leading and trailing whitespace outside the
 subscript, and surrounds the remaining content with single `~` delimiters.
+If no content remains, it drops the element rather than writing `~~`.
 Adjacent subscripts are combined under the adjacent-inline rule in the emphasis
 section.
 
@@ -805,9 +806,10 @@ section.
    element. This includes whitespace-only content and deliberately favors HTML
    over special encodings.
 3. Escape literal text in the translated content as ordinary Markdown text,
-   including literal `~` as `\~`. This tilde escaping also applies to ordinary text outside subscripts and
-   between retained raw HTML inline tags; literal contexts follow their own
-   rules. Escaping does not apply to generated subscript delimiters.
+   including literal `~` as `\~`. This tilde escaping also applies to ordinary
+   text outside subscripts and between retained raw HTML inline tags; literal
+   contexts follow their own rules. Escaping does not apply to generated
+   subscript delimiters.
 4. Retain the HTML tags whenever the characters outside the element are
    unknown. This conservative rule avoids emitting delimiter runs whose parsing
    depends on unavailable neighboring output.

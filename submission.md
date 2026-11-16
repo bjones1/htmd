@@ -72,6 +72,8 @@ they do not establish that the proposed Subscript encoding is implemented.
 | ----- | -------- | ----------------- |
 | 1 (Codex self-review) | 1 accepted | Clarified that selecting HTML in an earlier step prevents later delimiter selection; escaping still applies to the content. |
 | 2 (Codex self-review) | 0 additional static findings | Checked the added table rows against the final algorithm and the existing inline/adjacency rules. Runtime validation was not performed. |
+| 3 (Codex review) | 1 accepted | Specified that Pure drops an empty subscript after moving its edge whitespace, avoiding the non-subscript `~~` form. |
+| 4 (Codex review) | 0 serious findings | Confirmed the final Pure and Faithful rules, including the conservative fallback for unavailable neighboring output. |
 
 ## Last review
 
@@ -164,22 +166,19 @@ produced the following output:
 
 ### Arsen Zhanserkenov
 
-This was a Codex self-review within the editing session, not an independent
-Copilot Fusion review. The user requested completion of Arsen's part; no
-separate review prompt or external reviewer response is claimed.
+Prompting Codex (GPT-5) with `Review only Arsen Zhanserkenov's current changes
+in the Subscript section of translation_approach.md: the empty and
+whitespace-only handling, nesting explanation, and Approach rules for
+TranslationMode::Pure and TranslationMode::Faithful. Check them for internal
+contradictions and against the existing "Emphasis and strong emphasis" rules.
+Do not edit any files. List serious problems as numbered findings.` produced:
 
-Scope: the empty/whitespace-only and nesting explanations, the added table
-rows, and the Approach steps in the Subscript section. The review compared
-them with the document's raw HTML inline and emphasis rules and inspected
-[pulldown-cmark 0.13.4 delimiter checks](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2138-L2223).
-
-1. Accepted and fixed: make the HTML fallback terminal for delimiter selection,
-   while still applying text escaping to content inside retained tags.
-
-Final static pass: no additional findings in the added material. Nested and
-adjacent subscripts preserve wrappers; element children use the stated
-conservative fallback; the algorithm explicitly describes proposed Faithful
-behavior. `git diff --check` passed. The Markdown examples have not been run
-through pulldown-cmark in this environment, and the subsequent project build checks passed as recorded above.
-If the assignment requires an independent Copilot review, that review is still
-outstanding.
+> No numbered findings.
+>
+> Pure mode now ignores attributes, moves edge whitespace outside the generated
+> single-tilde delimiters, combines adjacent subscripts under the documented
+> adjacent-inline rule, and drops an element with no remaining content instead
+> of emitting `~~`. Faithful mode retains tags for empty or whitespace-edge
+> content, comments, nested subscripts, attributes, adjacent subscripts, and
+> unavailable neighboring output. The future delimiter check is explicitly
+> separated from the current conservative fallback.
