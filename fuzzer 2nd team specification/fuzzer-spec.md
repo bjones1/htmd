@@ -1,23 +1,23 @@
-﻿HTMD Round-Trip Testing and Fuzzing Specification
+HTMD Round-Trip Testing and Fuzzing Specification
 =================================================
 
 1\. Purpose
 -----------
 
-This document defines `htmd`'s regression and seeded-fuzzing strategy. The
-round-trip guarantee is limited to section 2's scope.
+This document defines `htmd` regression and seeded fuzzing. The round-trip
+guarantee is limited to section 2.
 
 2\. Scope and Guarantee
 -----------------------
 
-The guarantee applies only to:
+The round-trip guarantee applies only to:
 
 * HTML-namespace elements
 * body-fragment inputs
 * `Faithful` mode
 * constructs not listed in the known-loss allowlist
 
-Everything else is out of scope, not a passing case.
+Everything else is out of scope and must not be treated as a passing case.
 
 3\. Testing objectives and failure classes
 ------------------------------------------
@@ -45,20 +45,21 @@ Each result is assigned exactly one category:
 | Stale Allowlist Entry   | Allowlist no longer matches real cases          | Warning        |
 | Isolation Setup Failure | Resource-isolation self-test fails              | Abort          |
 
-`Out of Scope` reports a generator defect, not a conversion defect: section 6
-requires generated input to stay in the HTML namespace, so `htmd` could not be
-at fault. Count it separately from conversion failures.
+`Out of Scope` indicates a generator defect: section 6 requires
+HTML-namespace input. Count it separately from conversion failures.
 
-The expected-error list starts empty. Add a case only with a documented reason
-for expecting `htmd` to return `Err` and a predefined test asserting it.
-Generated valid HTML is not expected to fail.
+Expected-error list: starts empty. Add a case only with a documented reason to
+expect `htmd` to return `Err` and a predefined test asserting it. Generated
+valid HTML is not expected to fail.
 
 4\. Round-trip oracle
 ---------------------
 
-Compare parsed, normalized DOMs, not raw strings: attribute order, entity
-spelling, void-tag formatting, and parser-added wrappers may differ despite
-equivalent semantics.
+Raw string comparison is invalid because attribute order, entity spelling,
+void-tag formatting, and parser-added wrappers can differ despite equivalent
+semantics.
+
+The oracle compares parsed, normalized DOMs.
 
 Pipeline:
 
@@ -76,10 +77,11 @@ flowchart LR
 Steps:
 
 1. Parse `HTML_in` as a body fragment with `html5ever`.
-2. Convert the raw HTML with `htmd`.
-3. Parse the Markdown with `pulldown-cmark` using the selected profile.
+2. Convert `HTML_in` with `htmd`.
+3. Parse the generated Markdown with `pulldown-cmark` using the selected
+   profile.
 4. Parse the generated HTML with `html5ever` in the same mode.
-5. Normalize and compare both DOMs.
+5. Normalize both DOMs and compare them.
 
 Only body-fragment children are compared; generated `html`, `head`, and `body`
 wrappers are ignored.
@@ -87,8 +89,8 @@ wrappers are ignored.
 5\. Markdown parser profiles
 ----------------------------
 
-`pulldown-cmark` is pinned to the version in `Cargo.lock`, and every failure
-includes the exact version.
+Pin `pulldown-cmark` to the version in `Cargo.lock`; include the exact version
+in every failure.
 
 | Profile | Options                                       | Input type                                            |
 | ------- | --------------------------------------------- | ----------------------------------------------------- |
@@ -97,18 +99,17 @@ includes the exact version.
 
 Tables (including captions) qualify generated round-trip cases as GFM-only.
 `htmd` does not translate task-list syntax: an HTML checkbox input in a list
-item is emitted as HTML, testing only fallback preservation. A parser-only
+item is emitted as HTML and tests only fallback preservation. A parser-only
 Markdown task-list fixture verifies the pinned `pulldown-cmark` option.
 
-`del` and `s` have no handler in `src/element_handler/`; `Faithful` mode emits
+`del` and `s` lack handlers in `src/element_handler/`, so `Faithful` mode emits
 them as raw HTML. They are not GFM-only generated constructs: tests cover HTML
 preservation, not strikethrough translation. A parser-only fixture may verify
-that the pinned GFM profile renders Markdown strikethrough as expected.
+that the pinned GFM profile renders Markdown strikethrough.
 
-GitHub math is not part of GFM. Parser-only fixtures assert the exact HTML
-rendered by the pinned `pulldown-cmark` math extension. Exclude math from the
-round-trip equality corpus unless the oracle defines how that HTML corresponds
-to source math.
+GitHub math is not GFM. Parser-only fixtures assert the exact HTML rendered by
+the pinned `pulldown-cmark` math extension. Exclude math from round-trip
+equality unless the oracle defines how rendered HTML corresponds to source math.
 
 A generated case belongs to exactly one profile:
 
@@ -116,9 +117,9 @@ A generated case belongs to exactly one profile:
 * `gfm` generator forces at least one GFM-only construct
 * no case is run under both profiles
 
-A predefined snapshot may cover GFM in `core` mode for single-pass Markdown
-checks, but not round-trip equality when the parser profile cannot reproduce
-those constructs.
+A predefined snapshot may check GFM under `core` for single-pass Markdown, but
+cannot assert round-trip equality if that parser profile cannot reproduce the
+constructs.
 
 6\. DOM model and normalization
 -------------------------------
@@ -154,11 +155,11 @@ Normalization passes run in order on both trees:
    separate `p` children and other block children remain distinct and ordered.
 6. Remove empty text nodes and merge adjacent text siblings.
 
-Compare opaque elements exactly, without normalizing internal whitespace. `pre`
-and `textarea` are always opaque. `code` is opaque only when `preformatted_code`
-is enabled. Section 8 inherits `preformatted_code: false` from
-`Options::default()`, which does not preserve whitespace inside inline `<code>`;
-unconditional opacity would report specified behavior as a mismatch.
+Compare opaque elements exactly, without normalizing internal whitespace.
+`pre` and `textarea` are always opaque; `code` is opaque only when
+`preformatted_code` is enabled. Section 8 inherits `preformatted_code: false`
+from `Options::default()`, so inline `<code>` whitespace is not preserved;
+treating `code` as always opaque would report specified behavior as a mismatch.
 
 Block vs. inline:
 
@@ -172,12 +173,14 @@ Block vs. inline:
   `cite`, `code`, `data`, `del`, `dfn`, `em`, `i`, `img`, `input`, `ins`, `kbd`,
   `label`, `mark`, `meter`, `output`, `progress`, `q`, `ruby`, `s`, `samp`,
   `select`, `small`, `span`, `strong`, `sub`, `sup`, `textarea`, `time`, `u`,
-  and `var`. Classify other elements by their HTML content model; generated
-  cases use only the listed inventory.
-* Inline runs are maximal sequences of non-block children in a block container.
-* For the list-item pass, inline-content children are text, comments, and inline
-  elements. Group maximal direct-child runs after removing whitespace-only
-  block-boundary text using the existing boundary rule.
+  and `var`. Elements outside these lists use their HTML content model;
+  generated cases use only the listed inventory.
+* Inline runs are maximal sequences of non-block children within a block
+  container
+* For the list-item pass above, inline-content children are text, comments, and
+  inline elements. Form maximal runs of these direct children; whitespace-only
+  block-boundary text is removed by the existing boundary rule before those runs
+  are formed.
 
 Remove whitespace-only runs at block boundaries; preserve semantically
 meaningful inline boundary spaces.
@@ -201,7 +204,7 @@ meaningful inline boundary spaces.
 `Faithful` mode is the fuzzing target and aims to preserve supported round-trip
 semantics; it does not promise fully lossless conversion.
 
-`Pure` mode targets readable minimal Markdown and may discard data. Check it
+`Pure` mode produces readable minimal Markdown and may discard data; check it
 with direct Markdown assertions, not round-trip equality.
 
 Default effective options used in tests:
@@ -216,21 +219,21 @@ let options = Options {
 };
 ```
 
-Other fields inherit from `Options::default()` in the pinned `htmd` version. Log
-all effective options with every failure.
+Other fields inherit from `Options::default()` at the pinned `htmd` version.
+Log all effective options with every failure.
 
 Known-loss allowlist:
 
-* Starts empty.
-* Entries record the HTML pattern, observed diff, source, and status.
-* Matches must be narrow and programmatic.
-* A mismatch fails unless it matches an allowlist rule.
+* Starts empty
+* Each entry records the HTML pattern, observed diff, source, and status
+* Matches must be narrow and programmatic
+* A mismatch is a failure unless it matches an allowlist rule
 
 9\. Predefined tests
 --------------------
 
-Run predefined tests first; compare Markdown exactly. Use existing unit and
-integration tests as the regression corpus, adding snapshots only for uncovered
+Run predefined tests first and compare Markdown exactly. Use existing unit and
+integration tests as the regression corpus; add snapshots only for uncovered
 required behaviors. Maintain an inventory mapping each requirement to its
 assertion, and verify expected output against the pinned implementation.
 
@@ -253,7 +256,7 @@ Default CI seed plan:
 * Parser-only math and strikethrough fixtures are additional predefined checks,
   not part of the fuzz-case total
 
-Run each generated case with:
+Each generated case is run with:
 
 * panic guard via `catch_unwind`
 * wall-clock timeout (default 5s)
@@ -263,13 +266,13 @@ Run each generated case with:
 11\. Input generation
 ---------------------
 
-Byte-level mutation does not test `htmd`. `html5ever` recovers arbitrary bytes
-into a tree shaped by parsing rules rather than the input, so such a run
-compares two recoveries and reaches element handlers only by accident.
+Byte-level mutation does not test `htmd`: `html5ever` error recovery determines
+the tree shape from arbitrary bytes. Such a run compares two recovered trees
+and reaches element handlers only by accident.
 
-Instead, the generator builds and serializes a node tree. Every `valid` case is
-well formed by construction: tags balance, nesting follows each content model,
-and parsing reconstructs the intended tree.
+Instead, build and serialize a node tree. Every `valid` case is well formed:
+tags balance, nesting follows each element's content model, and parsing
+reconstructs the intended tree.
 
 ### 11.1 Case derivation
 
@@ -277,22 +280,17 @@ A case is deterministically identified by (master seed, case index):
 
 * Use `rand_chacha::ChaCha8Rng`, pinned in `Cargo.lock`. The algorithm is
   required; replacing it invalidates every stored seed.
-* Initialize each case's PRNG with `SeedableRng::seed_from_u64(master_seed)`,
-  then call `set_stream(case_index)`; case indices are zero-based. Use that
-  PRNG in sequence for all of the case's draws and retries.
-* Do not derive a case seed by arithmetic on the master seed and case index.
-  Adding them makes nearby master seeds repeat each other's cases: under the
-  default plan, master seeds 1, 2, 3, and 42 would produce only 1,041 distinct
-  cases out of 4,000 per combination.
+* Set each case seed to `master_seed.wrapping_add(case_index as u64)` and
+  initialize its PRNG with `SeedableRng::seed_from_u64`. Use this PRNG in
+  sequence for all case draws, including retries.
 * Record the generator version in every failure artifact. Increment it when
   changing the grammar, element tiers, or content domains below. Stored input is
   the definitive replay path; seed replay is valid only within one version.
 
 ### 11.2 Element tiers
 
-Derive the inventory from tag registrations in `src/element_handler/mod.rs`,
-grouped by translation or fallback path, not module. Generate these
-body-fragment elements:
+The inventory groups the body-fragment tag registrations in
+`src/element_handler/mod.rs` by translation or fallback path, not module:
 
 | Tier                      | Registered tags or structures                               | Coverage                                          |
 | ------------------------- | ----------------------------------------------------------- | ------------------------------------------------- |
@@ -304,34 +302,34 @@ body-fragment elements:
 | GFM table fallback        | A `table` containing `tfoot`                                | At least once per seed in `gfm`                   |
 
 `div` and `section` use the generic block fallback and serialize as HTML in
-`Faithful` mode. `q` and `input` use the inline HTML fallback; `q` has inline
-children and `input` is void. `tfoot` has no tag-specific registration; inside a
-table, the table handler falls back to HTML in `Faithful` mode because GFM
-cannot preserve a distinct footer.
+`Faithful` mode; `q` and `input` use the inline HTML fallback (`q` has inline
+children; `input` is void). None has tag-specific registration. `tfoot` also
+lacks registration; inside a table, the handler falls back to HTML in
+`Faithful` mode because GFM cannot preserve a distinct footer.
 
 Do not generate registered `html`, `head`, or `body` handlers: the generator
 builds body fragments, not document shells. Draw elements only where their
-content models allow: block children for block containers and fallbacks, inline
-children for block leaves and inline elements, table parts only under `table`,
-and `li` only under `ul` or `ol`.
+content models allow: block children for block containers/fallbacks, inline
+children for block leaves/inline elements, table parts only under `table`, and
+`li` only under `ul` or `ol`.
 
 Profile membership follows section 5. The `core` generator draws no table tier
 and no GFM-only construct; the `gfm` generator forces at least one.
 
 ### 11.3 Grammar and content models
 
-Generate body fragments with 1–8 top-level block children; the synthetic root is
-exempt from section 11.4's per-node child limit. Choose permitted elements and
-child counts uniformly from applicable choices, subject to per-seed coverage and
-the depth limit.
+Generate body fragments with 1–8 top-level block children; the synthetic root
+is exempt from section 11.4's child limit. Choose permitted elements and child
+counts uniformly from applicable choices, subject to per-seed coverage and the
+depth limit.
 
 The `core` profile can generate paragraphs, headings, lists, blockquotes,
 thematic breaks, code blocks, inline emphasis, code spans, links, images, hard
 line breaks, and HTML fallback elements. The `gfm` profile additionally
 generates tables, table captions, and task-list checkboxes. `del` and `s` may
 appear as HTML fallback probes but do not count toward the GFM-construct
-requirement. This inventory covers all registered handlers and explicit fallback
-probes; generate no unlisted elements.
+requirement. The inventory is complete for the registered handlers and explicit
+fallback probes in this section; no unlisted element is generated.
 
 Apply these content-model rules:
 
@@ -350,108 +348,49 @@ Apply these content-model rules:
 * All generated elements have matching closing tags unless they are HTML void
   elements. The serializer emits void elements without closing tags.
 
-Section 11.5 defines which attributes each element carries and their values.
+Require `href` for hyperlinks and `src` for images; images may also have `alt`.
+Section 11.5 defines valid values. Generate cases missing required attributes
+only as explicit fallback probes, not as valid link or image coverage.
 
 ### 11.4 Bounds
 
-Fix and log for every run:
+Every run fixes and logs:
 
 * maximum tree depth, default 6; root elements have depth 1
-* children per non-void element, default 1 to 4
+* maximum children per node, default 4
 * maximum text length per node, default 64 characters
 
-The depth bound is required because blockquote and list nesting is unbounded in
-the grammar and list translation depends on depth.
+The depth bound is required because blockquote and list nesting is unbounded and
+list translation depends on depth.
 
 ### 11.5 Attribute domain
 
-Attributes are part of the grammar. In `Faithful` mode a handler translates its
-element only when Markdown can express every attribute the element carries; an
-attribute outside the element's translatable set selects HTML serialization.
-The set differs per element:
+Attributes are part of the grammar. In `Faithful` mode, attributes a Markdown
+construct cannot preserve select HTML serialization. For every eligible tag,
+exercise attributed and unattributed forms at least once per seed. Attributes
+are not interchangeable across elements.
 
-| Element                                                 | Translated to Markdown when it carries                         |
-| ------------------------------------------------------- | -------------------------------------------------------------- |
-| `a`                                                     | `href`, optionally with `title`                                |
-| `img`                                                   | `src` and `alt`, optionally with a non-empty `title`           |
-| `ol`                                                    | no attributes, or `start` alone                                |
-| `code` inside `pre`                                     | no attributes, or `class` alone with a `language-<name>` token |
-| `p`, `h1`–`h6`, `ul`, `li`, `blockquote`, `hr`, `pre`   | no attributes                                                  |
-| inline `code`, `strong`, `b`, `em`, `i`                 | no attributes                                                  |
-| `table`, `thead`, `tbody`, `tr`, `th`, `td`             | no attributes                                                  |
-| `span`, `br`, `caption`, `div`, `section`, `q`, `input` | never; always serialized as HTML                               |
+Generate no attributes or one of the following:
 
-An attribute on any table part serializes the whole `table` as HTML. The last
-row includes tags whose registered handlers (section 11.2) never translate in
-`Faithful` mode: `br` and `caption` always serialize, and `span` translates only
-math, which section 5 excludes; do not generate the classes `math math-inline`
-or `math math-display`. A generator self-test (section 11.7) converts one
-translated and one serialized example for each row, so a handler change that
-moves this line fails a test instead of silently shifting coverage.
+* Global attributes: `id`, `class`, or `title`.
+* Element-specific attributes: `href` on `a`; `src` and `alt` on `img`;
+  `colspan` on `td`/`th`; `start` on `ol`; and `type="checkbox"` on `input`.
+* Empty-value cases only for attributes that permit empty values, such as
+  `class`, `title`, and `alt`.
 
-Draw each element in one of these forms, each at least once per applicable tag
-and seed:
-
-* Translatable: exactly a set the table allows. Cover every allowed set, so `a`
-  occurs with `href` alone and with both `href` and `title`.
-* Extra attribute: a translatable form plus one attribute outside the set,
-  which selects HTML serialization: `id`, `class`, or `title`, or `colspan` on a
-  table cell. Never-translated elements draw the unattributed form and the form
-  with one such attribute.
-* Edge: a form from the edge table below.
-
-Each attribute has its own value domain; choose uniformly within it:
-
-| Attribute                                | Values                                                                             | Path     |
-| ---------------------------------------- | ---------------------------------------------------------------------------------- | -------- |
-| `href` on `a`, `src` on `img`            | `https://example.test/page`, `dir/page.html`, `?a=b&c=d#e`, `a(b)`, `a*b_c`, empty | Markdown |
-| `title` on `a` or `img`                  | any non-empty value of section 11.6's pool                                         | Markdown |
-| `alt` on `img`                           | any value of section 11.6's pool, including empty                                  | Markdown |
-| `start` on `ol`                          | `2`, `3`, `42`, `999999999`                                                        | Markdown |
-| `class` on `code` inside `pre`           | `language-rust`, `language-py3`                                                    | Markdown |
-| `id` as an extra attribute               | any value of the pool's plain-word class                                           | HTML     |
-| `class` or `title` as an extra attribute | any value of the pool, including empty                                             | HTML     |
-| `colspan` on `td` or `th`                | `1`, `2`                                                                           | HTML     |
-| `type` on `input`                        | `checkbox`                                                                         | HTML     |
-
-No `colspan` value is translated: it is an HTML-path probe, not table coverage.
-Serialize attributes in the order drawn, translatable attributes first, with
-double-quoted values; escape `&` and `"` as `&amp;` and `&quot;`.
-
-Version 1 of the `href` and `src` domain excludes spaces, non-ASCII characters,
-and `[`, `]`, `\`, `<`, `>`, `"`, `|`, and `` ` ``. `pulldown-cmark`
-percent-encodes them when rendering, so under section 7's exact comparison they
-would mismatch on the renderer's encoding, not on `htmd`'s output. Add them
-together with a URL-equivalence rule in section 7.
-
-Edge forms sit at the boundary of what Markdown can express:
-
-| Edge form                                                       | Observed result                                                     |
-| --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `a` without `href`, with or without `title`                     | Element dropped; only its content is written                        |
-| `a` with `href` and an empty `title`                            | `title` dropped                                                     |
-| `img` without `alt`, or with an empty `title`                   | Kept as HTML                                                        |
-| `ol` with `start="1"`                                           | `start` dropped; the renderer omits a start of 1                    |
-| `ol` with `start` of `0`, `-3`, `abc`, or empty                 | Written as `1.`; the value is lost                                  |
-| `ol` with `start="1000000000"`                                  | Ten-digit number is not a list marker; the list becomes a paragraph |
-| `ul` with `start="3"`                                           | `start` dropped                                                     |
-| `code` inside `pre` with `class="language-rust extra"`          | `extra` dropped                                                     |
-| `code` inside `pre` with `class="plain"` or `class="language-"` | Kept as HTML                                                        |
-
-Count edge forms separately from translated-path coverage: an `a` without
-`href` is not link coverage. The results were observed with `htmd` 0.5.5 and
-`pulldown-cmark` 0.13.4. Forms that drop or change data report `Round-Trip
-Mismatch` until an `htmd` fix or a section 8 allowlist entry covers them; triage
-each through section 13.
+Use valid, deterministic values: `https://example.test/...` or relative paths
+for `href` and `src`; non-empty plain text for `alt`, `title`, `id`, and
+`class`; and positive decimal integers within 1–4 for `colspan` and `start`.
+Escape quotes and ampersands according to HTML attribute syntax. Additional
+attribute edge cases must be explicitly classified and must not be used to claim
+valid hyperlink or image coverage.
 
 ### 11.6 Text domain
 
-Text pool version 1 has equally likely classes; for each text node choose a
-class, then one complete value from it uniformly, without trimming. Use the same
-pool for both profiles; GFM-specific coverage comes from their generated
-structures. The classes and values below are the whole pool: changing any value
-creates a new pool version, and every value fits section 11.4's text-length
-bound.
+Text pool version 1 has equally likely classes. For each text node, choose one
+complete, untrimmed value from a class. Both profiles use this pool; GFM coverage
+comes from that profile's generated structures. Classes and representative
+values:
 
 * Plain words and mixed words: `Hello`, `abc123`, and
   `abcdefghijklmnopqrstuvwxyz012345`.
@@ -463,30 +402,28 @@ bound.
   `![alt](image.png)`, `<span>raw</span>`, and `~~deleted~~`.
 * GFM and extension markers: `| cell |`, `- [ ] task`, `$x^2$`, and `$$x^2$$`.
 * Character references: `&amp;`, `&#10;`, and `&nbsp;`.
-* Whitespace, written as JSON strings: `""`, `" "`, `"   "`, `"\t"`, `"\n"`,
-  `" leading"`, `"trailing "`, and `"two  spaces"`.
-* Unicode: `Привет`; `«quoted»` and `—dash—`, whose edge punctuation meets
-  emphasis delimiters; U+0065 U+0301, an `e` with a combining acute accent; and
-  U+1F600, outside the basic multilingual plane. `src/util/unicode.rs` and
-  `src/util/unicode_punctuation.rs` classify these when deciding flanking and
-  escaping.
+* Whitespace: empty text, a single space, multiple spaces, tabs, newlines,
+  leading and trailing spaces, and mixed runs such as `two  spaces`.
+* Unicode: `Привет`, punctuation adjacent to emphasis delimiters, combining
+  marks, and characters outside the basic multilingual plane, which
+  `src/util/unicode.rs` and `src/util/unicode_punctuation.rs` classify when
+  deciding flanking and escaping.
 
-These are text-node values, not markup. Escape literal `&`, `<`, and `>` exactly
-once as `&amp;`, `&lt;`, and `&gt;`; do not escape serializer delimiters or
-minify HTML, which can change tested whitespace. Emit deterministic markup
-without separator whitespace between adjacent nodes.
+These are text values, not markup. Escape literal `&`, `<`, and `>` exactly once
+as `&amp;`, `&lt;`, and `&gt;`, but do not escape serializer markup delimiters.
+Do not minify HTML, which could change tested whitespace. Emit deterministic
+markup without separator whitespace between adjacent nodes.
 
-Reject and retry a candidate whose serialized fragment exceeds 4096 UTF-8 bytes;
-never truncate it. Allow at most 100 candidates per requested case. If none
-fits, abort the generation run and report a generator failure separately from
-converter results. Discarded candidates do not count toward the requested case
-count.
+Reject and retry fragments exceeding 4096 UTF-8 bytes; never truncate them.
+Allow at most 100 candidates per requested case. If none fits, abort generation
+and report a generator failure separately from converter results. Discarded
+candidates do not count toward the requested case count.
 
 ### 11.7 Generator self-tests
 
 Before serialization, validate permitted elements, parent-child relationships,
-counts, depth, and text values; parser acceptance alone cannot prove validity
-because HTML parsers can repair malformed markup.
+counts, depth, and text values; parser acceptance alone is insufficient because
+parsers can repair malformed markup.
 
 Required self-tests verify:
 
@@ -498,33 +435,28 @@ Required self-tests verify:
 * Exhausting 100 candidates reports a generator failure.
 * Two runs of 100 cases with seed 0, identical versions, and identical
   configuration produce byte-identical ordered inputs.
-* A case generated alone from its (master seed, case index) pair is
-  byte-identical to the same case within a full run.
-* For each row of section 11.5's translatable-set table, one translated and one
-  serialized example take the stated path at the pinned `htmd` version.
 
-Use controlled candidate fixtures for retry and exhaustion tests. Generator
-failures must not be reported as `htmd` conversion defects.
+Use controlled candidate fixtures for retry and exhaustion. Do not report
+generator failures as `htmd` conversion defects.
 
 ### 11.8 The malformed class
 
 The `malformed` class tests parser recovery and crash safety, not round-trip
-preservation of the recovered tree. Corrupt a generated valid tree's serialized
-form once by dropping a closing tag, closing tags out of order, or truncating
-mid-tag. A well-formed element without a tag-specific handler is not corruption.
+preservation. Corrupt a generated valid tree's serialization once by dropping a
+closing tag, closing tags out of order, or truncating mid-tag. A well-formed
+element without a tag-specific handler is not corruption.
 
-Assert panic and crash safety, determinism, timeout, and memory limit for each
+Assert panic/crash safety, determinism, timeout, and memory limit for each
 `malformed` case. Do not compare it against a round trip or assign a Markdown
-parser profile: `html5ever`'s recovered tree differs from the generated tree.
+profile: `html5ever`'s recovered tree differs from the generated tree.
 
-Well-formed HTML-fallback probes from section 11.2 belong to `valid` and use the
+Well-formed HTML-fallback probes (section 11.2) belong to `valid` and use the
 normal round-trip oracle. This tests faithful serialization of elements such as
 `section` and `input` separately from malformed-input recovery.
 
 ### 11.9 Case counts
 
-The default CI plan runs these three class/profile combinations, making section
-10's total auditable:
+The default CI plan runs these three class/profile combinations (section 10):
 
 | Combination | Class       | Profile | Cases per seed |
 | ----------- | ----------- | ------- | -------------- |
@@ -537,8 +469,8 @@ Five master seeds across three combinations yield 15,000 cases.
 12\. Worker model and resource limits
 -------------------------------------
 
-Run fuzzing in worker subprocesses; ordinary panic handling cannot catch
-infinite loops or OOM aborts.
+Use worker subprocesses because ordinary panic handling cannot catch infinite
+loops or OOM aborts.
 
 The parent process:
 
@@ -554,29 +486,27 @@ Memory enforcement depends on platform:
 * Windows: Job Object memory limit
 * macOS/other: resident-size polling only (soft limit)
 
-Before fuzzing, use test-only commands on the same worker executable to verify
-both worker-kill paths:
+Before fuzzing, self-test both worker-kill modes with test-only commands on the
+same worker executable:
 
-* `spin` performs no conversion and loops until terminated. Run it with the
-  normal timeout and a generous memory limit. Pass only if the parent observes
-  the timeout, terminates the worker, and records timeout termination, not a
-  normal exit.
-* `allocate N` retains an `N`-MiB buffer and writes at least one byte per page
-  to commit memory. Run it with a self-test limit below `N` and a generous
-  timeout. Pass only if memory enforcement terminates the worker before normal
-  exit. If an address-space limit makes allocation fail inside the worker, it
-  must exit with a reserved non-success status that the parent recognizes as
-  resource-limit termination, not a successful run.
+* `spin` loops without conversion until terminated. Run it with the normal
+  timeout and a generous memory limit. Pass only if the parent observes a
+  timeout, terminates the worker, and records timeout rather than normal exit.
+* `allocate N` retains an `N`-MiB buffer and writes to at least one byte per
+  page to commit memory. Use a self-test memory limit below `N` and a generous
+  timeout. Pass only if enforcement terminates the worker before normal exit.
+  If an address-space limit makes allocation fail inside the worker, it must
+  exit with a reserved non-success status that the parent recognizes as an
+  expected resource-limit termination, not a successful run.
 
-Choose limits and allocation size so baseline worker memory fits below the limit
-and the allocation exceeds it substantially. Test-only commands are unavailable
-during ordinary fuzzing. Abort with `Isolation Setup Failure` if either check
-fails.
+Choose limits so baseline memory fits below the limit and allocation exceeds it
+substantially. Disable test-only commands during ordinary fuzzing. Abort with
+`Isolation Setup Failure` if either check fails.
 
 13\. Failure artifacts and minimization
 ---------------------------------------
 
-Write a JSON artifact for each failure with:
+Each failure writes a JSON artifact containing:
 
 * master seed and case index
 * input class and parser profile
@@ -588,14 +518,14 @@ Write a JSON artifact for each failure with:
 * failure category and allowlist match, if any
 * active memory-limit mode and limits
 
-Failure reduction flow:
+Reduce failures as follows:
 
-1. Reproduce from the stored input.
+1. Reproduce the failure from the stored input.
 
-2. Reduce the tree by removing nodes, hoisting children, and shortening text or
-   attributes.
+2. Reduce the tree by removing nodes, hoisting children, and shortening
+   text/attributes.
 
-3. Keep reductions that preserve the failure category.
+3. Keep only reductions that preserve the same failure category.
 
 4. Save the minimal reproducer as a regression test.
 
@@ -609,9 +539,9 @@ Failure reduction flow:
 ----------------
 
 * Random generation cannot cover every structure.
-* Preservation checks only supported semantics, HTML-namespace content, and the
-  active parser profile.
-* Registry entries must be narrow and evidence-backed.
+* The preservation check is only for supported semantics, HTML-namespace
+  content, and the active parser profile.
+* Registry entries must stay narrow and evidence-backed.
 * Memory-limit claims are valid only on platforms with real enforcement.
 
 15\. Conclusion
@@ -624,4 +554,4 @@ an explicit oracle to distinguish:
 * parser/normalization effects
 * intentional known losses
 
-Together, they provide a focused, strict validation strategy for `htmd`.
+Together, they provide focused, strict validation for `htmd`.

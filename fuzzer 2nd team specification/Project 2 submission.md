@@ -180,18 +180,23 @@ Final submission
 
 ### Contributions
 
-* Altynay:
+* Altynay: Fixed issues 5, 6, 13 and 14. Eliminated duplicated information,
+  added block diagram for the pipeline. Generated draft source code.
 * Aiym:
-* Daulet:
+* Daulet: Fixed issues 1, 2, 9 and 10.
 * Ali:
 
 ### Spec review rounds
 
-(Table showing spec review rounds)
+| Round | Findings (issues) | Summary and round status                                                                                                                                                                                |
+| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | 5                 | The document is substantially improved and close to executable, but the remaining issues are stricter normalization rules, clearer unsupported-feature boundaries, and exact generator/replay behavior. |
 
 ### Implementation review rounds
 
-(Table showing implementation review rounds)
+| Round | Findings (issues) | Summary and round status                                                                                                                                    |
+| ----- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | 3                 | Implementation is feasible and realistic, but the oracle still needs stricter normalization rules and tighter handling of unsupported/parser-only features. |
 
 ### Last LLM spec review
 
