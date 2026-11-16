@@ -170,9 +170,11 @@ fn normalize_attributes(element: &Handle) {
 
 /// FR-5:128/129 applied to one parent's child list: drop comment, doctype,
 /// and `<template>` nodes everywhere; outside preserved subtrees also
-/// replace U+00A0, collapse whitespace runs, drop whitespace-only text at
-/// the fragment root or beside block siblings, and trim the text edges of
-/// the fragment root and of block elements.
+/// replace U+00A0, collapse whitespace runs, drop whitespace-only text
+/// beside block siblings, and trim the text edges of the fragment root and
+/// of block elements. Whitespace between two inline siblings survives as
+/// one space, even at the fragment root, because it renders as a word
+/// boundary.
 fn normalize_children(parent: &Handle, kind: ParentKind, preserved: bool) {
     let mut children: Vec<Handle> = std::mem::take(&mut *parent.children.borrow_mut());
     children.retain(|child| !is_discarded_node(child));
@@ -193,9 +195,9 @@ fn normalize_children(parent: &Handle, kind: ParentKind, preserved: bool) {
                     return false;
                 };
                 is_whitespace_only(&contents.borrow())
-                    && (kind == ParentKind::FragmentRoot
-                        || i.checked_sub(1)
-                            .is_some_and(|prev| is_block_sibling(&children, prev))
+                    && (i
+                        .checked_sub(1)
+                        .is_some_and(|prev| is_block_sibling(&children, prev))
                         || is_block_sibling(&children, i + 1))
             })
             .collect();
@@ -718,13 +720,23 @@ mod tests {
         assert_eq!(canonicalize(" text at root "), "text at root");
     }
 
-    /// FR-5:128 — a whitespace-only text child of the fragment root is
-    /// dropped (verbatim rule, even between inline siblings).
+    /// FR-5:128 (R15-M1) — whitespace between inline siblings at the
+    /// fragment root is a word boundary, so it survives as one space and
+    /// the two fragments stay distinct.
     #[test]
-    fn whitespace_only_text_dropped_at_fragment_root() {
+    fn whitespace_between_root_inline_siblings_kept() {
+        let spaced = canonicalize("<span>a</span> \n <span>b</span>");
+        assert_eq!(spaced, "<span>a</span> <span>b</span>");
+        assert_ne!(spaced, canonicalize("<span>a</span><span>b</span>"));
+    }
+
+    /// FR-5:128 — whitespace-only text at the fragment root's edges and
+    /// beside block siblings is still dropped.
+    #[test]
+    fn whitespace_at_root_edges_and_beside_blocks_dropped() {
         assert_eq!(
-            canonicalize("<span>a</span> <span>b</span>"),
-            "<span>a</span><span>b</span>"
+            canonicalize(" <span>a</span> <p>b</p> "),
+            "<span>a</span><p>b</p>"
         );
     }
 

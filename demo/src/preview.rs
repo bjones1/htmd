@@ -5,12 +5,14 @@
 //! stripped of the elements and attributes FR-1:46 lists before it
 //! enters the sandbox.
 
-use html5ever::driver::ParseOpts;
+use html5ever::driver::{ParseOpts, Parser};
 use html5ever::parse_fragment;
 use html5ever::serialize::{SerializeOpts, TraversalScope, serialize};
 use html5ever::tendril::TendrilSink;
 use html5ever::{QualName, local_name, ns};
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+
+use crate::convert::{Blocked, ParsedAs, parse_within_depth_limit};
 
 /// FR-1:42, verbatim: the CSP delivered inside the srcdoc document
 /// (`srcdoc` documents cannot receive response headers).
@@ -27,16 +29,30 @@ const DEMO_BASE: &str = r#"<base target="_blank">"#;
 /// document's first elements are the CSP `<meta>` then the demo's
 /// `<base target="_blank">`.
 pub fn build_srcdoc(body_html: &str) -> String {
-    let dom = parse_fragment(
+    srcdoc_from(&fragment_parser().one(body_html))
+}
+
+/// Markdown → HTML mode's preview: [`build_srcdoc`], with the parse stopped
+/// once the output nests deeper than 512 levels (FR-7). This is the exact
+/// nesting rule for that mode. It also counts raw HTML inside the
+/// Markdown, which `pulldown-cmark`'s events do not.
+pub fn build_srcdoc_within_depth_limit(body_html: &str) -> Result<String, Blocked> {
+    let dom = parse_within_depth_limit(fragment_parser(), body_html, ParsedAs::Fragment)?;
+    Ok(srcdoc_from(&dom))
+}
+
+fn fragment_parser() -> Parser<RcDom> {
+    parse_fragment(
         RcDom::default(),
         ParseOpts::default(),
         QualName::new(None, ns!(html), local_name!("body")),
         vec![],
         true,
     )
-    .one(body_html);
+}
 
-    let root = fragment_root(&dom);
+fn srcdoc_from(dom: &RcDom) -> String {
+    let root = fragment_root(dom);
     strip_for_preview(&root);
     let body = serialize_children(&root);
     format!("<!DOCTYPE html><html><head>{CSP_META}{DEMO_BASE}</head><body>{body}</body></html>")
@@ -274,5 +290,28 @@ mod tests {
         assert_eq!(srcdoc.matches("<blockquote>").count(), depth);
         assert_eq!(srcdoc.matches("</blockquote>").count(), depth);
         assert!(srcdoc.ends_with("</blockquote></body></html>"));
+    }
+
+    /// FR-7 in Markdown → HTML mode: top-level fragment elements are depth
+    /// 1, so 512 nested blockquotes preview and 513 are rejected.
+    #[test]
+    fn depth_limited_preview_boundary() {
+        let at_limit = build_srcdoc_within_depth_limit(&"<blockquote>".repeat(512))
+            .expect("512 levels preview");
+        assert_eq!(at_limit.matches("<blockquote>").count(), 512);
+        assert_eq!(
+            build_srcdoc_within_depth_limit(&"<blockquote>".repeat(513)),
+            Err(Blocked::TooDeep)
+        );
+    }
+
+    /// FR-7: 25,000 nested `<ul>` (100 kB) stop parsing within a chunk of
+    /// passing 512 levels instead of paying the full quadratic parse.
+    #[test]
+    fn depth_limited_preview_rejects_deep_raw_html() {
+        assert_eq!(
+            build_srcdoc_within_depth_limit(&"<ul>".repeat(25_000)),
+            Err(Blocked::TooDeep)
+        );
     }
 }

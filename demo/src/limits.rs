@@ -23,11 +23,17 @@ pub const NESTING_LIMIT_TEXT: &str = "Input exceeds the supported nesting depth.
 /// the error state.
 pub const CONVERSION_ERROR_TEXT: &str = "The input could not be converted.";
 
+/// §6, verbatim: the output-cap banner. It shows when a conversion's
+/// output exceeds 2,000,000 bytes, and in HTML → Markdown also when the
+/// estimated padded table size does.
+pub const OUTPUT_CAP_TEXT: &str = "Output exceeds the 2 MB display limit.";
+
 /// Every banner kind, in the order banners stack in the region.
-const ALL: [BannerKind; 3] = [
+const ALL: [BannerKind; 4] = [
     BannerKind::SizeLimit,
     BannerKind::NestingLimit,
     BannerKind::ConversionError,
+    BannerKind::OutputCap,
 ];
 
 /// One FR-7 banner; each kind is an independent child element of
@@ -38,6 +44,7 @@ pub enum BannerKind {
     SizeLimit,
     NestingLimit,
     ConversionError,
+    OutputCap,
 }
 
 impl BannerKind {
@@ -47,6 +54,7 @@ impl BannerKind {
             BannerKind::SizeLimit => SIZE_LIMIT_TEXT,
             BannerKind::NestingLimit => NESTING_LIMIT_TEXT,
             BannerKind::ConversionError => CONVERSION_ERROR_TEXT,
+            BannerKind::OutputCap => OUTPUT_CAP_TEXT,
         }
     }
 
@@ -55,6 +63,7 @@ impl BannerKind {
             BannerKind::SizeLimit => 0,
             BannerKind::NestingLimit => 1,
             BannerKind::ConversionError => 2,
+            BannerKind::OutputCap => 3,
         }
     }
 }
@@ -66,6 +75,7 @@ impl From<Blocked> for BannerKind {
         match blocked {
             Blocked::TooLarge => BannerKind::SizeLimit,
             Blocked::TooDeep => BannerKind::NestingLimit,
+            Blocked::OutputTooLarge => BannerKind::OutputCap,
             Blocked::ParseFailed => BannerKind::ConversionError,
         }
     }
@@ -77,10 +87,10 @@ impl From<Blocked> for BannerKind {
 #[derive(Debug, Default)]
 pub struct Banners {
     /// Slot holds `true` while its limit state persists.
-    active: [bool; 3],
+    active: [bool; 4],
     /// Slot holds `true` from the transition into the limit until the
     /// announcement is drained.
-    announced: [bool; 3],
+    announced: [bool; 4],
 }
 
 impl Banners {
@@ -250,6 +260,10 @@ mod tests {
         assert_eq!(
             BannerKind::from(Blocked::ParseFailed),
             BannerKind::ConversionError
+        );
+        assert_eq!(
+            BannerKind::from(Blocked::OutputTooLarge),
+            BannerKind::OutputCap
         );
     }
 }

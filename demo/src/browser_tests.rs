@@ -15,10 +15,10 @@ use htmd::options::TranslationMode;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
-use crate::convert::{Blocked, convert_html_to_md, convert_md_to_html};
+use crate::convert::{Blocked, convert_html_to_md, convert_md_to_html_gated};
 use crate::options_model::{CmarkFlags, HtmdOptions};
 use crate::panic_hook;
-use crate::preview::build_srcdoc;
+use crate::preview::{build_srcdoc, build_srcdoc_within_depth_limit};
 use crate::storage::CRASH_MARKER_KEY;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -89,18 +89,39 @@ fn six_hundred_flat_siblings_convert() {
     }
 }
 
-/// §8.6 *Preview stripping*: Markdown → HTML is exempt from the nesting
-/// limit, so 50,000 `>` reach the preview's strip walk and serializer.
-/// Slow (html5ever's fragment parse is quadratic in depth).
+/// §8.6 *Preview stripping*: 50,000 `>` are rejected by FR-7's Markdown
+/// nesting gate before any preview is built, so html5ever's fragment
+/// parse (quadratic in depth) never sees them.
+#[wasm_bindgen_test]
+fn fifty_thousand_blockquote_markers_are_rejected() {
+    assert_eq!(
+        convert_md_to_html_gated(&">".repeat(50_000), &CmarkFlags::default()),
+        Err(Blocked::TooDeep)
+    );
+}
+
+/// §8.6 *Preview stripping*: raw HTML inside Markdown passes the event
+/// gate, but the preview's depth-limited parse rejects it once past 512
+/// levels.
+#[wasm_bindgen_test]
+fn deep_raw_html_in_markdown_is_rejected_by_the_preview_parse() {
+    let html = convert_md_to_html_gated(&"<div>".repeat(5_000), &CmarkFlags::default())
+        .expect("raw HTML emits no element start events");
+    assert_eq!(
+        build_srcdoc_within_depth_limit(&html),
+        Err(Blocked::TooDeep)
+    );
+}
+
+/// FR-1:45: the preview's strip walk and serializer are iterative, so a
+/// tree far deeper than any limit still serializes within the wasm stack.
 #[cfg_attr(debug_assertions, ignore = "release-only: sized for release stack frames")]
 #[wasm_bindgen_test]
-fn fifty_thousand_blockquote_markers_build_a_preview() {
-    let html = convert_md_to_html(&">".repeat(50_000), &CmarkFlags::default());
-    let depth = html.matches("<blockquote>").count();
-    assert!(depth > 512, "expected deep nesting, got {depth} levels");
-    let srcdoc = build_srcdoc(&html);
-    assert_eq!(srcdoc.matches("<blockquote>").count(), depth);
-    assert_eq!(srcdoc.matches("</blockquote>").count(), depth);
+fn preview_walk_survives_deep_html() {
+    let depth = 5_000;
+    let srcdoc = build_srcdoc(&"<div>".repeat(depth));
+    assert_eq!(srcdoc.matches("<div>").count(), depth);
+    assert_eq!(srcdoc.matches("</div>").count(), depth);
 }
 
 fn document() -> web_sys::Document {

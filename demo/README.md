@@ -101,9 +101,10 @@ and reloads on file changes. Add `--release` to check the optimized build.
 The suite lives in [`src/browser_tests.rs`](src/browser_tests.rs). It covers
 the FR-7 nesting cases against the real 1 MiB wasm stack: 512 levels of
 nested lists, blockquotes, tables, and a mix of all three, in Pure and
-Faithful modes; 600 unclosed `<p>` and 600 `<br>` siblings; and the 50,000
-`>` preview. It also checks the panic hook's crash steps (marker, storage
-halt, overlay, `inert` root, focus) without a real panic.
+Faithful modes; 600 unclosed `<p>` and 600 `<br>` siblings; 50,000 `>` and
+5,000 levels of raw HTML in Markdown rejected by the nesting limit; and the
+preview walk on 5,000 levels. It also checks the panic hook's crash steps
+(marker, storage halt, overlay, `inert` root, focus) without a real panic.
 
 Install `wasm-bindgen-test-runner` at the same version as `wasm-bindgen` in
 `Cargo.lock` (currently 0.2.130), from the
@@ -122,11 +123,10 @@ cargo test --locked --target wasm32-unknown-unknown --release
 
 The nesting cases run only under `--release`. Debug builds report them as
 ignored, because debug stack frames are far larger than the release frames
-the 512-level ceiling is sized for. The 50,000-level preview case takes tens
-of seconds, so raise the runner's 20-second default timeout as above. The
-runner is headless by default; set `NO_HEADLESS=1` to watch it in a visible
-browser window. Plain `#[test]` functions are not run in the browser; they
-run in the native `cargo test`.
+the 512-level ceiling is sized for. The timeout above is a safety margin over
+the runner's 20-second default. The runner is headless by default; set
+`NO_HEADLESS=1` to watch it in a visible browser window. Plain `#[test]`
+functions are not run in the browser; they run in the native `cargo test`.
 
 ### Playwright end-to-end, accessibility, and performance tests
 

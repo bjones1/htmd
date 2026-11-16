@@ -71,6 +71,31 @@ test('adversarial 100 kB table amplification: < 1000 ms and clears output', asyn
   await expect(page.locator('#banner-cap')).toHaveCount(0);
 });
 
+for (const translation of [null, 'Pure'] as const) {
+  test(`adversarial 100 kB of nested <ul> (${translation ?? 'Markdown'}): < 1000 ms and rejected`, async ({ demo: page }, testInfo) => {
+    if (translation) await configureHtml(page, translation);
+    await measureInput(page, translation ? '<p>Previous output</p>' : '# Previous output');
+    const input = '<ul>'.repeat(25_000);
+    expect(Buffer.byteLength(input)).toBe(100_000);
+    await measureConversion(page, testInfo, input, 1_000);
+    await expect(page.locator('#banner-nesting')).toHaveText('Input exceeds the supported nesting depth.');
+    await expect.poll(() => sourceText(page)).toBe('');
+    await expect(page.getByRole('button', { name: 'Use Output as Input' })).toBeDisabled();
+  });
+}
+
+test('adversarial padded HTML table: < 1000 ms and rejected before htmd converts', async ({ demo: page }, testInfo) => {
+  await configureHtml(page, 'Pure');
+  await measureInput(page, '<p>Previous output</p>');
+  const input = '<table><tr>' + `<th>${'w'.repeat(1_000)}</th>`.repeat(50) + '</tr>'
+    + `<tr>${'<td></td>'.repeat(50)}</tr>`.repeat(100) + '</table>';
+  expect(Buffer.byteLength(input)).toBeLessThanOrEqual(100_000);
+  await measureConversion(page, testInfo, input, 1_000);
+  await expect(page.locator('#banner-cap')).toHaveText('Output exceeds the 2 MB display limit.');
+  await expect.poll(() => sourceText(page)).toBe('');
+  await expect(page.getByRole('button', { name: 'Use Output as Input' })).toBeDisabled();
+});
+
 test('adversarial 100 kB divergent fidelity diff: < 1000 ms and skips diff', async ({ demo: page }, testInfo) => {
   await configureHtml(page, 'Faithful');
   await page.getByLabel('Skipped tags (comma-separated)').fill('div');

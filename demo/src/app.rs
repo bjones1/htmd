@@ -17,25 +17,21 @@ use leptos::prelude::*;
 use send_wrapper::SendWrapper;
 use wasm_bindgen::JsCast;
 
-use crate::convert::{MAX_INPUT_BYTES, convert_html_to_md, convert_md_to_html};
+use crate::convert::{
+    Blocked, MAX_INPUT_BYTES, convert_html_to_md, convert_md_to_html, convert_md_to_html_gated,
+    within_display_cap,
+};
 use crate::engine::{Action, CommitOutcome, ConversionMode, Engine, EngineEvent};
 use crate::fidelity::{DiffToken, WordDiff, canonicalize, word_diff};
 use crate::limits::{BannerKind, Banners};
 use crate::options_model::{CmarkFlags, HtmdOptions, demo_preset, parse_skip_tags};
 use crate::panic_hook;
-use crate::preview::build_srcdoc;
+use crate::preview::{build_srcdoc, build_srcdoc_within_depth_limit};
 use crate::samples::{SAMPLES, SampleId, SampleState};
 use crate::storage::{
     ActiveTab, BannerSignal, LoadOutcome, Mode as StoredMode, RecoveryChoice, StorageController,
     StorageEvent, Store,
 };
-
-/// §6:214 — Markdown → HTML output over this many UTF-8 bytes is cleared
-/// instead of previewed, both tabs, banner shown.
-const MAX_DISPLAY_OUTPUT_BYTES: usize = 2_000_000;
-
-/// §6:214, verbatim: the output-cap banner.
-const OUTPUT_CAP_TEXT: &str = "Output exceeds the 2 MB display limit.";
 
 /// FR-8:178, verbatim: the quota-failure banner.
 const SAVE_FAILED_TEXT: &str =
@@ -207,6 +203,7 @@ struct Core {
     size_banner_mode: Option<ConversionMode>,
     nesting_banner_mode: Option<ConversionMode>,
     conversion_banner_mode: Option<ConversionMode>,
+    cap_banner_mode: Option<ConversionMode>,
 }
 
 /// The shared core. `SendWrapper` because Leptos views (including their
@@ -333,79 +330,83 @@ fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) 
 }
 
 /// One dispatched run's work: convert the active buffer, then apply
-/// FR-2's commit gate. A blocked HTML conversion enters its FR-7 banner
-/// and clears the output instead of committing.
+/// FR-2's commit gate. A blocked conversion (FR-7 limits, the §6 display
+/// cap) enters its banner and clears the output instead of committing.
 fn convert_and_commit_inner(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) {
     let mode = c.engine.mode();
     let buffer = ui.buffer(mode).get_untracked();
     let cmark = ui.cmark.get_untracked();
     match mode {
         ConversionMode::MarkdownToHtml => {
-            let html = convert_md_to_html(&buffer, &cmark);
-            if html.len() > MAX_DISPLAY_OUTPUT_BYTES {
-                // §6:214 — both tabs and the fidelity panel clear; the
-                // empty-output rule disables "Use Output as Input".
-                ui.cap_banner.set(true);
-                queue.extend(c.engine.on_limit_entered());
-                clear_output(c, ui);
-                return;
-            }
-            match c.engine.on_conversion_ready(seq) {
-                CommitOutcome::Commit => {
-                    let preview = build_srcdoc(&html);
-                    ui.output(mode).set(ModeOutput {
-                        source: html,
-                        preview,
-                        valid: true,
-                    });
-                    conversion_succeeded(c, ui, mode);
-                }
-                CommitOutcome::Stale => {}
+            let converted = convert_md_to_html_gated(&buffer, &cmark).and_then(|html| {
+                let preview = build_srcdoc_within_depth_limit(&html)?;
+                Ok((html, preview))
+            });
+            match converted {
+                Err(blocked) => halt_conversion(c, ui, blocked, mode, queue),
+                Ok((html, preview)) => match c.engine.on_conversion_ready(seq) {
+                    CommitOutcome::Commit => {
+                        ui.output(mode).set(ModeOutput {
+                            source: html,
+                            preview,
+                            valid: true,
+                        });
+                        conversion_succeeded(c, ui, mode);
+                    }
+                    CommitOutcome::Stale => {}
+                },
             }
         }
         ConversionMode::HtmlToMarkdown => {
             let opts = ui.htmd.get_untracked();
             let skip = parse_skip_tags(&c.skip_tags_raw);
-            match convert_html_to_md(&buffer, &opts, &skip) {
-                Err(blocked) => {
-                    enter_limit_banner(c, ui, blocked.into(), mode);
-                    queue.extend(c.engine.on_limit_entered());
-                    clear_output(c, ui);
-                }
-                Ok(markdown) => match c.engine.on_conversion_ready(seq) {
+            let faithful = opts.translation_mode == TranslationMode::Faithful;
+            let converted = convert_html_to_md(&buffer, &opts, &skip).and_then(|markdown| {
+                // FR-3:71 — the Rendered tab re-renders the Markdown with
+                // the sidebar's cmark flags.
+                let rendered = within_display_cap(convert_md_to_html(&markdown, &cmark))?;
+                // FR-5:120 — the round-trip side renders with exactly
+                // ENABLE_TABLES | ENABLE_MATH, ignoring the sidebar: other
+                // flags (smart punctuation, strikethrough, ...) rewrite
+                // unescaped ordinary text into false diffs. The forward
+                // conversion above already used the sidebar options with
+                // Faithful active.
+                let roundtrip = faithful
+                    .then(|| {
+                        within_display_cap(convert_md_to_html(
+                            &markdown,
+                            &CmarkFlags::tables_math(),
+                        ))
+                    })
+                    .transpose()?;
+                Ok((markdown, rendered, roundtrip))
+            });
+            match converted {
+                Err(blocked) => halt_conversion(c, ui, blocked, mode, queue),
+                Ok((markdown, rendered, roundtrip)) => match c.engine.on_conversion_ready(seq) {
                     CommitOutcome::Commit => {
-                        // FR-3:71 — the Rendered tab re-renders the
-                        // Markdown with the sidebar's cmark flags.
-                        let preview = build_srcdoc(&convert_md_to_html(&markdown, &cmark));
+                        let preview = build_srcdoc(&rendered);
                         ui.output(mode).set(ModeOutput {
-                            source: markdown.clone(),
+                            source: markdown,
                             preview,
                             valid: true,
                         });
-                        if opts.translation_mode == TranslationMode::Faithful {
-                            // FR-5:120 — the round-trip side renders with
-                            // exactly ENABLE_TABLES | ENABLE_MATH,
-                            // ignoring the sidebar: other flags (smart
-                            // punctuation, strikethrough, ...) rewrite
-                            // unescaped ordinary text into false diffs.
-                            // The forward conversion above already used
-                            // the sidebar options with Faithful active.
-                            let roundtrip =
-                                convert_md_to_html(&markdown, &CmarkFlags::tables_math());
-                            let original = canonicalize(&buffer);
-                            let roundtrip = canonicalize(&roundtrip);
-                            let diff = match word_diff(&original, &roundtrip) {
-                                WordDiff::Inclusive => FidelityDiff::Inclusive,
-                                WordDiff::TooLarge => FidelityDiff::TooLarge,
-                                WordDiff::Changes(tokens) => FidelityDiff::Changes(tokens),
-                            };
-                            ui.fidelity.set(FidelityPanel {
-                                original,
-                                roundtrip,
-                                diff,
-                            });
-                        } else {
-                            ui.fidelity.set(FidelityPanel::default());
+                        match roundtrip {
+                            Some(roundtrip) => {
+                                let original = canonicalize(&buffer);
+                                let roundtrip = canonicalize(&roundtrip);
+                                let diff = match word_diff(&original, &roundtrip) {
+                                    WordDiff::Inclusive => FidelityDiff::Inclusive,
+                                    WordDiff::TooLarge => FidelityDiff::TooLarge,
+                                    WordDiff::Changes(tokens) => FidelityDiff::Changes(tokens),
+                                };
+                                ui.fidelity.set(FidelityPanel {
+                                    original,
+                                    roundtrip,
+                                    diff,
+                                });
+                            }
+                            None => ui.fidelity.set(FidelityPanel::default()),
                         }
                         conversion_succeeded(c, ui, mode);
                     }
@@ -416,18 +417,31 @@ fn convert_and_commit_inner(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Act
     }
 }
 
-/// Shared tail of every successful commit: the output-cap banner and
-/// the limit banners entered for `mode`'s own buffer clear (FR-7
-/// scoping — the other mode's banners are not this commit's business),
-/// and a pending recovery conversion removes the crash marker
-/// (FR-8:160).
+/// A blocked run: show its banner for `mode`'s buffer, advance the
+/// sequence (FR-2 "entering an FR-7 limit"), and clear both output tabs
+/// and the fidelity panel. The empty output disables "Use Output as
+/// Input".
+fn halt_conversion(
+    c: &mut Core,
+    ui: &Ui,
+    blocked: Blocked,
+    mode: ConversionMode,
+    queue: &mut Vec<Action>,
+) {
+    enter_limit_banner(c, ui, blocked.into(), mode);
+    queue.extend(c.engine.on_limit_entered());
+    clear_output(c, ui);
+}
+
+/// Shared tail of every successful commit: the limit and output-cap
+/// banners entered for `mode`'s own buffer clear (FR-7 scoping — the
+/// other mode's banners are not this commit's business), and a pending
+/// recovery conversion removes the crash marker (FR-8:160).
 fn conversion_succeeded(c: &mut Core, ui: &Ui, mode: ConversionMode) {
-    if mode == ConversionMode::MarkdownToHtml {
-        ui.cap_banner.set(false);
-    }
     exit_limit_banner(c, ui, BannerKind::SizeLimit, mode);
     exit_limit_banner(c, ui, BannerKind::NestingLimit, mode);
     exit_limit_banner(c, ui, BannerKind::ConversionError, mode);
+    exit_limit_banner(c, ui, BannerKind::OutputCap, mode);
     if c.recovery_converting {
         c.recovery_converting = false;
         if !panic_hook::storage_halted() {
@@ -471,6 +485,7 @@ fn banner_mode_slot(c: &mut Core, kind: BannerKind) -> &mut Option<ConversionMod
         BannerKind::SizeLimit => &mut c.size_banner_mode,
         BannerKind::NestingLimit => &mut c.nesting_banner_mode,
         BannerKind::ConversionError => &mut c.conversion_banner_mode,
+        BannerKind::OutputCap => &mut c.cap_banner_mode,
     }
 }
 
@@ -485,6 +500,8 @@ fn sync_banners(c: &mut Core, ui: &Ui) {
         .set(c.banners.active().any(|k| k == BannerKind::NestingLimit));
     ui.conversion_banner
         .set(c.banners.active().any(|k| k == BannerKind::ConversionError));
+    ui.cap_banner
+        .set(c.banners.active().any(|k| k == BannerKind::OutputCap));
     let _ = c.banners.take_announced().count();
 }
 
@@ -982,6 +999,7 @@ pub fn App() -> impl IntoView {
         size_banner_mode: None,
         nesting_banner_mode: None,
         conversion_banner_mode: None,
+        cap_banner_mode: None,
     };
     let outcome = bootstrap.storage.load();
     let core_ref: CoreRef = SendWrapper::new(Rc::new(RefCell::new(bootstrap)));
@@ -1082,7 +1100,7 @@ pub fn App() -> impl IntoView {
             items.push(("banner-conversion", BannerKind::ConversionError.text()));
         }
         if ui.cap_banner.get() {
-            items.push(("banner-cap", OUTPUT_CAP_TEXT));
+            items.push(("banner-cap", BannerKind::OutputCap.text()));
         }
         if ui.save_failed.get() {
             items.push(("banner-save-failed", SAVE_FAILED_TEXT));
@@ -1761,6 +1779,7 @@ fn htmd_select(ui: Ui, field: HtmdField) -> impl IntoView {
 mod tests {
     use super::*;
     use crate::clock::WebClock;
+    use crate::convert::MAX_DISPLAY_OUTPUT_BYTES;
     use crate::storage::MemoryStore;
 
     /// A native `Ui` + `Core` pair. The production clocks never fire
@@ -1788,6 +1807,7 @@ mod tests {
             size_banner_mode: None,
             nesting_banner_mode: None,
             conversion_banner_mode: None,
+            cap_banner_mode: None,
         })));
         Harness { ui, core }
     }
@@ -1902,6 +1922,57 @@ mod tests {
             assert!(out.valid);
             assert_eq!(out.source, html);
             assert!(!out.preview.is_empty());
+        });
+    }
+
+    /// §6 — in HTML → Markdown mode, padded-table amplification is
+    /// rejected before htmd runs. The cap banner shows for the HTML
+    /// buffer, and both tabs and the fidelity panel stay empty.
+    #[test]
+    fn html_table_amplification_shows_cap_banner() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            let header = format!("<th>{}</th>", "w".repeat(1_000)).repeat(50);
+            let rows = format!("<tr>{}</tr>", "<td></td>".repeat(50)).repeat(100);
+            let html = format!("<table><tr>{header}</tr>{rows}</table>");
+            assert!(html.len() <= MAX_INPUT_BYTES);
+            h.ui.buf_html.set(html.clone());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c
+                    .engine
+                    .on_buffer_overwrite(ConversionMode::HtmlToMarkdown, &html);
+            }
+            h.run_pending_batch();
+            assert!(h.ui.cap_banner.get(), "the cap banner shows");
+            let out = h.ui.out_html.get();
+            assert!(!out.valid, "the empty-output rule disables Use Output");
+            assert!(out.source.is_empty());
+            assert!(out.preview.is_empty());
+            assert_eq!(h.ui.fidelity.get(), FidelityPanel::default());
+        });
+    }
+
+    /// FR-7 — Markdown → HTML applies the nesting limit too:
+    /// 50,000 `>` show the nesting banner and clear the output.
+    #[test]
+    fn deep_markdown_shows_nesting_banner() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            let md = ">".repeat(50_000);
+            h.ui.buf_md.set(md.clone());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_edit(&md);
+            }
+            h.run_pending_batch();
+            assert!(h.ui.nesting_banner.get());
+            let out = h.ui.out_md.get();
+            assert!(!out.valid);
+            assert!(out.source.is_empty());
+            assert!(out.preview.is_empty());
         });
     }
 
