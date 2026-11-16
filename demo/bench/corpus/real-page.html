@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="User guide for an HTML-to-Markdown converter: options, constructs, and fallbacks.">
+<title>User Guide &mdash; HTML to Markdown Converter</title>
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+  body { font-family: system-ui, sans-serif; line-height: 1.6; margin: 0; }
+  .layout { display: grid; grid-template-columns: 16rem 1fr; gap: 2rem; }
+  table.reference td.num, table.reference th.num { text-align: right; }
+  pre { overflow-x: auto; background: #f6f8fa; padding: 1rem; }
+</style>
+</head>
+<body id="top">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+<a class="brand" href="/">Converter Docs</a>
+<nav aria-label="Primary"><ul>
+<li><a href="/" aria-current="page">Guide</a></li>
+<li><a href="/api/">API</a></li>
+<li><a href="/changelog/">Changelog</a></li>
+<li><a href="https://example.org/repo" rel="external">Source</a></li>
+</ul></nav>
+<form class="search" role="search" action="/search" method="get">
+<label for="q">Search</label> <input id="q" name="q" type="search" placeholder="Search the guide">
+<button type="submit">Go</button>
+</form>
+</header>
+<div class="layout">
+<aside class="sidebar"><nav aria-label="Contents"><h2>Contents</h2><ol>
+<li><a href="#installation">Installation</a></li>
+<li><a href="#quick-start">Quick start</a></li>
+<li><a href="#options">Configuration options</a></li>
+<li><a href="#headings">Headings</a></li>
+<li><a href="#lists">Lists and list items</a></li>
+<li><a href="#tables">Tables</a></li>
+<li><a href="#links">Links and images</a></li>
+<li><a href="#code">Code blocks</a></li>
+<li><a href="#emphasis">Emphasis and strong emphasis</a></li>
+<li><a href="#raw-html">Raw HTML</a></li>
+<li><a href="#escaping">Escaping</a></li>
+<li><a href="#whitespace">Whitespace handling</a></li>
+<li><a href="#performance">Performance</a></li>
+<li><a href="#faq">Frequently asked questions</a></li>
+</ol></nav></aside>
+<main id="main">
+<article>
+<h1>User Guide</h1>
+<p class="lead">This guide covers every construct the converter handles, the options that influence it, and the fallback used when HTML has no Markdown equivalent.</p>
+<section id="installation" class="doc-section" aria-labelledby="installation-heading">
+<h2 id="installation-heading"><a class="anchor" href="#installation" aria-hidden="true">#</a>Installation</h2>
+<p class="summary">Add the crate to your manifest and enable only the features you need.</p>
+<p>This section describes how the converter treats installation. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on installation.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for installation.</p>
+<h3 id="installation-example">Example</h3>
+<pre><code class="language-rust">use htmd::HtmlToMarkdown;
+
+fn main() {
+    let converter = HtmlToMarkdown::builder()
+        .skip_tags(vec!["script", "style"])
+        .build();
+    let md = converter.convert("&lt;h1&gt;Installation&lt;/h1&gt;").unwrap();
+    assert_eq!(md, "# Installation");
+}
+</code></pre>
+<h3 id="installation-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 1.1:</strong> when the input contains <code>&lt;p&gt;</code>, the installation handler preserves it.</li>
+<li><strong>Rule 1.2:</strong> when the input contains <code>&lt;em&gt;</code>, the installation handler normalizes it<ul><li>see also <a href="#options">Configuration options</a></li></ul>.</li>
+<li><strong>Rule 1.3:</strong> when the input contains <code>&lt;a&gt;</code>, the installation handler escapes it.</li>
+<li><strong>Rule 1.4:</strong> when the input contains <code>&lt;li&gt;</code>, the installation handler re-indents it<ul><li>see also <a href="#lists">Lists and list items</a></li></ul>.</li>
+<li><strong>Rule 1.5:</strong> when the input contains <code>&lt;td&gt;</code>, the installation handler wraps it.</li>
+</ul>
+<h3 id="installation-reference">Reference</h3>
+<table class="reference" data-section="installation">
+<caption>Option reference for installation</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>installation_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for installation.</td></tr>
+<tr><td><code>installation_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for installation.</td></tr>
+<tr><td><code>installation_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for installation.</td></tr>
+<tr><td><code>installation_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for installation.</td></tr>
+<tr><td><code>installation_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for installation.</td></tr>
+<tr><td><code>installation_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for installation.</td></tr>
+<tr><td><code>installation_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for installation.</td></tr>
+<tr><td><code>installation_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for installation.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting installation; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/installation.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="quick-start" class="doc-section" aria-labelledby="quick-start-heading">
+<h2 id="quick-start-heading"><a class="anchor" href="#quick-start" aria-hidden="true">#</a>Quick start</h2>
+<p class="summary">Convert a fragment in a single call, or build a converter once and reuse it.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on quick start.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for quick start.</p>
+<p>If you find a case where the output for quick start differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<h3 id="quick-start-example">Example</h3>
+<pre><code class="language-toml">[dependencies]
+htmd = "0.5"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+</code></pre>
+<h3 id="quick-start-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 2.1:</strong> when the input contains <code>&lt;p&gt;</code>, the quick start handler preserves it.</li>
+<li><strong>Rule 2.2:</strong> when the input contains <code>&lt;em&gt;</code>, the quick start handler normalizes it<ul><li>see also <a href="#headings">Headings</a></li></ul>.</li>
+<li><strong>Rule 2.3:</strong> when the input contains <code>&lt;a&gt;</code>, the quick start handler escapes it.</li>
+<li><strong>Rule 2.4:</strong> when the input contains <code>&lt;li&gt;</code>, the quick start handler re-indents it<ul><li>see also <a href="#tables">Tables</a></li></ul>.</li>
+<li><strong>Rule 2.5:</strong> when the input contains <code>&lt;td&gt;</code>, the quick start handler wraps it.</li>
+</ul>
+<h3 id="quick-start-reference">Reference</h3>
+<table class="reference" data-section="quick-start">
+<caption>Option reference for quick start</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>quick_start_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for quick start.</td></tr>
+<tr><td><code>quick_start_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for quick start.</td></tr>
+<tr><td><code>quick_start_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for quick start.</td></tr>
+<tr><td><code>quick_start_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for quick start.</td></tr>
+<tr><td><code>quick_start_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for quick start.</td></tr>
+<tr><td><code>quick_start_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for quick start.</td></tr>
+<tr><td><code>quick_start_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for quick start.</td></tr>
+<tr><td><code>quick_start_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for quick start.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting quick start; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/quick-start.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="options" class="doc-section" aria-labelledby="options-heading">
+<h2 id="options-heading"><a class="anchor" href="#options" aria-hidden="true">#</a>Configuration options</h2>
+<p class="summary">Every option has a conservative default chosen to round-trip cleanly.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for configuration options.</p>
+<p>If you find a case where the output for configuration options differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<h3 id="options-example">Example</h3>
+<pre><code class="language-shell">$ cargo add htmd
+$ cargo test --test options_tests
+   Compiling htmd v0.5.0
+    Finished test [unoptimized + debuginfo] target(s)
+</code></pre>
+<h3 id="options-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 3.1:</strong> when the input contains <code>&lt;p&gt;</code>, the configuration options handler preserves it.</li>
+<li><strong>Rule 3.2:</strong> when the input contains <code>&lt;em&gt;</code>, the configuration options handler normalizes it<ul><li>see also <a href="#lists">Lists and list items</a></li></ul>.</li>
+<li><strong>Rule 3.3:</strong> when the input contains <code>&lt;a&gt;</code>, the configuration options handler escapes it.</li>
+<li><strong>Rule 3.4:</strong> when the input contains <code>&lt;li&gt;</code>, the configuration options handler re-indents it<ul><li>see also <a href="#links">Links and images</a></li></ul>.</li>
+<li><strong>Rule 3.5:</strong> when the input contains <code>&lt;td&gt;</code>, the configuration options handler wraps it.</li>
+</ul>
+<h3 id="options-reference">Reference</h3>
+<table class="reference" data-section="options">
+<caption>Option reference for configuration options</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>options_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for configuration options.</td></tr>
+<tr><td><code>options_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for configuration options.</td></tr>
+<tr><td><code>options_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for configuration options.</td></tr>
+<tr><td><code>options_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for configuration options.</td></tr>
+<tr><td><code>options_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for configuration options.</td></tr>
+<tr><td><code>options_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for configuration options.</td></tr>
+<tr><td><code>options_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for configuration options.</td></tr>
+<tr><td><code>options_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for configuration options.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting configuration options; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/options.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="headings" class="doc-section" aria-labelledby="headings-heading">
+<h2 id="headings-heading"><a class="anchor" href="#headings" aria-hidden="true">#</a>Headings</h2>
+<p class="summary">ATX and Setext styles are both supported; ATX is the default.</p>
+<p>If you find a case where the output for headings differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<p>This section describes how the converter treats headings. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<h3 id="headings-example">Example</h3>
+<pre><code class="language-html">&lt;section id="headings"&gt;
+  &lt;h2&gt;Headings&lt;/h2&gt;
+  &lt;p class="lead"&gt;Example input &amp;amp; output.&lt;/p&gt;
+&lt;/section&gt;
+</code></pre>
+<h3 id="headings-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 4.1:</strong> when the input contains <code>&lt;p&gt;</code>, the headings handler preserves it.</li>
+<li><strong>Rule 4.2:</strong> when the input contains <code>&lt;em&gt;</code>, the headings handler normalizes it<ul><li>see also <a href="#tables">Tables</a></li></ul>.</li>
+<li><strong>Rule 4.3:</strong> when the input contains <code>&lt;a&gt;</code>, the headings handler escapes it.</li>
+<li><strong>Rule 4.4:</strong> when the input contains <code>&lt;li&gt;</code>, the headings handler re-indents it<ul><li>see also <a href="#code">Code blocks</a></li></ul>.</li>
+<li><strong>Rule 4.5:</strong> when the input contains <code>&lt;td&gt;</code>, the headings handler wraps it.</li>
+</ul>
+<h3 id="headings-reference">Reference</h3>
+<table class="reference" data-section="headings">
+<caption>Option reference for headings</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>headings_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for headings.</td></tr>
+<tr><td><code>headings_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for headings.</td></tr>
+<tr><td><code>headings_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for headings.</td></tr>
+<tr><td><code>headings_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for headings.</td></tr>
+<tr><td><code>headings_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for headings.</td></tr>
+<tr><td><code>headings_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for headings.</td></tr>
+<tr><td><code>headings_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for headings.</td></tr>
+<tr><td><code>headings_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for headings.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting headings; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/headings.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="lists" class="doc-section" aria-labelledby="lists-heading">
+<h2 id="lists-heading"><a class="anchor" href="#lists" aria-hidden="true">#</a>Lists and list items</h2>
+<p class="summary">Bullet markers, ordered start numbers, and loose versus tight lists.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<p>This section describes how the converter treats lists and list items. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on lists and list items.</p>
+<h3 id="lists-example">Example</h3>
+<pre><code class="language-rust">use htmd::HtmlToMarkdown;
+
+fn main() {
+    let converter = HtmlToMarkdown::builder()
+        .skip_tags(vec!["script", "style"])
+        .build();
+    let md = converter.convert("&lt;h1&gt;Lists and list items&lt;/h1&gt;").unwrap();
+    assert_eq!(md, "# Lists and list items");
+}
+</code></pre>
+<h3 id="lists-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 5.1:</strong> when the input contains <code>&lt;p&gt;</code>, the lists and list items handler preserves it.</li>
+<li><strong>Rule 5.2:</strong> when the input contains <code>&lt;em&gt;</code>, the lists and list items handler normalizes it<ul><li>see also <a href="#links">Links and images</a></li></ul>.</li>
+<li><strong>Rule 5.3:</strong> when the input contains <code>&lt;a&gt;</code>, the lists and list items handler escapes it.</li>
+<li><strong>Rule 5.4:</strong> when the input contains <code>&lt;li&gt;</code>, the lists and list items handler re-indents it<ul><li>see also <a href="#emphasis">Emphasis and strong emphasis</a></li></ul>.</li>
+<li><strong>Rule 5.5:</strong> when the input contains <code>&lt;td&gt;</code>, the lists and list items handler wraps it.</li>
+</ul>
+<h3 id="lists-reference">Reference</h3>
+<table class="reference" data-section="lists">
+<caption>Option reference for lists and list items</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>lists_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for lists and list items.</td></tr>
+<tr><td><code>lists_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for lists and list items.</td></tr>
+<tr><td><code>lists_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for lists and list items.</td></tr>
+<tr><td><code>lists_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for lists and list items.</td></tr>
+<tr><td><code>lists_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for lists and list items.</td></tr>
+<tr><td><code>lists_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for lists and list items.</td></tr>
+<tr><td><code>lists_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for lists and list items.</td></tr>
+<tr><td><code>lists_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for lists and list items.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting lists and list items; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/lists.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="tables" class="doc-section" aria-labelledby="tables-heading">
+<h2 id="tables-heading"><a class="anchor" href="#tables" aria-hidden="true">#</a>Tables</h2>
+<p class="summary">Pipe tables with alignment rows; cells containing block content fall back to HTML.</p>
+<p>This section describes how the converter treats tables. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on tables.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for tables.</p>
+<h3 id="tables-example">Example</h3>
+<pre><code class="language-toml">[dependencies]
+htmd = "0.5"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+</code></pre>
+<h3 id="tables-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 6.1:</strong> when the input contains <code>&lt;p&gt;</code>, the tables handler preserves it.</li>
+<li><strong>Rule 6.2:</strong> when the input contains <code>&lt;em&gt;</code>, the tables handler normalizes it<ul><li>see also <a href="#code">Code blocks</a></li></ul>.</li>
+<li><strong>Rule 6.3:</strong> when the input contains <code>&lt;a&gt;</code>, the tables handler escapes it.</li>
+<li><strong>Rule 6.4:</strong> when the input contains <code>&lt;li&gt;</code>, the tables handler re-indents it<ul><li>see also <a href="#raw-html">Raw HTML</a></li></ul>.</li>
+<li><strong>Rule 6.5:</strong> when the input contains <code>&lt;td&gt;</code>, the tables handler wraps it.</li>
+</ul>
+<h3 id="tables-reference">Reference</h3>
+<table class="reference" data-section="tables">
+<caption>Option reference for tables</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>tables_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for tables.</td></tr>
+<tr><td><code>tables_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for tables.</td></tr>
+<tr><td><code>tables_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for tables.</td></tr>
+<tr><td><code>tables_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for tables.</td></tr>
+<tr><td><code>tables_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for tables.</td></tr>
+<tr><td><code>tables_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for tables.</td></tr>
+<tr><td><code>tables_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for tables.</td></tr>
+<tr><td><code>tables_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for tables.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting tables; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/tables.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="links" class="doc-section" aria-labelledby="links-heading">
+<h2 id="links-heading"><a class="anchor" href="#links" aria-hidden="true">#</a>Links and images</h2>
+<p class="summary">Inline, reference, and autolink forms, with titles preserved where possible.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on links and images.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for links and images.</p>
+<p>If you find a case where the output for links and images differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<h3 id="links-example">Example</h3>
+<pre><code class="language-shell">$ cargo add htmd
+$ cargo test --test links_tests
+   Compiling htmd v0.5.0
+    Finished test [unoptimized + debuginfo] target(s)
+</code></pre>
+<h3 id="links-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 7.1:</strong> when the input contains <code>&lt;p&gt;</code>, the links and images handler preserves it.</li>
+<li><strong>Rule 7.2:</strong> when the input contains <code>&lt;em&gt;</code>, the links and images handler normalizes it<ul><li>see also <a href="#emphasis">Emphasis and strong emphasis</a></li></ul>.</li>
+<li><strong>Rule 7.3:</strong> when the input contains <code>&lt;a&gt;</code>, the links and images handler escapes it.</li>
+<li><strong>Rule 7.4:</strong> when the input contains <code>&lt;li&gt;</code>, the links and images handler re-indents it<ul><li>see also <a href="#escaping">Escaping</a></li></ul>.</li>
+<li><strong>Rule 7.5:</strong> when the input contains <code>&lt;td&gt;</code>, the links and images handler wraps it.</li>
+</ul>
+<h3 id="links-reference">Reference</h3>
+<table class="reference" data-section="links">
+<caption>Option reference for links and images</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>links_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for links and images.</td></tr>
+<tr><td><code>links_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for links and images.</td></tr>
+<tr><td><code>links_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for links and images.</td></tr>
+<tr><td><code>links_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for links and images.</td></tr>
+<tr><td><code>links_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for links and images.</td></tr>
+<tr><td><code>links_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for links and images.</td></tr>
+<tr><td><code>links_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for links and images.</td></tr>
+<tr><td><code>links_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for links and images.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting links and images; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/links.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="code" class="doc-section" aria-labelledby="code-heading">
+<h2 id="code-heading"><a class="anchor" href="#code" aria-hidden="true">#</a>Code blocks</h2>
+<p class="summary">Fenced and indented code blocks, including info strings and language classes.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for code blocks.</p>
+<p>If you find a case where the output for code blocks differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<h3 id="code-example">Example</h3>
+<pre><code class="language-html">&lt;section id="code"&gt;
+  &lt;h2&gt;Code blocks&lt;/h2&gt;
+  &lt;p class="lead"&gt;Example input &amp;amp; output.&lt;/p&gt;
+&lt;/section&gt;
+</code></pre>
+<h3 id="code-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 8.1:</strong> when the input contains <code>&lt;p&gt;</code>, the code blocks handler preserves it.</li>
+<li><strong>Rule 8.2:</strong> when the input contains <code>&lt;em&gt;</code>, the code blocks handler normalizes it<ul><li>see also <a href="#raw-html">Raw HTML</a></li></ul>.</li>
+<li><strong>Rule 8.3:</strong> when the input contains <code>&lt;a&gt;</code>, the code blocks handler escapes it.</li>
+<li><strong>Rule 8.4:</strong> when the input contains <code>&lt;li&gt;</code>, the code blocks handler re-indents it<ul><li>see also <a href="#whitespace">Whitespace handling</a></li></ul>.</li>
+<li><strong>Rule 8.5:</strong> when the input contains <code>&lt;td&gt;</code>, the code blocks handler wraps it.</li>
+</ul>
+<h3 id="code-reference">Reference</h3>
+<table class="reference" data-section="code">
+<caption>Option reference for code blocks</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>code_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for code blocks.</td></tr>
+<tr><td><code>code_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for code blocks.</td></tr>
+<tr><td><code>code_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for code blocks.</td></tr>
+<tr><td><code>code_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for code blocks.</td></tr>
+<tr><td><code>code_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for code blocks.</td></tr>
+<tr><td><code>code_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for code blocks.</td></tr>
+<tr><td><code>code_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for code blocks.</td></tr>
+<tr><td><code>code_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for code blocks.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting code blocks; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/code.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="emphasis" class="doc-section" aria-labelledby="emphasis-heading">
+<h2 id="emphasis-heading"><a class="anchor" href="#emphasis" aria-hidden="true">#</a>Emphasis and strong emphasis</h2>
+<p class="summary">Delimiter runs are chosen to avoid intraword ambiguity.</p>
+<p>If you find a case where the output for emphasis and strong emphasis differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<p>This section describes how the converter treats emphasis and strong emphasis. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<h3 id="emphasis-example">Example</h3>
+<pre><code class="language-rust">use htmd::HtmlToMarkdown;
+
+fn main() {
+    let converter = HtmlToMarkdown::builder()
+        .skip_tags(vec!["script", "style"])
+        .build();
+    let md = converter.convert("&lt;h1&gt;Emphasis and strong emphasis&lt;/h1&gt;").unwrap();
+    assert_eq!(md, "# Emphasis and strong emphasis");
+}
+</code></pre>
+<h3 id="emphasis-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 9.1:</strong> when the input contains <code>&lt;p&gt;</code>, the emphasis and strong emphasis handler preserves it.</li>
+<li><strong>Rule 9.2:</strong> when the input contains <code>&lt;em&gt;</code>, the emphasis and strong emphasis handler normalizes it<ul><li>see also <a href="#escaping">Escaping</a></li></ul>.</li>
+<li><strong>Rule 9.3:</strong> when the input contains <code>&lt;a&gt;</code>, the emphasis and strong emphasis handler escapes it.</li>
+<li><strong>Rule 9.4:</strong> when the input contains <code>&lt;li&gt;</code>, the emphasis and strong emphasis handler re-indents it<ul><li>see also <a href="#performance">Performance</a></li></ul>.</li>
+<li><strong>Rule 9.5:</strong> when the input contains <code>&lt;td&gt;</code>, the emphasis and strong emphasis handler wraps it.</li>
+</ul>
+<h3 id="emphasis-reference">Reference</h3>
+<table class="reference" data-section="emphasis">
+<caption>Option reference for emphasis and strong emphasis</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>emphasis_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for emphasis and strong emphasis.</td></tr>
+<tr><td><code>emphasis_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for emphasis and strong emphasis.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting emphasis and strong emphasis; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/emphasis.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="raw-html" class="doc-section" aria-labelledby="raw-html-heading">
+<h2 id="raw-html-heading"><a class="anchor" href="#raw-html" aria-hidden="true">#</a>Raw HTML</h2>
+<p class="summary">Elements without a Markdown equivalent are emitted as HTML blocks or inlines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<p>This section describes how the converter treats raw html. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on raw html.</p>
+<h3 id="raw-html-example">Example</h3>
+<pre><code class="language-toml">[dependencies]
+htmd = "0.5"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+</code></pre>
+<h3 id="raw-html-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 10.1:</strong> when the input contains <code>&lt;p&gt;</code>, the raw html handler preserves it.</li>
+<li><strong>Rule 10.2:</strong> when the input contains <code>&lt;em&gt;</code>, the raw html handler normalizes it<ul><li>see also <a href="#whitespace">Whitespace handling</a></li></ul>.</li>
+<li><strong>Rule 10.3:</strong> when the input contains <code>&lt;a&gt;</code>, the raw html handler escapes it.</li>
+<li><strong>Rule 10.4:</strong> when the input contains <code>&lt;li&gt;</code>, the raw html handler re-indents it<ul><li>see also <a href="#faq">Frequently asked questions</a></li></ul>.</li>
+<li><strong>Rule 10.5:</strong> when the input contains <code>&lt;td&gt;</code>, the raw html handler wraps it.</li>
+</ul>
+<h3 id="raw-html-reference">Reference</h3>
+<table class="reference" data-section="raw-html">
+<caption>Option reference for raw html</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>raw_html_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for raw html.</td></tr>
+<tr><td><code>raw_html_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for raw html.</td></tr>
+<tr><td><code>raw_html_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for raw html.</td></tr>
+<tr><td><code>raw_html_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for raw html.</td></tr>
+<tr><td><code>raw_html_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for raw html.</td></tr>
+<tr><td><code>raw_html_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for raw html.</td></tr>
+<tr><td><code>raw_html_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for raw html.</td></tr>
+<tr><td><code>raw_html_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for raw html.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting raw html; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/raw-html.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="escaping" class="doc-section" aria-labelledby="escaping-heading">
+<h2 id="escaping-heading"><a class="anchor" href="#escaping" aria-hidden="true">#</a>Escaping</h2>
+<p class="summary">Characters that would otherwise start Markdown syntax are backslash-escaped.</p>
+<p>This section describes how the converter treats escaping. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on escaping.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for escaping.</p>
+<h3 id="escaping-example">Example</h3>
+<pre><code class="language-shell">$ cargo add htmd
+$ cargo test --test escaping_tests
+   Compiling htmd v0.5.0
+    Finished test [unoptimized + debuginfo] target(s)
+</code></pre>
+<h3 id="escaping-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 11.1:</strong> when the input contains <code>&lt;p&gt;</code>, the escaping handler preserves it.</li>
+<li><strong>Rule 11.2:</strong> when the input contains <code>&lt;em&gt;</code>, the escaping handler normalizes it<ul><li>see also <a href="#performance">Performance</a></li></ul>.</li>
+<li><strong>Rule 11.3:</strong> when the input contains <code>&lt;a&gt;</code>, the escaping handler escapes it.</li>
+<li><strong>Rule 11.4:</strong> when the input contains <code>&lt;li&gt;</code>, the escaping handler re-indents it<ul><li>see also <a href="#installation">Installation</a></li></ul>.</li>
+<li><strong>Rule 11.5:</strong> when the input contains <code>&lt;td&gt;</code>, the escaping handler wraps it.</li>
+</ul>
+<h3 id="escaping-reference">Reference</h3>
+<table class="reference" data-section="escaping">
+<caption>Option reference for escaping</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>escaping_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for escaping.</td></tr>
+<tr><td><code>escaping_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for escaping.</td></tr>
+<tr><td><code>escaping_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for escaping.</td></tr>
+<tr><td><code>escaping_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for escaping.</td></tr>
+<tr><td><code>escaping_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for escaping.</td></tr>
+<tr><td><code>escaping_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for escaping.</td></tr>
+<tr><td><code>escaping_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for escaping.</td></tr>
+<tr><td><code>escaping_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for escaping.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting escaping; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/escaping.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="whitespace" class="doc-section" aria-labelledby="whitespace-heading">
+<h2 id="whitespace-heading"><a class="anchor" href="#whitespace" aria-hidden="true">#</a>Whitespace handling</h2>
+<p class="summary">Runs of whitespace collapse as the HTML rendering model specifies.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on whitespace handling.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for whitespace handling.</p>
+<p>If you find a case where the output for whitespace handling differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<h3 id="whitespace-example">Example</h3>
+<pre><code class="language-html">&lt;section id="whitespace"&gt;
+  &lt;h2&gt;Whitespace handling&lt;/h2&gt;
+  &lt;p class="lead"&gt;Example input &amp;amp; output.&lt;/p&gt;
+&lt;/section&gt;
+</code></pre>
+<h3 id="whitespace-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 12.1:</strong> when the input contains <code>&lt;p&gt;</code>, the whitespace handling handler preserves it.</li>
+<li><strong>Rule 12.2:</strong> when the input contains <code>&lt;em&gt;</code>, the whitespace handling handler normalizes it<ul><li>see also <a href="#faq">Frequently asked questions</a></li></ul>.</li>
+<li><strong>Rule 12.3:</strong> when the input contains <code>&lt;a&gt;</code>, the whitespace handling handler escapes it.</li>
+<li><strong>Rule 12.4:</strong> when the input contains <code>&lt;li&gt;</code>, the whitespace handling handler re-indents it<ul><li>see also <a href="#quick-start">Quick start</a></li></ul>.</li>
+<li><strong>Rule 12.5:</strong> when the input contains <code>&lt;td&gt;</code>, the whitespace handling handler wraps it.</li>
+</ul>
+<h3 id="whitespace-reference">Reference</h3>
+<table class="reference" data-section="whitespace">
+<caption>Option reference for whitespace handling</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>whitespace_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for whitespace handling.</td></tr>
+<tr><td><code>whitespace_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for whitespace handling.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting whitespace handling; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/whitespace.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="performance" class="doc-section" aria-labelledby="performance-heading">
+<h2 id="performance-heading"><a class="anchor" href="#performance" aria-hidden="true">#</a>Performance</h2>
+<p class="summary">Conversion is linear in input size for typical documents.</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for performance.</p>
+<p>If you find a case where the output for performance differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<h3 id="performance-example">Example</h3>
+<pre><code class="language-rust">use htmd::HtmlToMarkdown;
+
+fn main() {
+    let converter = HtmlToMarkdown::builder()
+        .skip_tags(vec!["script", "style"])
+        .build();
+    let md = converter.convert("&lt;h1&gt;Performance&lt;/h1&gt;").unwrap();
+    assert_eq!(md, "# Performance");
+}
+</code></pre>
+<h3 id="performance-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 13.1:</strong> when the input contains <code>&lt;p&gt;</code>, the performance handler preserves it.</li>
+<li><strong>Rule 13.2:</strong> when the input contains <code>&lt;em&gt;</code>, the performance handler normalizes it<ul><li>see also <a href="#installation">Installation</a></li></ul>.</li>
+<li><strong>Rule 13.3:</strong> when the input contains <code>&lt;a&gt;</code>, the performance handler escapes it.</li>
+<li><strong>Rule 13.4:</strong> when the input contains <code>&lt;li&gt;</code>, the performance handler re-indents it<ul><li>see also <a href="#options">Configuration options</a></li></ul>.</li>
+<li><strong>Rule 13.5:</strong> when the input contains <code>&lt;td&gt;</code>, the performance handler wraps it.</li>
+</ul>
+<h3 id="performance-reference">Reference</h3>
+<table class="reference" data-section="performance">
+<caption>Option reference for performance</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>performance_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for performance.</td></tr>
+<tr><td><code>performance_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for performance.</td></tr>
+<tr><td><code>performance_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for performance.</td></tr>
+<tr><td><code>performance_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for performance.</td></tr>
+<tr><td><code>performance_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for performance.</td></tr>
+<tr><td><code>performance_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for performance.</td></tr>
+<tr><td><code>performance_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for performance.</td></tr>
+<tr><td><code>performance_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for performance.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting performance; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/performance.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="faq" class="doc-section" aria-labelledby="faq-heading">
+<h2 id="faq-heading"><a class="anchor" href="#faq" aria-hidden="true">#</a>Frequently asked questions</h2>
+<p class="summary">Answers to the questions most often raised on the issue tracker.</p>
+<p>If you find a case where the output for frequently asked questions differs from what you expected, please <a href="https://example.org/issues/new?template=bug.md" class="ext">open an issue</a> with the smallest input that reproduces it &mdash; ideally under 20 lines.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<p>This section describes how the converter treats frequently asked questions. The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<h3 id="faq-example">Example</h3>
+<pre><code class="language-toml">[dependencies]
+htmd = "0.5"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+</code></pre>
+<h3 id="faq-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 14.1:</strong> when the input contains <code>&lt;p&gt;</code>, the frequently asked questions handler preserves it.</li>
+<li><strong>Rule 14.2:</strong> when the input contains <code>&lt;em&gt;</code>, the frequently asked questions handler normalizes it<ul><li>see also <a href="#quick-start">Quick start</a></li></ul>.</li>
+<li><strong>Rule 14.3:</strong> when the input contains <code>&lt;a&gt;</code>, the frequently asked questions handler escapes it.</li>
+<li><strong>Rule 14.4:</strong> when the input contains <code>&lt;li&gt;</code>, the frequently asked questions handler re-indents it<ul><li>see also <a href="#headings">Headings</a></li></ul>.</li>
+<li><strong>Rule 14.5:</strong> when the input contains <code>&lt;td&gt;</code>, the frequently asked questions handler wraps it.</li>
+</ul>
+<h3 id="faq-reference">Reference</h3>
+<table class="reference" data-section="faq">
+<caption>Option reference for frequently asked questions</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>faq_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for frequently asked questions.</td></tr>
+<tr><td><code>faq_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for frequently asked questions.</td></tr>
+<tr><td><code>faq_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for frequently asked questions.</td></tr>
+<tr><td><code>faq_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for frequently asked questions.</td></tr>
+<tr><td><code>faq_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for frequently asked questions.</td></tr>
+<tr><td><code>faq_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for frequently asked questions.</td></tr>
+<tr><td><code>faq_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for frequently asked questions.</td></tr>
+<tr><td><code>faq_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for frequently asked questions.</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting frequently asked questions; options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/faq.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="installation-2" class="doc-section" aria-labelledby="installation-2-heading">
+<h2 id="installation-2-heading"><a class="anchor" href="#installation-2" aria-hidden="true">#</a>Installation (part 2)</h2>
+<p class="summary">Add the crate to your manifest and enable only the features you need.</p>
+<p>Note that browsers are lenient about malformed markup, and the parser mirrors that leniency: unclosed <code>&lt;p&gt;</code> elements, stray end tags, and misnested formatting are repaired exactly as the HTML5 tree-construction algorithm prescribes.</p>
+<p>This section describes how the converter treats installation (part 2). The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on installation (part 2).</p>
+<h3 id="installation-2-example">Example</h3>
+<pre><code class="language-shell">$ cargo add htmd
+$ cargo test --test installation-2_tests
+   Compiling htmd v0.5.0
+    Finished test [unoptimized + debuginfo] target(s)
+</code></pre>
+<h3 id="installation-2-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 15.1:</strong> when the input contains <code>&lt;p&gt;</code>, the installation (part 2) handler preserves it.</li>
+<li><strong>Rule 15.2:</strong> when the input contains <code>&lt;em&gt;</code>, the installation (part 2) handler normalizes it<ul><li>see also <a href="#options">Configuration options</a></li></ul>.</li>
+<li><strong>Rule 15.3:</strong> when the input contains <code>&lt;a&gt;</code>, the installation (part 2) handler escapes it.</li>
+<li><strong>Rule 15.4:</strong> when the input contains <code>&lt;li&gt;</code>, the installation (part 2) handler re-indents it<ul><li>see also <a href="#lists">Lists and list items</a></li></ul>.</li>
+<li><strong>Rule 15.5:</strong> when the input contains <code>&lt;td&gt;</code>, the installation (part 2) handler wraps it.</li>
+</ul>
+<h3 id="installation-2-reference">Reference</h3>
+<table class="reference" data-section="installation-2">
+<caption>Option reference for installation (part 2)</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>installation_2_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for installation (part 2).</td></tr>
+<tr><td><code>installation_2_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for installation (part 2).</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting installation (part 2); options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/installation-2.md" rel="nofollow">Edit this page</a></p>
+</section>
+<section id="quick-start-2" class="doc-section" aria-labelledby="quick-start-2-heading">
+<h2 id="quick-start-2-heading"><a class="anchor" href="#quick-start-2" aria-hidden="true">#</a>Quick start (part 2)</h2>
+<p class="summary">Convert a fragment in a single call, or build a converter once and reuse it.</p>
+<p>This section describes how the converter treats quick start (part 2). The behavior follows the <a href="https://spec.commonmark.org/0.31.2/" rel="noopener">CommonMark specification</a> wherever a direct equivalent exists, and documents each fallback where it does not.</p>
+<p>In practice, most documents need no configuration at all. When they do, the <code>Options</code> struct exposes a <strong>small</strong> set of switches, each of which is described below together with an example of its effect on quick start (part 2).</p>
+<p>A common source of confusion is the difference between <em>rendered</em> equivalence and <em>textual</em> equivalence. Two Markdown strings may differ byte for byte yet render to the same HTML; the converter aims for the former, and the test suite checks it for quick start (part 2).</p>
+<h3 id="quick-start-2-example">Example</h3>
+<pre><code class="language-html">&lt;section id="quick-start-2"&gt;
+  &lt;h2&gt;Quick start (part 2)&lt;/h2&gt;
+  &lt;p class="lead"&gt;Example input &amp;amp; output.&lt;/p&gt;
+&lt;/section&gt;
+</code></pre>
+<h3 id="quick-start-2-rules">Rules</h3>
+<ul class="rules">
+<li><strong>Rule 16.1:</strong> when the input contains <code>&lt;p&gt;</code>, the quick start (part 2) handler preserves it.</li>
+<li><strong>Rule 16.2:</strong> when the input contains <code>&lt;em&gt;</code>, the quick start (part 2) handler normalizes it<ul><li>see also <a href="#headings">Headings</a></li></ul>.</li>
+<li><strong>Rule 16.3:</strong> when the input contains <code>&lt;a&gt;</code>, the quick start (part 2) handler escapes it.</li>
+<li><strong>Rule 16.4:</strong> when the input contains <code>&lt;li&gt;</code>, the quick start (part 2) handler re-indents it<ul><li>see also <a href="#tables">Tables</a></li></ul>.</li>
+<li><strong>Rule 16.5:</strong> when the input contains <code>&lt;td&gt;</code>, the quick start (part 2) handler wraps it.</li>
+</ul>
+<h3 id="quick-start-2-reference">Reference</h3>
+<table class="reference" data-section="quick-start-2">
+<caption>Option reference for quick start (part 2)</caption>
+<thead><tr><th scope="col">Option</th><th scope="col">Type</th><th scope="col" class="num">Default</th><th scope="col">Description</th></tr></thead>
+<tbody>
+<tr><td><code>quick_start_2_style</code></td><td>enum</td><td class="num">Atx</td><td>Controls the style used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_marker</code></td><td>char</td><td class="num">&#x27;*&#x27;</td><td>Controls the marker used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_limit</code></td><td>usize</td><td class="num">512</td><td>Controls the nesting limit used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_mode</code></td><td>enum</td><td class="num">Pure</td><td>Controls the translation mode used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_indent</code></td><td>u8</td><td class="num">4</td><td>Controls the indent width used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_wrap</code></td><td>bool</td><td class="num">false</td><td>Controls the line wrapping used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_escape</code></td><td>bool</td><td class="num">true</td><td>Controls the escaping used for quick start (part 2).</td></tr>
+<tr><td><code>quick_start_2_trim</code></td><td>bool</td><td class="num">true</td><td>Controls the trimming used for quick start (part 2).</td></tr>
+</tbody></table>
+<blockquote class="callout" cite="https://spec.commonmark.org/0.31.2/"><p><strong>Note:</strong> the reference table above lists every option affecting quick start (part 2); options not listed here have no effect on this construct.</p></blockquote>
+<dl class="glossary"><dt>Block</dt><dd>A structural element such as a paragraph or list.</dd><dt>Inline</dt><dd>Content inside a block, such as <em>emphasis</em> or a <a href="#links">link</a>.</dd></dl>
+<p class="nav-footer"><a href="#top">Back to top</a> &middot; <a href="https://example.org/edit/main/docs/quick-start-2.md" rel="nofollow">Edit this page</a></p>
+</section>
+</article>
+</main>
+</div>
+<footer class="site-footer">
+<p>&copy; 2026 Converter contributors. Licensed under <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache-2.0</a>.</p>
+<p><small>Last updated <time datetime="2026-11-16">16 November 2026</time>.</small></p>
+</footer>
+</body>
+</html>
