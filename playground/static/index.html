@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  After the page's own files load, nothing may make a network request
+  (spec, Constraints: Safety). The Rendered and Original frames inherit this
+  policy as well as setting their own (app/src/frame.rs); their inline styles
+  are why style-src allows 'unsafe-inline'.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Try htmd (HTML to Markdown) and pulldown-cmark (Markdown to HTML) in your browser.">
+<title>htmd playground</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+<noscript><p class="load-error">The htmd playground needs JavaScript and WebAssembly.</p></noscript>
+</body>
+</html>
