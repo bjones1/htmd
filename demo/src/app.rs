@@ -1245,7 +1245,7 @@ pub fn App() -> impl IntoView {
                     tabindex="0"
                     hidden=move || ui.active_tab.get() != ActiveTab::Source
                 >
-                    <pre class="source-view" id="source-view">
+                    <pre class="source-view" id="source-view" tabindex="0">
                         {move || active_output.get().source}
                     </pre>
                 </div>
@@ -1266,11 +1266,11 @@ pub fn App() -> impl IntoView {
                     <div class="fidelity-panel">
                         <div class="fidelity-col">
                             <h3>"Original (canonical)"</h3>
-                            <pre class="canon">{panel.original.clone()}</pre>
+                            <pre class="canon" tabindex="0">{panel.original.clone()}</pre>
                         </div>
                         <div class="fidelity-col">
                             <h3>"Round-tripped (canonical)"</h3>
-                            <pre class="canon">{panel.roundtrip.clone()}</pre>
+                            <pre class="canon" tabindex="0">{panel.roundtrip.clone()}</pre>
                         </div>
                         <div class="fidelity-col">
                             <h3>"Word diff"</h3>

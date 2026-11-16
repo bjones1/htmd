@@ -3,3 +3,9 @@ output_*.md
 *.svg
 *.log
 *.estimates.json
+/.tools/
+/demo/target/
+/demo/dist/
+/demo/node_modules/
+/demo/playwright-report/
+/demo/test-results/
