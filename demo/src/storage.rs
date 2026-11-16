@@ -6,10 +6,6 @@
 //! Pure logic throughout: the `web_sys` localStorage adapter is
 //! `wasm32`-only (see [`web`]); everything here runs natively under test.
 
-// The UI task that wires the controller into the app is this module's
-// only consumer; until then, `-D warnings` sees the items as dead code.
-#![allow(dead_code)]
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -24,6 +20,9 @@ use crate::options_model::{CmarkFlags, HtmdOptions, demo_preset};
 pub const WORKSPACE_KEY: &str = "htmd_cmark_live_workspace";
 /// FR-8/FR-7: the crash-recovery marker; its presence at startup
 /// triggers the recovery flow instead of the initial conversion.
+// Natively only the unit tests read it; wasm reaches it through the
+// panic hook's marker write.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub const CRASH_MARKER_KEY: &str = "htmd_cmark_live_crashed";
 /// FR-8: the debounce window for text-entry saves.
 const SAVE_DEBOUNCE_MS: u32 = 500;
@@ -35,6 +34,10 @@ const SCHEMA_VERSION: u32 = 1;
 
 /// Why a [`Store::set`] failed. Reads never fail: [`Store::get`] maps
 /// errors to `None` (FR-8 safe reads).
+// The variants are constructed by the wasm adapter's error mapping and
+// the unit tests' scripted store; neither is in the native non-test
+// build, but the type itself appears in every `Store::set` signature.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreError {
     /// The storage quota was exceeded (browser `QuotaExceededError`).
@@ -69,6 +72,7 @@ impl MemoryStore {
     }
 
     /// A store pre-seeded with one key (fixture setup).
+    #[allow(dead_code)] // test-fixture constructor; production paths use `new`
     pub fn with(key: &str, value: &str) -> Self {
         let store = Self::new();
         store
@@ -494,6 +498,18 @@ impl<S: Store> StorageController<S> {
     /// the crash marker removed.
     pub fn recovery_conversion_succeeded(&mut self) {
         self.store.remove(CRASH_MARKER_KEY);
+    }
+
+    /// Whether a banner's state is currently showing. The UI mirrors
+    /// this after every controller call: [`Self::flush`],
+    /// [`Self::on_event`], and the flush-before-write setters return
+    /// only *transitions into* failure, so a `None` result alone cannot
+    /// tell the UI that a banner was cleared by a successful write.
+    pub fn banner_active(&self, signal: BannerSignal) -> bool {
+        match signal {
+            BannerSignal::SaveFailed => self.save_failed_banner,
+            BannerSignal::ExternalWrite => self.external_write_banner,
+        }
     }
 
     /// (Re)start the 500 ms save window, cancelling any pending one.
@@ -1463,5 +1479,26 @@ mod tests {
             Some(BannerSignal::ExternalWrite),
             "the successful write cleared the state"
         );
+    }
+
+    #[test]
+    fn banner_active_mirrors_both_states_across_transitions() {
+        // The UI's mirror query: false by default, true once announced,
+        // false again after the next successful write clears it.
+        let mut h = Harness::new();
+        h.controller.load();
+        assert!(!h.controller.banner_active(BannerSignal::SaveFailed));
+        assert!(!h.controller.banner_active(BannerSignal::ExternalWrite));
+        h.controller.on_storage_event(WORKSPACE_KEY);
+        assert!(h.controller.banner_active(BannerSignal::ExternalWrite));
+        h.controller.on_text_edit(Mode::MdToHtml, "own write");
+        h.advance(500);
+        assert!(!h.controller.banner_active(BannerSignal::ExternalWrite));
+        h.store.fail_with(StoreError::QuotaExceeded);
+        h.controller.flush();
+        assert!(h.controller.banner_active(BannerSignal::SaveFailed));
+        h.store.heal();
+        h.controller.flush();
+        assert!(!h.controller.banner_active(BannerSignal::SaveFailed));
     }
 }

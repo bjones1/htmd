@@ -3,10 +3,6 @@
 //! exactly once per *transition into* a limit state, stay visible while
 //! the state persists, and clear when the input returns within the limit.
 
-// The UI task that renders the banner region is this module's only
-// consumer; until it exists, `-D warnings` sees the items as dead code.
-#![allow(dead_code)]
-
 use crate::convert::Blocked;
 
 /// FR-7 size limit, verbatim: the banner shown when the input exceeds

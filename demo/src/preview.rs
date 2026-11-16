@@ -5,11 +5,6 @@
 //! stripped of the elements and attributes FR-1:46 lists before it
 //! enters the sandbox.
 
-// The UI task that assigns the built srcdoc to the iframe is this
-// module's only consumer; until it exists, `-D warnings` sees the items
-// as dead code.
-#![allow(dead_code)]
-
 use html5ever::driver::ParseOpts;
 use html5ever::parse_fragment;
 use html5ever::serialize::{SerializeOpts, TraversalScope, serialize};

@@ -39,9 +39,6 @@ pub enum DiffToken {
 /// exceeds 5,000 tokens (§6:213), and otherwise return the middle's
 /// tokens. No `similar` deadline is configured: `std::time::Instant`
 /// panics on `wasm32-unknown-unknown`.
-// The fidelity-panel task that calls this is the module's only consumer;
-// until it exists, `-D warnings` sees it as dead code.
-#[allow(dead_code)]
 pub fn word_diff(original: &str, roundtripped: &str) -> WordDiff {
     let old = original.tokenize_words();
     let new = roundtripped.tokenize_words();

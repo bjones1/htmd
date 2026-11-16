@@ -10,10 +10,6 @@
 //! deliberate-panic smoke test (`demo-panic-test`); its behavior is
 //! feature-independent.
 
-// Task 10's save wiring (via `storage_halted`) is this module's only
-// consumer until then; `-D warnings` sees the items as dead code.
-#![allow(dead_code)]
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_arch = "wasm32")]
@@ -47,6 +43,9 @@ pub fn storage_halted() -> bool {
 /// Claim `flag` for its owner: `true` on the first call, `false` on
 /// every later one. The idempotence behind both [`install`] and the
 /// storage halt; native-testable because it takes the flag as input.
+// Natively `install` is compiled out, so this is reachable only from
+// the unit tests there; wasm reaches it through `install`.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub(crate) fn mark_installed(flag: &AtomicBool) -> bool {
     !flag.swap(true, Ordering::SeqCst)
 }

@@ -533,6 +533,7 @@ dependencies = [
  "leptos",
  "markup5ever_rcdom",
  "pulldown-cmark",
+ "send_wrapper",
  "serde",
  "serde_json",
  "similar",

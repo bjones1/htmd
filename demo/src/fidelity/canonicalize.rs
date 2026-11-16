@@ -18,9 +18,6 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
 /// variations listed in spec §8.7 yield byte-identical strings for the
 /// word-level diff. Both fidelity-panel sides go through this function, so
 /// every rule is symmetric by construction.
-// The fidelity-panel task that calls this is the module's only consumer;
-// until it exists, `-D warnings` sees it as dead code.
-#[allow(dead_code)]
 pub fn canonicalize(html: &str) -> String {
     let dom = parse_fragment(
         RcDom::default(),

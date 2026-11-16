@@ -5,14 +5,11 @@
 //! *which* mode's buffer a click or reload replaces, with what text, and
 //! what the one-shot Undo restores.
 
-// The UI task that drives these types is this module's only consumer; until
-// it exists, `-D warnings` sees the items as dead code.
-#![allow(dead_code)]
-
 use crate::engine::ConversionMode;
 use crate::storage::{HtmlSample, MdSample};
 
 /// Task brief's size guidance: each sample variant stays within ~1 kB.
+#[allow(dead_code)] // asserted by the unit tests; not read at runtime
 const MAX_VARIANT_BYTES: usize = 1024;
 
 /// One FR-6 sample: fixed content with one variant per supported mode.

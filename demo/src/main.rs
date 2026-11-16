@@ -1,6 +1,7 @@
 use leptos::mount::mount_to_body;
 
 mod app;
+mod clock;
 mod convert;
 mod engine;
 mod fidelity;

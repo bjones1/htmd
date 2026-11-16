@@ -1,10 +1,6 @@
 //! Bidirectional conversion: pulldown-cmark rendering and the gated
 //! HTML → Markdown pipeline (spec FR-1, FR-7).
 
-// The UI task that calls these wrappers is this module's only consumer;
-// until it exists, `-D warnings` sees them as dead code.
-#![allow(dead_code)]
-
 use htmd::{HtmlToMarkdown, Node};
 use markup5ever_rcdom::NodeData;
 use std::rc::Rc;

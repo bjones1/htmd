@@ -4,10 +4,6 @@
 //! arrive from the caller (the wasm/UI layer), which also supplies the
 //! [`Clock`] that production code backs with `web_sys` timers.
 
-// The UI task that drives these inputs is this module's only consumer;
-// until it exists, `-D warnings` sees the items as dead code.
-#![allow(dead_code)]
-
 use std::rc::Rc;
 
 /// FR-2's immediate-conversion ceiling: inputs at or below this many UTF-8
@@ -193,6 +189,35 @@ impl Engine {
         let target = index_of(mode);
         self.modes[target].buffer = text.to_owned();
         self.modes[target].output_valid = false;
+        self.immediate_trigger()
+    }
+
+    /// FR-2/FR-8 startup restore: adopt the persisted `mode` and seed
+    /// both per-mode buffer mirrors from storage, invalidating both
+    /// outputs and cancelling any pending batch. `convert` arms the
+    /// active buffer's FR-2 "converted once at startup" run (immediate
+    /// path, whatever its size class); the crash-marker flow (FR-8:160)
+    /// passes `false` to restore without converting. No existing input
+    /// can write the inactive mode's buffer, which startup needs.
+    pub fn on_restore(
+        &mut self,
+        mode: ConversionMode,
+        md_buffer: &str,
+        html_buffer: &str,
+        convert: bool,
+    ) -> Vec<Action> {
+        self.mode = mode;
+        for (index, buffer) in [
+            (index_of(ConversionMode::MarkdownToHtml), md_buffer),
+            (index_of(ConversionMode::HtmlToMarkdown), html_buffer),
+        ] {
+            self.modes[index].buffer = buffer.to_owned();
+            self.modes[index].output_valid = false;
+        }
+        self.cancel_batch();
+        if !convert {
+            return Vec::new();
+        }
         self.immediate_trigger()
     }
 
@@ -808,6 +833,68 @@ mod tests {
         assert_eq!(h.engine.in_flight, Some(2)); // run 2 unaffected
         assert!(h.engine.on_iframe_load(2).is_empty());
         assert_eq!(h.engine.in_flight, None);
+    }
+
+    #[test]
+    fn restore_with_convert_dispatches_once_for_the_active_buffer() {
+        let mut h = Harness::new();
+        let big = Harness::big_text();
+        let actions =
+            h.engine
+                .on_restore(ConversionMode::HtmlToMarkdown, "# md", big.as_str(), true);
+        assert!(actions.is_empty()); // > 2 kB buffer still rides the frame timer
+        assert_eq!(h.clock.live_timers(), 1);
+        let fired = h.advance(0); // no 250 ms wait at startup
+        assert_eq!(Harness::dispatch_seqs(&fired), vec![1]);
+        assert_eq!(h.engine.on_conversion_ready(1), CommitOutcome::Commit);
+    }
+
+    #[test]
+    fn restore_seeds_both_mirrors_so_a_later_switch_converts_the_target() {
+        let mut h = Harness::new();
+        h.engine.on_restore(
+            ConversionMode::MarkdownToHtml,
+            "restored md",
+            "<p>x</p>",
+            true,
+        );
+        assert_eq!(Harness::dispatch_seqs(&h.advance(0)), vec![1]);
+        assert_eq!(h.engine.on_conversion_ready(1), CommitOutcome::Commit);
+        h.engine.on_iframe_load(1);
+        // Switching to the mode whose buffer arrived only via restore:
+        // its mirror is seeded, so the switch clears and reconverts it.
+        let actions = h.engine.on_mode_switch();
+        assert_eq!(actions, vec![Action::ClearOutput]);
+        assert_eq!(Harness::dispatch_seqs(&h.advance(0)), vec![2]);
+        assert_eq!(h.engine.on_conversion_ready(2), CommitOutcome::Commit);
+    }
+
+    #[test]
+    fn restore_without_convert_seeds_mirrors_but_never_dispatches() {
+        let mut h = Harness::new();
+        h.engine
+            .on_restore(ConversionMode::HtmlToMarkdown, "# md", "<p>x</p>", false);
+        assert!(h.advance(5_000).is_empty(), "no startup conversion");
+        assert_eq!(h.clock.live_timers(), 0);
+        // The buffers are seeded, so switching converts the target.
+        let actions = h.engine.on_mode_switch();
+        assert_eq!(actions, vec![Action::ClearOutput]);
+        assert_eq!(Harness::dispatch_seqs(&h.advance(0)), vec![1]);
+        assert_eq!(h.engine.on_conversion_ready(1), CommitOutcome::Commit);
+    }
+
+    #[test]
+    fn restore_with_oversized_active_buffer_converts_nothing() {
+        let mut h = Harness::new();
+        let oversized = "x".repeat(100_001);
+        h.engine.on_restore(
+            ConversionMode::MarkdownToHtml,
+            oversized.as_str(),
+            "<p>x</p>",
+            true,
+        );
+        assert!(h.advance(5_000).is_empty());
+        assert_eq!(h.clock.live_timers(), 0);
     }
 
     #[test]
