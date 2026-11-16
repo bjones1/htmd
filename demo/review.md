@@ -1551,3 +1551,5 @@ clippy`, and `cargo test` were not run (no code under review changed).
 demo-panic-test runs; §6 focus clause scoped to non-terminal errors). The
 specification review converged at round 14: zero blocking, zero medium, two
 trivial lows — fixed. No findings remain open from rounds 1–14.
+
+**Post-round-14 amendment (controller ruling):** §6/FR-7 release-profile strip wording corrected to strip=false + wasm-opt — Task 0 empirically verified rustc strip=true breaks wasm-opt 116–133 (memory.copy/target_features); recorded for transparency after convergence.
