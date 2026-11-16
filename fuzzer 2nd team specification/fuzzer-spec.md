@@ -97,10 +97,11 @@ in every failure.
 | `core`  | `Options::empty()`                            | Generated cases without GFM-only constructs           |
 | `gfm`   | tables, strikethrough, and task lists enabled | Generated cases with at least one GFM table construct |
 
-Tables (including captions) qualify generated round-trip cases as GFM-only.
-`htmd` does not translate task-list syntax: an HTML checkbox input in a list
-item is emitted as HTML and tests only fallback preservation. A parser-only
-Markdown task-list fixture verifies the pinned `pulldown-cmark` option.
+A `gfm` round-trip case must contain at least one pipe table that `htmd` actually translates into Markdown. The table must have no caption, no attributes that force HTML fallback, and a structure accepted by the table handler.
+
+A captioned table does not satisfy this requirement. In `Faithful` mode, a caption forces the whole table to HTML because GFM has no caption syntax. Such cases test HTML fallback preservation only.
+
+`htmd` does not translate task-list syntax. An HTML checkbox input in a list item is emitted as HTML and tests only fallback preservation. A checkbox does not satisfy the GFM-construct requirement. A parser-only Markdown task-list fixture verifies the pinned `pulldown-cmark` option.
 
 `del` and `s` lack handlers in `src/element_handler/`, so `Faithful` mode emits
 them as raw HTML. They are not GFM-only generated constructs: tests cover HTML
@@ -146,7 +147,7 @@ Normalization passes run in order on both trees:
 1. Collapse runs of ASCII whitespace inside non-opaque text nodes to a single
    space.
 2. Trim spaces around `br` boundaries.
-3. Collapse spaces across adjacent inline text leaves.
+3. Canonicalize whitespace at inline-child boundaries according to section 6.1.
 4. Trim leading and trailing whitespace at inline-run edges.
 5. In each `li`, represent every maximal direct run of inline-content children
    as one canonical paragraph. A direct `p` child with inline-content children
@@ -184,6 +185,54 @@ Block vs. inline:
 
 Remove whitespace-only runs at block boundaries; preserve semantically
 meaningful inline boundary spaces.
+
+### 6.1 Inline-boundary whitespace rule
+
+For every boundary between two adjacent inline-content children, inspect the last character of the left child and the first character of the right child.
+
+If either boundary contains one or more ASCII whitespace characters, remove all trailing whitespace from the left child's last text node and all leading whitespace from the right child's first text node. Then insert exactly one ASCII space between the two children.
+
+If neither side contains boundary whitespace, do not insert a space.
+
+This rule places boundary spaces outside inline elements consistently.
+
+Examples:
+
+```html
+a<em> b</em>
+a <em>b</em>
+```
+
+Both examples normalize to:
+
+```html
+a <em>b</em>
+```
+
+The following examples also normalize to the same result:
+
+```html
+<em>a </em><strong>b</strong>
+<em>a</em> <strong>b</strong>
+```
+
+Both normalize to:
+
+```html
+<em>a</em> <strong>b</strong>
+```
+
+Whitespace at the beginning or end of an inline run is removed by normalization pass 4. This rule does not cross block or `br` boundaries.
+
+### 6.2 Round-trip normalization rules
+
+The following differences must be handled by normalization rather than the known-loss allowlist:
+
+* For an `ol` element, remove the `start` attribute when its value is `1`. Other values must still be compared.
+* For a `pre` element with exactly one `code` child, remove exactly one trailing newline (`\n`) from the code text during normalization. Do not remove additional trailing newlines.
+* For a `pre` element with exactly one `code` child, treat a single `language-*` class on `pre` and the same class on `code` as equivalent. Move the language class to the `code` child in the normalized representation. All other classes and attributes must still be compared.
+
+Add predefined self-tests for every normalization pass. Tests must cover whitespace handling, `br` boundaries, inline-run edges, list paragraph wrappers, empty text nodes, adjacent text nodes, opaque elements, `ol start="1"`, code-block trailing newlines, and language classes on `pre` and `code`.
 
 7\. Comparison rules
 --------------------
@@ -224,7 +273,8 @@ Log all effective options with every failure.
 
 Known-loss allowlist:
 
-* Starts empty
+* Starts empty. Differences handled by normalization rules in sections 6.1
+  and 6.2 must not be added to the allowlist.
 * Each entry records the HTML pattern, observed diff, source, and status
 * Matches must be narrow and programmatic
 * A mismatch is a failure unless it matches an allowlist rule
@@ -314,7 +364,10 @@ children for block leaves/inline elements, table parts only under `table`, and
 `li` only under `ul` or `ol`.
 
 Profile membership follows section 5. The `core` generator draws no table tier
-and no GFM-only construct; the `gfm` generator forces at least one.
+and no GFM-only construct. Every `gfm` case must include at least one
+translatable pipe table with no caption and no attributes that force HTML
+fallback. Captioned tables and checkbox fallback probes may also be generated,
+but they do not satisfy this requirement.
 
 ### 11.3 Grammar and content models
 
@@ -337,8 +390,15 @@ Apply these content-model rules:
 * `ul` and `ol` contain only `li` children. A list item contains inline children
   and may also contain nested lists or other block children.
 * `p` and `h1`–`h6` contain inline children only.
-* `pre` contains text or a `code` child; a `code` span contains text children
-  only and is never nested.
+* `pre` has a dedicated generation rule. At least 80% of generated `pre` nodes
+  must contain exactly one `code` child. This `code` child contains one or
+  more text children only. This structure exercises the normal code-block
+  translation path.
+* The remaining `pre` nodes are fallback probes. They may contain direct
+  text or a different inline-child structure, such as a `span` child or
+  multiple children. These structures exercise the HTML fallback path and
+  must not count as translated code-block coverage.
+* A `code` child is never nested.
 * `a`, `strong`, `b`, `i`, `em`, `span`, and `q` contain inline children.
   Anchors are not nested.
 * `img`, `br`, `hr`, and `input` are void elements and have no children.
