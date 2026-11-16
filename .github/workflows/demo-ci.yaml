@@ -6,7 +6,7 @@ name: Demo CI and Pages
 on:
   push:
     branches:
-      - main
+      - demo-spec
     paths:
       - "demo/**"
       - "src/**"
@@ -27,8 +27,8 @@ env:
 
 concurrency:
   group: demo-${{ github.ref }}
-  # Never cancel a run on main: it may be mid-way through a Pages deploy.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # Never cancel a run on demo-spec: it may be mid-way through a Pages deploy.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/demo-spec' }}
 
 jobs:
   build:
@@ -95,7 +95,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/demo-spec'
     runs-on: ubuntu-latest
     permissions:
       pages: write
