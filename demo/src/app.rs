@@ -538,6 +538,12 @@ fn overwrite_with_ceiling_check(
 // ---------- editor (textarea) ----------
 
 fn editor_element() -> Option<web_sys::HtmlTextAreaElement> {
+    // Off the web target the wasm-bindgen externs are unimplemented
+    // stubs (as in `performance`); native tests drive the handlers
+    // without a DOM.
+    if cfg!(not(target_arch = "wasm32")) {
+        return None;
+    }
     let document = web_sys::window()?.document()?;
     document.get_element_by_id("editor")?.dyn_into().ok()
 }
@@ -607,6 +613,9 @@ fn snapshot_editor(ui: &Ui) {
 /// Restore the active mode's scroll offset and selection after the
 /// buffer swap; a frame later the value's layout has settled.
 fn restore_editor_later(ui: &Ui) {
+    if cfg!(not(target_arch = "wasm32")) {
+        return;
+    }
     let mode = ui.mode.get_untracked();
     let scroll = ui.scroll(mode).get_untracked();
     let (start, end) = ui.selection(mode).get_untracked();
@@ -636,6 +645,13 @@ fn switch_mode(core: &CoreRef, ui: &Ui, target: ConversionMode) {
         sync_storage_banners(&c, ui);
     }
     let actions = c.engine.on_mode_switch();
+    // FR-7: a still-oversized target buffer enters its size banner on
+    // the switch itself, mirroring the startup Restored path instead of
+    // waiting for the next edit; `Banners::enter` no-ops while active,
+    // so repeated switches do not re-announce.
+    if ui.buffer(target).get_untracked().len() > MAX_INPUT_BYTES {
+        enter_limit_banner(&mut c, ui, BannerKind::SizeLimit, target);
+    }
     ui.mode.set(target);
     ui.editor_text.set(ui.buffer(target).get_untracked());
     drop(c);
@@ -2030,6 +2046,45 @@ mod tests {
             );
             h.run_pending_batch(); // halted: nothing commits
             assert!(!h.ui.out_html.get().valid);
+        });
+    }
+
+    /// FR-7 (final-review fix): switching onto a still-oversized buffer
+    /// enters its size banner on the switch itself, announced exactly
+    /// once — further switches while the limit persists re-announce
+    /// nothing.
+    #[test]
+    fn switch_to_oversized_buffer_enters_size_banner_once() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            // The MD buffer typed over the ceiling: the engine's mirror
+            // follows the edit and arms no batch.
+            let oversized = "x".repeat(100_001);
+            h.ui.buf_md.set(oversized.clone());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_edit(&oversized);
+            }
+
+            // MD → HTML: the in-range target enters no banner.
+            switch_mode(&h.core, &h.ui, ConversionMode::HtmlToMarkdown);
+            assert!(!h.ui.size_banner.get());
+
+            // HTML → MD: the switch lands on the oversized buffer; the
+            // banner enters now, without waiting for an edit, and the
+            // halt clears that mode's output.
+            switch_mode(&h.core, &h.ui, ConversionMode::MarkdownToHtml);
+            assert!(h.ui.size_banner.get());
+            assert!(!h.ui.out_md.get().valid);
+
+            // The entry announced exactly once (its own sync drained
+            // it): further switches while it persists re-announce
+            // nothing and the banner stays up.
+            switch_mode(&h.core, &h.ui, ConversionMode::HtmlToMarkdown);
+            switch_mode(&h.core, &h.ui, ConversionMode::MarkdownToHtml);
+            assert!(h.ui.size_banner.get());
+            assert_eq!(h.core.borrow_mut().banners.take_announced().count(), 0);
         });
     }
 }
