@@ -103,7 +103,7 @@ its test suite.
 
 #### Justin Gray
 
-Compiler verification not run; member no longer in the team.
+Compiler verification pending; the member has rejoined the team for the final submission and will record the verification output here.
 
 
 ### Spec review rounds
@@ -1039,6 +1039,34 @@ GitHub userid: nurlybek-aimagambetov
 #### Specification review rounds
 
 (Table showing spec review rounds)
+
+#### Last specification review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
+
+#### Implementation review rounds
+
+(Table showing implementation review rounds)
+
+#### Last implementation review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
+
+### Justin Gray
+
+GitHub userid: JustinG1133
+
+#### Contributions
+
+(One-sentence contribution)
+
+#### Specification review rounds
+
+(Table showing final-submission spec review rounds)
 
 #### Last specification review
 
