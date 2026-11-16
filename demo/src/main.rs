@@ -7,6 +7,7 @@ mod fidelity;
 mod limits;
 mod options_model;
 mod panic_hook;
+mod preview;
 mod samples;
 mod storage;
 
