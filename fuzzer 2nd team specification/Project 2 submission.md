@@ -182,16 +182,7 @@ Final submission
 
 * Altynay: Fixed issues 5, 6, 13 and 14. Eliminated duplicated information,
   added block diagram for the pipeline. Generated draft source code.
-* Aiym: Addressed professor review Major 7–8 and audited all ten Minor
-  findings against team main `a8f476d`. Aligned the source/round-trip parser
-  contract with htmd document parsing; added exact rand 0.9.2 / rand_chacha
-  0.9.0 dev-dependencies and lockfile entries; replaced the draft's custom
-  PRNG with ChaCha8Rng and per-case wrapping seed derivation. Clarified
-  error classification, block membership, defaults, executable snapshots,
-  replay metadata, Unicode scalar limits, decoded entities, and reducer path
-  preservation. Retained the already-fixed scope deduplication. Added seven
-  executable contract tests and a reusable body-extraction/block-set helper.
-  This contribution does not claim a complete fuzzer or a fuzzing campaign.
+* Aiym: Addressed Major issues 7–8 and all ten Minor findings. Updated the specification, corrected the draft PRNG, and added seven contract tests.
 * Daulet: Fixed issues 1, 2, 9 and 10.
 * Ali:
 
