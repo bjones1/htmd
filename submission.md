@@ -64,7 +64,8 @@ they do not establish that the proposed Subscript encoding is implemented.
 | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | 2        | Updated the Subscript introduction in `translation_approach.md` to clarify that tilde syntax is a proposed pulldown-cmark extension encoding, not behavior htmd currently emits, and to qualify strikethrough by its required option. |
 | 2     | 2        | Updated the Subscript introduction in `translation_approach.md` to explain single-tilde delimiter constraints and clarify that the examples are proposed behavior, not current htmd output.                                           |
-| 3     | 0        | No changes, confirmed round 2 fixes.                                                                                                                                                                                                  |
+| 3     | 0        | No changes, confirmed round 2 fixes.                                                                                                                                                                                              |
+| 4     | 0        | Added a link to the emphasis rules, clarified that `~` follows `_` rather than `*`, noted that literal tildes must be escaped outside `<sub>`, distinguished `ENABLE_STRIKETHROUGH` from `ENABLE_SUBSCRIPT`, and changed “examples” to “rules.” |
 
 ### Arsen Zhanserkenov
 
@@ -155,14 +156,9 @@ indicates LLM output that I deemed incorrect or irrelevant.
 
 ### Pavel Shegay
 
-Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the “introduction” subsection of “Subscript” in translation_approach.md for round 3. Check it against the CommonMark spec, pulldown-cmark with ENABLE_SUBSCRIPT, and the existing “Emphasis and strong emphasis” section. Write any numbered findings to review_round_3.md. Do not edit translation_approach.md. If there are no findings, record that and briefly say whether another review round seems necessary.`
-produced the following output:
-> The introduction now distinguishes CommonMark from pulldown-cmark's
-> `ENABLE_SUBSCRIPT` extension, notes the single-tilde flanking and intraword
-> constraint, clarifies that the examples are proposed rather than current
-> htmd output, and qualifies strikethrough by `ENABLE_STRIKETHROUGH`. No
-> further changes to `translation_approach.md` are indicated by this review.
+For round 4, prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the updated introduction subsection of “Subscript” in translation_approach.md. Since the previous review, I added a link to “Emphasis and strong emphasis,” clarified that a single ~ follows the rules for _ rather than *, stated that literal tildes must be escaped in ordinary Markdown text outside <sub> too, clarified that ENABLE_STRIKETHROUGH is separate from ENABLE_SUBSCRIPT, and changed “The examples below” to “The rules below.” Check these changes for accuracy and clarity against CommonMark and pulldown-cmark with ENABLE_SUBSCRIPT. Do not edit any files. List any serious issues as numbered findings.` produced:
 
+> No serious issues found. The introduction accurately describes the proposed subscript syntax, its delimiter constraint, literal-tilde escaping, and the separate strikethrough option. No further review round seems necessary.
 
 ### Arsen Zhanserkenov
 
