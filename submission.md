@@ -1,4 +1,4 @@
-# Project 2 draft submission: htmd subscript 2
+# Project 2 submission: htmd subscript 2
 
 Team: Pavel Shegay, Viacheslav Sokolov, Arsen Zhanserkenov. Arsen Sailau did
 not take part in this submission.
@@ -185,6 +185,30 @@ Do not edit any files. List serious problems as numbered findings.` produced:
 > unavailable neighboring output. The future delimiter check is explicitly
 > separated from the current conservative fallback.
 
+### Implementation: Viacheslav Sokolov
+
+Prompting Copilot Fusion, Standard (Fusion selected GPT-6 Luna), with
+`Review round 1 of the <sub> implementation on branch subscript-spec (commit
+c3539c3). Check src/element_handler/sub.rs, the ~ escaping in
+src/dom_walker.rs and src/util/escape.rs, and tests/subscript_tests.rs against
+the "Subscript" section of translation_approach.md (TranslationMode::Pure and
+TranslationMode::Faithful, Approach steps 1-4) and against pulldown-cmark
+0.13.4 with Options::ENABLE_SUBSCRIPT. Look for: behavior that contradicts the
+spec, input HTML that produces Markdown which does not round-trip, missing test
+cases, and violations of AGENTS.md (comments, clippy, CRLF). For every finding
+give the input HTML, the actual output, and the expected output. Do not edit
+any files. List serious problems as numbered findings. If there are none, say
+so and whether another review round seems necessary.` produced:
+
+> No findings. I found no behavior contradicting the documented Pure/Faithful
+> approach or pulldown-cmark 0.13.4, and no material test gaps. The requested
+> files retain CRLF line endings; I found no comment or clippy violations.
+>
+> Validation passed: `cargo test` (including the subscript tests) and
+> `cargo clippy -- --deny warnings`.
+>
+> Another review round does not seem necessary.
+
 ## Implementation
 
 Implemented by Viacheslav Sokolov with Claude Code (Claude Opus 5.5) in VS Code.
@@ -221,27 +245,3 @@ Limitations:
   implemented.
 - Pure mode is lossy: `H<sub>2</sub>O` becomes `H~2~O`, which reads back as
   literal text; attributes and comments are dropped.
-
-### Implementation review: Viacheslav Sokolov
-
-Prompting Copilot Fusion, Standard (Fusion selected GPT-6 Luna), with
-`Review round 1 of the <sub> implementation on branch subscript-spec (commit
-c3539c3). Check src/element_handler/sub.rs, the ~ escaping in
-src/dom_walker.rs and src/util/escape.rs, and tests/subscript_tests.rs against
-the "Subscript" section of translation_approach.md (TranslationMode::Pure and
-TranslationMode::Faithful, Approach steps 1-4) and against pulldown-cmark
-0.13.4 with Options::ENABLE_SUBSCRIPT. Look for: behavior that contradicts the
-spec, input HTML that produces Markdown which does not round-trip, missing test
-cases, and violations of AGENTS.md (comments, clippy, CRLF). For every finding
-give the input HTML, the actual output, and the expected output. Do not edit
-any files. List serious problems as numbered findings. If there are none, say
-so and whether another review round seems necessary.` produced:
-
-> No findings. I found no behavior contradicting the documented Pure/Faithful
-> approach or pulldown-cmark 0.13.4, and no material test gaps. The requested
-> files retain CRLF line endings; I found no comment or clippy violations.
->
-> Validation passed: `cargo test` (including the subscript tests) and
-> `cargo clippy -- --deny warnings`.
->
-> Another review round does not seem necessary.
