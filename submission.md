@@ -178,3 +178,40 @@ Do not edit any files. List serious problems as numbered findings.` produced:
 > content, comments, nested subscripts, attributes, adjacent subscripts, and
 > unavailable neighboring output. The future delimiter check is explicitly
 > separated from the current conservative fallback.
+
+## Implementation
+
+Implemented by Viacheslav Sokolov with Claude Code (Claude Opus 5.5) in VS Code.
+Prompt: `Implement the Subscript section of translation_approach.md in htmd,
+with tests that round-trip through pulldown-cmark with ENABLE_SUBSCRIPT; make
+cargo build, cargo clippy -- --deny warnings and cargo test pass.`
+
+Changed files:
+
+- `src/element_handler/sub.rs` (new): the `<sub>` handler. Faithful mode always
+  keeps the tags (Approach step 4) and translates the children inline. Pure
+  mode moves edge whitespace outside, writes `~content~`, drops an empty
+  subscript, and keeps only the outer level of a nested one.
+- `src/element_handler/mod.rs`: registers the handler for `sub`.
+- `src/dom_walker.rs`: escapes every literal `~` in text as `\~` (Approach
+  step 3), not only a `~` at the start of a line.
+- `src/util/escape.rs`: the same escaping for image `alt` text.
+- `tests/subscript_tests.rs` (new): 11 tests; each converts HTML and reads the
+  Markdown back with pulldown-cmark `ENABLE_SUBSCRIPT`.
+- `tests/basic_tests.rs`, `tests/turndown_online_demo_tests.rs`,
+  `tests/html/turndown_test_index.html`: expected output updated for the
+  `\~` escaping and for Pure `~ab~`.
+- `translation_approach.md`: the introduction now says what htmd emits; Pure
+  mode's handling of a nested subscript is stated.
+
+Results: `cargo build` and `cargo clippy -- --deny warnings` passed;
+`cargo test` passed 278 tests (267 before plus 11 new), 1 ignored.
+
+Limitations:
+
+- Faithful mode never emits `~x~`: a handler cannot see the emitted
+  characters around the element, so the conservative fallback of step 4
+  applies to every `<sub>`. The encoding steps 1-2 (`&#72;~2~&#79;`) are not
+  implemented.
+- Pure mode is lossy: `H<sub>2</sub>O` becomes `H~2~O`, which reads back as
+  literal text; attributes and comments are dropped.

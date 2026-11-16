@@ -181,20 +181,23 @@ fn is_math_span(attrs: &[html5ever::Attribute]) -> bool {
 /// heading, or an ordered list number. Every one is ASCII, so testing the first
 /// byte of a text node tests its first character.
 ///
-/// Could, not does: only `=`, `~` and `>` open their block on their own. The
+/// Could, not does: only `=` and `>` open their block on their own. The
 /// rest need what follows them as well, which [`escape_if_needed`] decides.
 /// This is the cheap test which sends a text node there at all.
 fn is_markdown_block_start(byte: u8) -> bool {
-    matches!(byte, b'=' | b'~' | b'>' | b'-' | b'+' | b'#' | b'0'..=b'9')
+    matches!(byte, b'=' | b'>' | b'-' | b'+' | b'#' | b'0'..=b'9')
 }
 
 /// The bytes which carry CommonMark meaning wherever in a text node they
 /// appear, and so are escaped one by one. A `&` could begin an
 /// [entity or numeric character reference](https://spec.commonmark.org/0.31.2/#entity-and-numeric-character-references),
-/// and a `$` a math expression; see the math section of
-/// `translation_approach.md`.
+/// a `$` a math expression, and a `~` a subscript; see the math and subscript
+/// sections of `translation_approach.md`.
 fn is_markdown_inline_special(byte: u8) -> bool {
-    matches!(byte, b'\\' | b'&' | b'*' | b'_' | b'`' | b'[' | b']' | b'$')
+    matches!(
+        byte,
+        b'\\' | b'&' | b'*' | b'_' | b'`' | b'[' | b']' | b'$' | b'~'
+    )
 }
 
 pub(crate) fn walk_children(
@@ -442,7 +445,7 @@ fn trim_output_end_spaces(output: &mut String) {
 /// '==='      -> '\==='      // setext underline
 /// '---'      -> '\---'      // setext underline, thematic break
 /// '```'      -> '\`\`\`'    // code fence, escaped as three inline specials
-/// '~~~'      -> '\~~~'      // code fence
+/// '~~~'      -> '\~\~\~'    // code fence, escaped as three inline specials
 /// '# Not h1' -> '\# Not h1' // ATX heading
 /// '1. Item'  -> '1\. Item'  // ordered list item
 /// '1) Item'  -> '1\) Item'  // ordered list item
@@ -479,7 +482,7 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
     // second-char space of list markers, so pre-escape checks match the old
     // post-escape behavior without `insert(0, ...)`.
     let needs_leading_backslash = match first {
-        '=' | '~' | '>' => true,
+        '=' | '>' => true,
         // A line of nothing but `-` and spaces is also a thematic break or a
         // setext underline. Anything else after the second `-` -- `--foo` --
         // is neither, and opens no list either.
@@ -506,6 +509,7 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
             '[' => escaped.push_str("\\["),
             ']' => escaped.push_str("\\]"),
             '$' => escaped.push_str("\\$"),
+            '~' => escaped.push_str("\\~"),
             _ => escaped.push(ch),
         }
     }

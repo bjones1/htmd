@@ -192,7 +192,7 @@ pub(crate) fn escape_image_description(alt: &str) -> String {
     // `alt="$a*b$"` with math disabled. Escape `$`, which assumes math is
     // enabled.
     let escaped = escape_inline_string(alt, |ch| {
-        matches!(ch, '\\' | '&' | '*' | '_' | '`' | '[' | ']' | '$')
+        matches!(ch, '\\' | '&' | '*' | '_' | '`' | '[' | ']' | '$' | '~')
     });
     // `should_escape_html_like_sequence` reads a CDATA section in the spelling
     // the backslash pass leaves behind, so that pass comes first.

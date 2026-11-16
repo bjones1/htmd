@@ -741,8 +741,9 @@ details, see [Emphasis and strong emphasis](#emphasis-and-strong-emphasis): a
 single `~` follows the rules for `_`, not `*`, and cannot delimit text within a
 word, so `H~2~O` is not parsed as subscript. When this extension is enabled,
 literal tildes in ordinary Markdown text, including text outside `<sub>`, must
-be escaped as `\~`. The rules below describe proposed output, not htmd's current
-output: in Faithful mode, htmd currently preserves `<sub>` as HTML. Enabling
+be escaped as `\~`. htmd escapes them so. The delimiter encoding below is not
+yet emitted: in Faithful mode, htmd applies step 4 of the approach and
+preserves `<sub>` as HTML. Enabling
 `Options::ENABLE_SUBSCRIPT` does not enable strikethrough; a double tilde,
 `~~a~~`, is strikethrough only when `Options::ENABLE_STRIKETHROUGH` is enabled.
 
@@ -794,7 +795,8 @@ children in an inline context, moves leading and trailing whitespace outside the
 subscript, and surrounds the remaining content with single `~` delimiters.
 If no content remains, it drops the element rather than writing `~~`.
 Adjacent subscripts are combined under the adjacent-inline rule in the emphasis
-section.
+section. A subscript with a `<sub>` ancestor contributes only its content, so a
+nested subscript keeps one level rather than writing `~~a~~`.
 
 1. Retain the opening and closing `<sub>` tags, including attributes, if the
    element has any attribute, has a comment child, has a `<sub>` ancestor, or
