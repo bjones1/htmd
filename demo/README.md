@@ -144,7 +144,7 @@ views, the Faithful diff, and a size-limit banner for WCAG 2.1 AA violations.
 Scans cover the demo UI, including the iframe's accessible name; arbitrary
 user-authored documents inside the sandbox are outside this scope.
 
-Performance tests read Kamila's committed files from
+Performance tests read files from
 [`bench/corpus/`](bench/corpus/) directly. Every document must convert in
 strictly less than 100 ms; HTML documents run in both Pure and Faithful modes
 so the latter includes canonicalization and diff generation. Three
@@ -154,14 +154,38 @@ fidelity diff (using skipped `div` content) under 1,000 ms. The limit cases
 also verify their banners and check that conversion recovers afterward.
 The suite reads the app's `htmd:convert` measure and its
 `htmd:convert:start`/`htmd:convert:end` marks after a small warmup conversion.
-Each assertion checks an individual conversion, without averaging or
-including debounce, iframe loading, or Playwright action time. These budgets
+Compute assertions check individual conversions without averaging. Separate
+browser timestamps measure input through the matching preview load and two
+parent animation frames (a paint opportunity, not a pixel-paint guarantee):
+at most 100 ms for a keystroke reaching exactly 2,000 UTF-8 bytes in both
+directions, under 400 ms for each corpus document, and under 1,000 ms for
+adversarial documents, including the output-cap clearing path. Preview
+matching checks the actual sandbox document and its navigation timing;
+unrelated loads cannot finish a measurement. Playwright polling time is
+excluded. A delayed-preview regression proves that these measurements
+include work after synchronous conversion returns.
+
+The startup test warms the browser cache, navigates again, and requires the
+`htmd:ready` mark within 1,500 ms of navigation start. The mark is emitted
+after mounting and workspace restoration. The test server permits caching,
+and the test checks that JS/WASM assets came from cache. These budgets
 require an optimized build on desktop-class hardware without throttling.
 
-The HTML report includes axe results and conversion timings. Failures retain
-screenshots and traces in `test-results/`; inspect them with
-`npx playwright show-report`. For manual Firefox/WebKit jank inspection,
-record successful runs too with `npm run test:e2e -- --trace on`.
+The HTML report includes axe results, startup and conversion timings, and
+typing-jank measurements. `responsiveness.spec.ts` types near the 100 kB
+limit in Markdown, Pure, and Faithful modes in all three browsers and
+retains successful traces. Chromium observes Long Tasks and rejects
+keystroke tasks reaching 50 ms after subtracting only the measured scheduled
+conversion intervals; every input handler must also stay below 50 ms.
+A deliberately slow listener proves that the observer detects input jank.
+Firefox/WebKit handler timings supplement the required manual trace pass.
+
+Failures retain screenshots and traces in `test-results/`; inspect the
+report with `npx playwright show-report`, or a successful typing trace with
+`npx playwright show-trace test-results/<typing-test>/trace.zip`.
+For the Firefox/WebKit manual pass, inspect the typing filmstrip and action
+timeline for dropped text or pauses attributable to keystroke handling,
+distinguishing scheduled conversions with the attached `typing-jank` JSON.
 
 For a build with a project-path public URL, set `DEMO_PUBLIC_PATH` to the same
 path before testing. For example, in PowerShell:

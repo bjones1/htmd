@@ -293,19 +293,15 @@ fn performance() -> Option<web_sys::Performance> {
     web_sys::window().and_then(|window| window.performance())
 }
 
-fn convert_perf_mark(name: &str) {
+fn perf_mark(name: &str) {
     if let Some(performance) = performance() {
         let _ = performance.mark(name);
     }
 }
 
-fn convert_perf_measure() {
+fn perf_measure(name: &str, start: &str, end: &str) {
     if let Some(performance) = performance() {
-        let _ = performance.measure_with_start_mark_and_end_mark(
-            CONVERT_MEASURE,
-            CONVERT_START_MARK,
-            CONVERT_END_MARK,
-        );
+        let _ = performance.measure_with_start_mark_and_end_mark(name, start, end);
     }
 }
 
@@ -330,10 +326,10 @@ fn run_actions(core: &CoreRef, ui: &Ui, actions: Vec<Action>) {
 /// measure `htmd:convert` spans dispatch through commit, including
 /// canonicalization and diff generation when active.
 fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) {
-    convert_perf_mark(CONVERT_START_MARK);
+    perf_mark(CONVERT_START_MARK);
     convert_and_commit_inner(c, ui, seq, queue);
-    convert_perf_mark(CONVERT_END_MARK);
-    convert_perf_measure();
+    perf_mark(CONVERT_END_MARK);
+    perf_measure(CONVERT_MEASURE, CONVERT_START_MARK, CONVERT_END_MARK);
 }
 
 /// One dispatched run's work: convert the active buffer, then apply
@@ -552,6 +548,7 @@ fn editor_element() -> Option<web_sys::HtmlTextAreaElement> {
 /// storage debounce fed, and enter/exit the FR-7 size banner on
 /// transitions of the active buffer's length.
 fn on_editor_input(core: &CoreRef, ui: &Ui, ev: web_sys::Event) {
+    perf_mark("htmd:input:start");
     let textarea = event_target::<web_sys::HtmlTextAreaElement>(&ev);
     let value = textarea.value();
     let mut c = core.borrow_mut();
@@ -581,6 +578,8 @@ fn on_editor_input(core: &CoreRef, ui: &Ui, ev: web_sys::Event) {
     };
     drop(c);
     run_actions(core, ui, actions);
+    perf_mark("htmd:input:end");
+    perf_measure("htmd:input", "htmd:input:start", "htmd:input:end");
 }
 
 /// FR-8: scroll offsets ride the same 500 ms save debounce as text.

@@ -34,7 +34,7 @@ createServer(async (request, response) => {
     const extension = filename.slice(filename.lastIndexOf('.'));
     response.writeHead(200, {
       'Content-Type': contentTypes[extension] ?? 'application/octet-stream',
-      'Cache-Control': 'no-store',
+      'Cache-Control': 'public, max-age=3600',
     });
     createReadStream(filename).pipe(response);
   } catch {

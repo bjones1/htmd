@@ -2396,13 +2396,6 @@ open from IR3 except the adjudicated browser-test work.
 
 ```text
 Review the implementation in demo/ by comparing it to demo/demo-spec.md.
-
-
-add it to:\
-submission.md, under **Implementation review rounds (Nurlybek Aimagambetov, leave main changes made column empty) and Last implementation review.**\
-review\.md, under implementation review number 3.
-
-use implementation round 4 for the title.
 ```
 
 Reviewed by **OpenAI Codex (GPT-6)** for **Nurlybek Aimagambetov** with the
@@ -2455,9 +2448,9 @@ None.
 
 #### Medium-severity issues
 
-* **IR4-M1 — Panic disables an empty container instead of the application
+* ~~**IR4-M1 — Panic disables an empty container instead of the application
   (`demo/src/main.rs:21`; `demo/index.html:219`;
-  `demo/src/panic_hook.rs:83–88`).** The static `#app-root` is empty, but
+  `demo/src/panic_hook.rs:83–88`).**~~ The static `#app-root` is empty, but
   `mount_to_body(app::App)` appends the application to `<body>`, outside that
   element. The panic hook sets `inert` only on the empty div, leaving the
   actual mode controls, editor, tabs, samples, and options outside the inert
@@ -2469,9 +2462,9 @@ None.
   profiles by asserting every application control is within the inert root
   and cannot receive keyboard focus.
 
-* **IR4-M2 — Reset or an option change can bypass the input-size ceiling
+* ~~**IR4-M2 — Reset or an option change can bypass the input-size ceiling
   after the first oversized edit (`demo/src/app.rs:563–576,674,705,343–348`;
-  `demo/src/engine.rs:342–350,365–379`).** On the first transition above
+  `demo/src/engine.rs:342–350,365–379`).**~~ On the first transition above
   100,000 bytes, the editor handler updates the UI buffer but calls only
   `engine.on_limit_entered()`, leaving the engine's buffer mirror at its
   previous in-range value. Reset or an option change then schedules using
@@ -2485,9 +2478,9 @@ None.
   regression for paste-over-limit followed by Reset, an option change, and
   switching away/back; output must remain empty until input is in range.
 
-* **IR4-M3 — Invalid output remains copyable during the debounce window
+* ~~**IR4-M3 — Invalid output remains copyable during the debounce window
   (`demo/src/app.rs:554–583,663–676,814–819,1050–1055`;
-  `demo/src/engine.rs:342–345`).** Edits and option changes invalidate only
+  `demo/src/engine.rs:342–345`).**~~ Edits and option changes invalidate only
   the engine's internal `output_valid`; the UI's separate `ModeOutput.valid`
   stays true until a commit or clear. Both the button's disabled predicate
   and `on_use_output` consult that stale UI flag. After a successful
@@ -2500,8 +2493,8 @@ None.
   validity in the click handler. Test that the button remains disabled
   between an edit/option change and the matching successful commit.
 
-* **IR4-M4 — Cross-mode sample Undo snapshots the wrong buffer
-  (`demo/src/app.rs:757–761`; `demo/src/samples.rs:275–292,355–358`).**
+* ~~**IR4-M4 — Cross-mode sample Undo snapshots the wrong buffer
+  (`demo/src/app.rs:757–761`; `demo/src/samples.rs:275–292,355–358`).**~~ 
   `on_sample_click` passes the current mode's buffer to `SampleState::load`,
   whose contract requires the target mode's buffer. With distinct Markdown
   and HTML buffers, click Inline HTML while in Markdown → HTML, then Undo:
@@ -2514,8 +2507,8 @@ None.
   §8.5 cross-mode Inline HTML action with distinct buffers, including an
   empty current buffer and a non-empty target buffer.
 
-* **IR4-M5 — Performance tests do not enforce the required end-to-end,
-  startup, or keystroke-jank budgets
+* ~~**IR4-M5 — Performance tests do not enforce the required end-to-end,
+  startup, or keystroke-jank budgets~~
   (`demo/e2e/performance.spec.ts:14–32,35–94`;
   `demo/e2e/fixtures.ts:22–31`; `demo/playwright.config.ts:17`).** Every timing
   assertion reads only `htmd:convert`, which ends when synchronous conversion
@@ -2532,11 +2525,12 @@ None.
   Chromium Long Tasks assertions with conversion intervals distinguished
   from keystroke handling. Record the Firefox/WebKit trace/manual jank pass.
 
+
 #### Low-severity / editorial
 
-* **IR4-L1 — Skip-tags typing cancels its own 500 ms save debounce
+* ~~**IR4-L1 — Skip-tags typing cancels its own 500 ms save debounce
   (`demo/src/app.rs:681–689,663–672`;
-  `demo/src/storage.rs:388–390,410–419`).** The input handler first calls
+  `demo/src/storage.rs:388–390,410–419`).**~~ The input handler first calls
   `on_skip_tags_edit`, correctly arming the text-save timer, then immediately
   calls `on_options_changed`, whose `set_options` flush cancels that timer
   and writes synchronously. Each keystroke therefore serializes and saves
@@ -2549,7 +2543,8 @@ None.
   controller-only debounce test does not exercise the extra flush.
 
 **Total new findings: 6 (blocking 0, medium 5, low 1).** IR3-M1 remains
-partly outstanding separately. All six new findings await processing.
+partly outstanding separately. IR4-M5 is fixed; the other five new findings
+await processing.
 
 Reviewer's judgment: the core conversion modules and new browser-test
 infrastructure cover much of the specification. The main remaining defects

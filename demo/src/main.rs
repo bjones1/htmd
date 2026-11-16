@@ -19,4 +19,8 @@ fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     console_error_panic_hook::set_once();
     mount_to_body(app::App);
+    #[cfg(target_arch = "wasm32")]
+    if let Some(performance) = web_sys::window().and_then(|window| window.performance()) {
+        let _ = performance.mark("htmd:ready");
+    }
 }

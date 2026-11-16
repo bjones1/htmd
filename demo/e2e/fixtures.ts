@@ -1,9 +1,12 @@
 import { test as base, expect, type Page } from '@playwright/test';
+import { installTiming } from './timing.js';
 
-export const test = base.extend<{ demo: Page }>({
-  demo: async ({ page }, use) => {
+export const test = base.extend<{ demo: Page; measurePerformance: boolean }>({
+  measurePerformance: [false, { option: true }],
+  demo: async ({ page, measurePerformance }, use) => {
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
+    if (measurePerformance) await installTiming(page);
     await page.goto('./');
     await expect(page.getByRole('textbox', { name: 'Input editor' })).toBeVisible();
     await use(page);

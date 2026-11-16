@@ -1034,7 +1034,7 @@ GitHub userid: nurlybek-aimagambetov
 
 #### Contributions
 
-(Nurlybek's contributions)
+Added playwright, axe scan and tests, fixed a failing test case, ran implementation round 4 and resolved the issue with performance tests.
 
 #### Specification review rounds
 
@@ -1075,7 +1075,6 @@ review findings were checked to avoid repeating resolved issues.
 None.
 
 #### Medium-severity issues
-<s>
 * **R15-M1 — Canonicalization deletes significant spaces between top-level
   inline elements (`demo/demo-spec.md:128`; §8.7:303,306).** FR-5 drops every
   whitespace-only text node that is a child of the fragment root, regardless
@@ -1090,10 +1089,9 @@ None.
   at the outer edges or beside block elements, while retaining one collapsed
   space between inline siblings. Add a negative golden case requiring these
   two fragments to remain distinct; keep the existing trailing-block-newline
-  and empty-fragment goldens.</s>
+  and empty-fragment goldens.
 
 #### Low-severity / editorial
-<s>
 * **R15-L1 — Reset's banner-preservation promise conflicts with the storage
   banner lifecycle (`demo/demo-spec.md:113,176–178,265`).** FR-4 says Reset
   does not clear or change error banners, and §8.5 requires banners to remain
@@ -1104,7 +1102,6 @@ None.
   not dismiss banners directly, while its save and reconversion follow the
   normal banner lifecycles. Apply that qualification to §8.5 and add an
   acceptance case for Reset after a transient storage failure.
-</s>
 **Total new findings: 2 (blocking 0, medium 1, low 1).**
 
 Reviewer's judgment: the specification is detailed and largely consistent,
@@ -1124,11 +1121,11 @@ updated.
 
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
-| **IR4** | **6 new** (0 blocking, 5 medium, 1 low); IR3-M1 partly outstanding |  |
+| **IR4** | **6 new** (0 blocking, 5 medium, 1 low); IR3-M1 partly outstanding | Fixed Performance tests not enforcing timings |
 
 #### Last implementation review
 
-**LLM and prompt used:** **OpenAI Codex (GPT-6)**, with the exact prompt quoted in the Implementation review round 4 below.
+**LLM and prompt used:** **OpenAI Codex (GPT-6.1 Sol Extra High)**, with the exact prompt quoted in the Implementation review round 4 below.
 
 ## Implementation review round 4
 
@@ -1186,9 +1183,9 @@ None.
 
 #### Medium-severity issues
 
-* **IR4-M1 — Panic disables an empty container instead of the application
+* ~~**IR4-M1 — Panic disables an empty container instead of the application
   (`demo/src/main.rs:21`; `demo/index.html:219`;
-  `demo/src/panic_hook.rs:83–88`).** The static `#app-root` is empty, but
+  `demo/src/panic_hook.rs:83–88`).**~~ The static `#app-root` is empty, but
   `mount_to_body(app::App)` appends the application to `<body>`, outside that
   element. The panic hook sets `inert` only on the empty div, leaving the
   actual mode controls, editor, tabs, samples, and options outside the inert
@@ -1200,9 +1197,9 @@ None.
   profiles by asserting every application control is within the inert root
   and cannot receive keyboard focus.
 
-* **IR4-M2 — Reset or an option change can bypass the input-size ceiling
+* ~~**IR4-M2 — Reset or an option change can bypass the input-size ceiling
   after the first oversized edit (`demo/src/app.rs:563–576,674,705,343–348`;
-  `demo/src/engine.rs:342–350,365–379`).** On the first transition above
+  `demo/src/engine.rs:342–350,365–379`).**~~ On the first transition above
   100,000 bytes, the editor handler updates the UI buffer but calls only
   `engine.on_limit_entered()`, leaving the engine's buffer mirror at its
   previous in-range value. Reset or an option change then schedules using
@@ -1216,9 +1213,9 @@ None.
   regression for paste-over-limit followed by Reset, an option change, and
   switching away/back; output must remain empty until input is in range.
 
-* **IR4-M3 — Invalid output remains copyable during the debounce window
+* ~~**IR4-M3 — Invalid output remains copyable during the debounce window
   (`demo/src/app.rs:554–583,663–676,814–819,1050–1055`;
-  `demo/src/engine.rs:342–345`).** Edits and option changes invalidate only
+  `demo/src/engine.rs:342–345`).**~~ Edits and option changes invalidate only
   the engine's internal `output_valid`; the UI's separate `ModeOutput.valid`
   stays true until a commit or clear. Both the button's disabled predicate
   and `on_use_output` consult that stale UI flag. After a successful
@@ -1231,8 +1228,8 @@ None.
   validity in the click handler. Test that the button remains disabled
   between an edit/option change and the matching successful commit.
 
-* **IR4-M4 — Cross-mode sample Undo snapshots the wrong buffer
-  (`demo/src/app.rs:757–761`; `demo/src/samples.rs:275–292,355–358`).**
+* ~~**IR4-M4 — Cross-mode sample Undo snapshots the wrong buffer
+  (`demo/src/app.rs:757–761`; `demo/src/samples.rs:275–292,355–358`).**~~
   `on_sample_click` passes the current mode's buffer to `SampleState::load`,
   whose contract requires the target mode's buffer. With distinct Markdown
   and HTML buffers, click Inline HTML while in Markdown → HTML, then Undo:
@@ -1245,10 +1242,10 @@ None.
   §8.5 cross-mode Inline HTML action with distinct buffers, including an
   empty current buffer and a non-empty target buffer.
 
-* **IR4-M5 — Performance tests do not enforce the required end-to-end,
+* ~~**IR4-M5 — Performance tests do not enforce the required end-to-end,
   startup, or keystroke-jank budgets
   (`demo/e2e/performance.spec.ts:14–32,35–94`;
-  `demo/e2e/fixtures.ts:22–31`; `demo/playwright.config.ts:17`).** Every timing
+  `demo/e2e/fixtures.ts:22–31`; `demo/playwright.config.ts:17`).**~~ Every timing
   assertion reads only `htmd:convert`, which ends when synchronous conversion
   work returns (`demo/src/app.rs:332–336`). It excludes scheduling/debounce,
   reactive DOM updates, and preview loading. The suite therefore does not
@@ -1265,9 +1262,9 @@ None.
 
 #### Low-severity / editorial
 
-* **IR4-L1 — Skip-tags typing cancels its own 500 ms save debounce
+* ~~**IR4-L1 — Skip-tags typing cancels its own 500 ms save debounce
   (`demo/src/app.rs:681–689,663–672`;
-  `demo/src/storage.rs:388–390,410–419`).** The input handler first calls
+  `demo/src/storage.rs:388–390,410–419`).**~~ The input handler first calls
   `on_skip_tags_edit`, correctly arming the text-save timer, then immediately
   calls `on_options_changed`, whose `set_options` flush cancels that timer
   and writes synchronously. Each keystroke therefore serializes and saves
