@@ -2293,6 +2293,15 @@ None.
   The CI build half and the corpus they need are in place; the README now says
   the browser suite is not yet available (IR3-M2), so no document claims
   otherwise.
+  **Status update (final submission):** fixed except for the fuzz corpus.
+  Nurlybek added the Playwright matrix, axe-core scans, and corpus timing
+  (see IR4). Justin Gray added the `wasm-bindgen-test` suite
+  (`demo/src/browser_tests.rs`), run in headless Chromium in debug and
+  release with the FR-7 nesting cases under `--release`, and the §8.6
+  crash-recovery spec (`demo/e2e/crash-recovery.spec.ts`), run against
+  `demo-panic-test` builds in both profiles. `deploy` now depends on every
+  job, and CI passed on commit `868fb62`. The malformed-input fuzz corpus
+  still does not exist.
 * ~~**IR3-M2 — README documents a browser test suite that does not exist
   (demo/README.md:79–98, 131):**~~ the "Browser tests" section gives
   `cargo test --target wasm32-unknown-unknown` commands for a
@@ -2310,6 +2319,8 @@ None.
   suite, Playwright matrix, and axe-core scan are still to be added, CI does
   not run them, and the commands apply once the suite lands; the Panic testing
   section now notes that its `cargo test` line needs that suite).
+  **Status update (final submission):** superseded. The suite now exists,
+  and `demo/README.md` documents how to run it and the crash-recovery spec.
 
 #### Low-severity / editorial
 
@@ -2391,6 +2402,8 @@ depth and line-ending notes; IR3-L4/L5 README Clippy and trigger accuracy;
 IR3-L6 deploy-safe concurrency) and 1 adjudicated (IR3-M1, blocked on
 Nurlybek's pending browser/Playwright tests). Zero blocking; no findings remain
 open from IR3 except the adjudicated browser-test work.
+**Update (final submission):** that browser-test work has since landed (see
+IR3-M1's status update); only the fuzz corpus remains.
 
 ## Implementation review round 4
 
@@ -2441,6 +2454,11 @@ jobs or feature-enabled test builds. `demo/README.md:103–120,203–214`
 correctly describes the missing wasm suite. Finish these remaining jobs and
 fixtures before treating IR3-M1 as closed; this is an existing finding, not
 counted again below.
+
+**Status update (final submission):** the `wasm-bindgen-test` runs, the
+release-wasm nesting proofs, and the dual-profile `demo-panic-test`
+crash-recovery runs now exist, and CI passed on commit `868fb62` (see
+IR3-M1's status update). The fuzz corpus is the only part still missing.
 
 #### Blocking issues
 
