@@ -13,7 +13,7 @@ Draft submission
 
 * Altynay: Run the first 4 rounds of LLM reviews with constant updates
 * Aiym: Updated section 9 in round 5
-* Daulet: Generated initial specification
+* Daulet: Generated the initial specification and addressed review findings by improving normalization rules, clarifying GFM test requirements, and defining code block generation and inline whitespace handling.
 * Ali: Specified the input generator — grammar, element tiers, attribute and
   text domains, bounds, the malformed class, and the case-count breakdown — and
   fixed the list snapshot, `code` opacity, and `Out of Scope` classification
@@ -183,8 +183,8 @@ Final submission
 * Altynay: Fixed issues 5, 6, 13 and 14. Eliminated duplicated information,
   added block diagram for the pipeline. Generated draft source code.
 * Aiym:
-* Daulet: Fixed issues 1, 2, 9 and 10.
-* Ali:
+* Daulet: Addressed review findings 3, 4, 11, and 12 by adding normalization rules for ordered lists and code blocks, clarifying GFM table requirements, defining pre element generation, and specifying inline whitespace normalization.
+* Ali: Fixed issues 1, 2, 9 and 10.
 
 ### Spec review rounds
 
