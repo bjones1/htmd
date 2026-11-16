@@ -1,4 +1,6 @@
 // Shared code for all integration tests.
+pub mod html_compare;
+
 use htmd::{
     ConvertInput, HtmlToMarkdown,
     options::{HeadingStyle, Options, TranslationMode},
