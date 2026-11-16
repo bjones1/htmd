@@ -61,8 +61,12 @@ Clippy, as CI runs it (against the wasm target, warnings denied):
 cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
 ```
 
-`cargo clippy --locked -- -D warnings` checks the native build, which also
-compiles the unit tests' `cfg(test)` code.
+To lint the native build including the unit tests' `cfg(test)` code (plain
+`cargo clippy` skips test targets):
+
+```
+cargo clippy --locked --all-targets -- -D warnings
+```
 
 WebAssembly commands
 --------------------
@@ -78,7 +82,11 @@ and reloads on file changes. Add `--release` to check the optimized build.
 
 ### Browser tests (`wasm-bindgen-test`, headless Chromium)
 
-Point Cargo's wasm runner at `wasm-bindgen-test-runner` and the runner at
+**Not yet available.** The crate has no `wasm-bindgen-test` dev-dependency
+and no `#[wasm_bindgen_test]` cases yet; the browser suite, the Playwright
+matrix, and the axe-core scan of `demo-spec.md` Deliverable 3 are still to be
+added, and CI does not run them. Until then the commands below do not run a
+browser suite. Once the suite lands, point Cargo's wasm runner at `wasm-bindgen-test-runner` and the runner at
 `chromedriver`, then run the suite in both profiles:
 
 ```
@@ -131,13 +139,17 @@ trunk build --release --features demo-panic-test
 cargo test --locked --target wasm32-unknown-unknown --features demo-panic-test
 ```
 
+The last command needs the browser suite, which is not yet available (see
+[Browser tests](#browser-tests-wasm-bindgen-test-headless-chromium)).
+
 Never enable this feature in a build you deploy: the Pages build in CI is
 built without it, and a `dist/` built with it must not be published.
 
 Continuous integration and deployment
 -------------------------------------
 
-`.github/workflows/demo-ci.yaml` runs on changes under `demo/`. It installs
+`.github/workflows/demo-ci.yaml` runs on changes under `demo/`, to the root
+`htmd` library (`src/`, `Cargo.toml`), or to the workflow itself. It installs
 the pinned Trunk, runs the wasm-target Clippy and native tests, builds with
 `trunk build --release --public-url /htmd/`, applies the size check, and on
 pushes to `main` deploys `demo/dist/` to GitHub Pages. The Pages source must

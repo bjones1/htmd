@@ -27,7 +27,8 @@ env:
 
 concurrency:
   group: demo-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a run on main: it may be mid-way through a Pages deploy.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:

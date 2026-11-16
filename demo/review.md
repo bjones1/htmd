@@ -2115,3 +2115,205 @@ not run and no root-repo gate was needed (no Rust source changed). No file other
 `demo/review.md` was modified by this review.
 
 **Implementation review round 2 resolution:** all 5 low findings resolved (2 fixed, 2 by ruling, 1 spec amendment). The implementation review converged at round 2: zero blocking, zero medium. No findings remain open from IR1–IR2.
+
+## Implementation review round 3
+
+```text
+You are a fresh-context LLM reviewer performing Implementation Review Round 3 for the htmd / pulldown-cmark live demo (demo/). Implementation Review Rounds 1 and 2 (## Implementation review round 1 and ## Implementation review round 2 in demo/review.md) already ran and converged; since then, demo/bench/corpus/, demo/README.md, and .github/workflows/demo-ci.yaml were added.
+Your task (execute all steps in order):
+1. Perform the Review: Read demo/demo-spec.md (the authoritative spec) and inspect the implementation under demo/ (src/, index.html, Trunk.toml, Cargo.toml, bench/corpus/, README.md) as well as .github/workflows/demo-ci.yaml and the recent rounds in demo/review.md (do not re-litigate previously struck/resolved findings). Note that Windows Smart App Control (os error 4551) blocks local Cargo execution on this machine, so perform source/spec inspection without running local builds.
+2. Record Verbatim in demo/review.md: Append a new section titled ## Implementation review round 3 to demo/review.md matching the exact structure of ## Implementation review round 1 and ## Implementation review round 2:
+	• Quote this entire prompt verbatim in a fenced code block at the top.
+	• State reviewer identity and scope.
+	• Include subsections: #### What checks out, #### Blocking issues, #### Medium-severity issues, #### Low-severity / editorial (using IDs IR3-B#, IR3-M#, IR3-L# with file:line references and concrete fixes, or None. if none exist), and a total count summary.
+3. Fix or Strikethrough Every Finding: For every finding raised in Round 3:
+	• If it is a genuine defect in demo/, demo/README.md, demo/bench/corpus/, or .github/workflows/demo-ci.yaml, fix it in code/docs and mark it **Status:** fixed (...) in demo/review.md.
+	• If a finding is non-applicable, blocked by a known constraint (e.g., pending Nurlybek's browser/Playwright tests), or superseded, wrap the finding in ~~strikethrough~~ and add an Adjudication: note explaining why.
+4. Update demo/submission.md: In demo/submission.md, under my section (### Muzanbekova Kamila) ONLY:
+	• Replace (Table showing implementation review rounds) under #### Implementation review rounds with a Markdown table summarizing **IR3** (finding counts by severity and main changes/resolutions made, matching the table format in Danial's section).
+	• Replace (LLM and prompt used) and (LLM output, possibly with strikethrough) under #### Last implementation review with the LLM model used, the verbatim prompt, and the verbatim Round 3 review section (including any strikethroughs/resolutions) from demo/review.md.
+	• Verify that Step 4's earlier fixes in my section are intact (one-sentence #### Contributions, #### Specification review rounds containing only rows **10** and **11**, and **11** stating all 10 findings were resolved).
+Preserve existing line endings (CRLF) when editing demo/review.md and demo/submission.md. Do not modify any other teammate's section in demo/submission.md.
+```
+
+Reviewed by **Claude Opus 5.5** (`claude-opus-5-5`, Claude Code in VS Code, fresh
+context) with the round-3 implementation-review prompt quoted above. Scope: the
+artifacts added after IR2 converged — `demo/bench/corpus/` (four documents plus
+the manifest), `demo/README.md`, and `.github/workflows/demo-ci.yaml` — checked
+against `demo/demo-spec.md` §6, §7 Deliverables 2–4, and §8.1/§8.3, plus a
+cross-check of those artifacts against `demo/src/` (`samples.rs`, `convert.rs`),
+`index.html`, `Trunk.toml`, `Cargo.toml`, and `.gitattributes`. IR1/IR2
+findings and their rulings were not re-litigated. Evidence is source and spec
+inspection only: Windows Smart App Control (`os error 4551`) blocks local Cargo
+execution, so `cargo build`/`clippy`/`test`, `trunk`, and the gzip size check
+were not run. Corpus claims were checked with a standalone Python script
+(byte counts, sample repetition, element depth).
+
+#### What checks out
+
+* **Corpus contents match §6:211 exactly.** `demo/bench/corpus/` holds exactly
+  four documents plus `README.md`. `basics-scaled.md` is byte-for-byte the
+  `SAMPLES[0]` Markdown variant (samples.rs:116–135) joined 60 times by a blank
+  line (19,859 bytes); `math-scaled.md` is the Math Markdown variant
+  (samples.rs:182–186) ×182 (20,019 bytes); `inline-html.html` is the Inline
+  HTML variant (samples.rs:171–177) ×85 (20,060 bytes) — all three ≈20 kB.
+  `real-page.html` is 70,545 bytes (inside 50–100 kB), well-formed (every
+  non-void element explicitly closed, explicit `<tbody>`), with 16 sections,
+  tables, `<pre>` blocks, and definition lists. Every byte count in the
+  manifest matches `wc -c` on the working tree.
+* **Corpus bytes are stable across platforms.** `.gitattributes` marks
+  `demo/bench/corpus/* -text`; `git ls-files --eol` shows `i/lf w/lf` for all
+  five files, so the recorded sizes hold on Windows checkouts too (the
+  manifest's prose said otherwise — IR3-L3).
+* **CI covers §8.1 and the build half of Deliverable 3.** demo-ci.yaml runs
+  `cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings`
+  (:58–59), native `cargo test --locked` (:61–62), `trunk build --release`
+  (:71–72), and the gzip size check with `gzip -6 -c demo/dist/*.wasm | wc -c`
+  failing at `>= 1572864` (:74–90, a strict `<` limit as §6:217 and §8.1:240
+  require), guarded against zero or multiple `.wasm` files. Trunk is pinned
+  (`TRUNK_VERSION: "0.22.1"`), and `Trunk.toml` `[tools]` pins
+  `wasm-bindgen = "0.2.130"` (matching Cargo.toml) and
+  `wasm-opt = "version_131"`; `data-wasm-opt="z"` is on the rust link
+  (index.html:7). The demo crate's own lockfile is enforced (`--locked`, plus
+  `cargo fetch --locked` before Trunk's unlocked build).
+* **Deliverable 4 (Pages) is correct.** The release build passes
+  `--public-url "/${{ github.event.repository.name }}/"`, the project-site
+  path §7:232 requires; `upload-pages-artifact@v3` uploads `demo/dist`; the
+  `deploy` job runs only on pushes to `main`, with exactly
+  `pages: write` + `id-token: write` and the `github-pages` environment. The
+  shipped build never enables `demo-panic-test`.
+* **The root-repo gates stay independent.** The workflow lives in its own file,
+  runs from `working-directory: demo`, and caches `demo` separately;
+  `.github/workflows/ci.yaml` is untouched (§7:231, §8.1:238).
+* **demo/README.md (Deliverable 2)** gives native and wasm instructions:
+  prerequisites (the wasm target, Trunk pinned to CI's 0.22.1, Trunk-managed
+  `wasm-bindgen`/`wasm-opt` with the version-match caveat), native
+  `cargo test --locked`, CI's exact Clippy line, `trunk serve`, the
+  `--public-url /htmd/` release build with the reason, the size check
+  reproduced exactly as CI runs it, and `demo-panic-test` usage with the
+  never-deploy rule (FR-7:148). Accuracy defects are IR3-M2, IR3-L4, IR3-L5.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+* ~~**IR3-M1 — demo-ci.yaml implements only the build half of Deliverable 3,
+  and nothing consumes the benchmark corpus (.github/workflows/demo-ci.yaml:34–90;
+  demo-spec.md:211, 231, 248):**~~ §7:231 also requires the
+  `wasm-bindgen-test` suite on headless Chromium in debug and release (at
+  minimum the FR-7 nesting cases under `--release`), the `demo-panic-test`
+  crash-recovery runs in both profiles, a malformed-input fuzz corpus, the
+  Playwright matrix (Chromium, Firefox, WebKit), and an axe-core scan failing
+  CI on violations; §8.3:248 requires every corpus document to be measured via
+  `performance.measure` (the `htmd:convert` measure from IR1-L4). None of these
+  jobs exists, and no harness reads `demo/bench/corpus/`. <em>Fix: add a
+  `browser` job (wasm-bindgen-test debug + `--release`, with and without
+  `demo-panic-test`), a Playwright job running the three-browser matrix, the
+  axe-core scan, the fuzz corpus, and a corpus benchmark asserting
+  `htmd:convert` < 100 ms per document, and make `deploy` depend on it.</em>
+  Adjudication: blocked by a known constraint — these suites are the browser
+  and Playwright tests still pending from Nurlybek, and cannot be written or
+  verified here (local Cargo execution is blocked by `os error 4551`).
+  The CI build half and the corpus they need are in place; the README now says
+  the browser suite is not yet available (IR3-M2), so no document claims
+  otherwise.
+* ~~**IR3-M2 — README documents a browser test suite that does not exist
+  (demo/README.md:79–98, 131):**~~ the "Browser tests" section gives
+  `cargo test --target wasm32-unknown-unknown` commands for a
+  `wasm-bindgen-test` suite on headless Chromium, but `demo/Cargo.toml` has no
+  `wasm-bindgen-test` dev-dependency and `demo/src/` has no
+  `#[wasm_bindgen_test]` case or `wasm_bindgen_test_configure!(run_in_browser)`.
+  A reader following the section gets no browser run (plain `#[test]`
+  functions do not run under `wasm-bindgen-test-runner` in a browser), and the
+  "Panic testing" `cargo test … --features demo-panic-test` line inherits the
+  problem. <em>Fix: state that the suite is not yet available and that CI does
+  not run it, keep the commands as the intended invocation, and flag the panic
+  `cargo test` line.</em>
+  **Status:** fixed (demo/README.md:85–90 opens the section with "Not yet
+  available": no `wasm-bindgen-test` dev-dependency or cases exist, the browser
+  suite, Playwright matrix, and axe-core scan are still to be added, CI does
+  not run them, and the commands apply once the suite lands; the Panic testing
+  section now notes that its `cargo test` line needs that suite).
+
+#### Low-severity / editorial
+
+* ~~**IR3-L1 — `real-page.html` is synthetic, but §6:211 requires "a saved
+  real-world page" (demo-spec.md:211; demo/bench/corpus/README.md:20–21):**~~
+  the manifest discloses that the page was written to resemble a
+  documentation site rather than saved from the web, so the corpus departs from
+  the spec's letter. The substance — a full-page document (doctype, head,
+  nav, form, tables, code, lists, definition lists) inside 50–100 kB — is met,
+  and a synthetic page avoids redistributing third-party content. <em>Fix:
+  replace the file with a saved, redistributable page, or amend §6 under
+  Deliverable 5 (spec updated to match the implementation).</em>
+  **Status:** fixed (Deliverable-5 spec amendment: demo-spec.md:211 now reads
+  "a real-world-style page, 50–100 kB: a synthetic documentation page whose
+  markup mirrors a typical documentation site, recorded as synthetic in the
+  manifest").
+* ~~**IR3-L2 — the manifest's "maximum element depth is 11" uses a different
+  convention from FR-7 (demo/bench/corpus/README.md:13):**~~ the deepest path is
+  `html > body > div > main > article > section > ul > li > ul > li > a`;
+  11 counts `<html>` and `<body>`, but FR-7:146 and `max_element_depth`
+  (convert.rs:69–93) put children of `<body>` at depth 1, giving 9. A reader
+  checking the corpus against the 512 limit sees an off-by-two number.
+  <em>Fix: state 9 by FR-7's measure.</em>
+  **Status:** fixed (manifest now reads "Maximum element depth is 9 by FR-7's
+  measure (children of `<body>` at depth 1), well under the 512 limit").
+* ~~**IR3-L3 — the manifest's line-ending note contradicts `.gitattributes`
+  (demo/bench/corpus/README.md:15–18):**~~ it says a Windows checkout with
+  `core.autocrlf=true` rewrites the corpus to CRLF and tells readers to measure
+  committed bytes, but `.gitattributes` marks `demo/bench/corpus/* -text`, so
+  Git never converts them (`git ls-files --eol`: `w/lf`). <em>Fix: say the
+  files are `-text` and the sizes hold in every checkout.</em>
+  **Status:** fixed (the note now cites the `-text` attribute and states the
+  sizes hold in every checkout, including Windows with `core.autocrlf=true`).
+* ~~**IR3-L4 — README claims plain `cargo clippy` lints the unit tests
+  (demo/README.md:64–65):**~~ "`cargo clippy --locked -- -D warnings` checks
+  the native build, which also compiles the unit tests' `cfg(test)` code" is
+  wrong: without `--all-targets` (or `--tests`) Clippy checks only the library
+  and binary targets, not `cfg(test)` code. <em>Fix: give
+  `cargo clippy --locked --all-targets -- -D warnings`.</em>
+  **Status:** fixed (demo/README.md:63–68 now says plain `cargo clippy` skips
+  test targets and gives the `--all-targets` command).
+* ~~**IR3-L5 — README understates the workflow's triggers
+  (demo/README.md:140; .github/workflows/demo-ci.yaml:6–21):**~~ the README says
+  the workflow "runs on changes under `demo/`", but its `paths` filters also
+  include the root `src/**`, `Cargo.toml`, and the workflow file — correctly,
+  since the demo depends on the root crate by path. <em>Fix: list all
+  trigger paths.</em>
+  **Status:** fixed (demo/README.md:151–152 now names `demo/`, the root `htmd`
+  library's `src/` and `Cargo.toml`, and the workflow itself).
+* ~~**IR3-L6 — `cancel-in-progress: true` can cancel a Pages deploy mid-way
+  (.github/workflows/demo-ci.yaml:28–30):**~~ the concurrency group is per ref,
+  so two quick pushes to `main` cancel the first run, including a `deploy` job
+  already publishing; GitHub's Pages starter workflows avoid cancelling
+  production deployments for this reason. <em>Fix: cancel only off `main`:
+  `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`.</em>
+  **Status:** fixed (demo-ci.yaml:30–31 now cancels superseded runs only off
+  `main`, with a one-line comment giving the reason).
+
+**Total new findings: 8 (blocking 0, medium 2, low 6).**
+
+Reviewer's judgment: the corpus, README, and workflow are sound in substance
+— the corpus matches §6 byte-for-byte against the shipped samples, and the
+build, size gate, and Pages deploy implement §7 Deliverables 3–4's build half
+and §8.1 correctly. The only substantive gap (IR3-M1) is the browser/Playwright
+half of Deliverable 3, which waits on Nurlybek's tests; the rest are
+documentation-accuracy fixes and one deploy-safety setting.
+
+Validation: source and spec inspection only; `cargo build`, `cargo clippy`,
+`cargo test`, `trunk`, and the gzip check were not run (Windows Smart App
+Control, `os error 4551`). Corpus sizes, sample repetition, and element depth
+were verified with a standalone Python script. Files changed by the fixes:
+`demo/README.md`, `demo/bench/corpus/README.md`,
+`.github/workflows/demo-ci.yaml`, and `demo/demo-spec.md` (§6:211); no Rust
+source changed.
+
+**Implementation review round 3 resolution:** 8 findings — 7 fixed (IR3-M2
+README browser-suite status; IR3-L1 §6 corpus amendment; IR3-L2/L3 manifest
+depth and line-ending notes; IR3-L4/L5 README Clippy and trigger accuracy;
+IR3-L6 deploy-safe concurrency) and 1 adjudicated (IR3-M1, blocked on
+Nurlybek's pending browser/Playwright tests). Zero blocking; no findings remain
+open from IR3 except the adjudicated browser-test work.
