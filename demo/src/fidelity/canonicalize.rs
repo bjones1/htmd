@@ -561,26 +561,35 @@ mod tests {
         assert_eq!(canonicalize("<pre><code>x\n</code></pre>\n"), expected);
     }
 
-    /// §8.7:307 + FR-6:135 — the CommonMark-basics constructs (headings,
-    /// emphasis, lists, links, fenced code) round-trip with zero diff. The
-    /// input is the HTML pulldown-cmark renders for those constructs; the
-    /// expected literal was verified equal to canonicalize() of the
-    /// pulldown-cmark re-render of htmd's Markdown (Faithful defaults +
-    /// ENABLE_TABLES | ENABLE_MATH). Re-pin against the shipped sample when
-    /// the samples task lands.
+    /// §8.7:307 + FR-6:135 — the shipped CommonMark-basics sample is part
+    /// of the golden corpus: converted HTML → Markdown under Faithful
+    /// crate defaults (empty `skip_tags`) and re-rendered under the fixed
+    /// FR-5 flags `ENABLE_TABLES | ENABLE_MATH`, it canonicalizes
+    /// byte-identically to the sample itself (zero diff). Re-pinned to
+    /// the real sample content by the samples task.
     #[test]
     fn commonmark_basics_golden_zero_diff() {
-        let input = "<h1>Head</h1>\n\
-                     <p>Some <em>emphasis</em> and a <a href=\"https://example.com\">link</a>.</p>\n\
-                     <ul>\n<li>one</li>\n<li>two</li>\n</ul>\n\
-                     <pre><code>code\n</code></pre>\n";
-        assert_eq!(
-            canonicalize(input),
-            "<h1>Head</h1>\
-             <p>Some <em>emphasis</em> and a <a href=\"https://example.com\">link</a>.</p>\
-             <ul><li>one</li><li>two</li></ul>\
-             <pre><code>code</code></pre>"
-        );
+        use crate::convert::{convert_html_to_md, convert_md_to_html};
+        use crate::options_model::{CmarkFlags, HtmdOptions};
+        use crate::samples::SampleId;
+        use htmd::options::TranslationMode;
+
+        let opts = HtmdOptions {
+            translation_mode: TranslationMode::Faithful,
+            ..Default::default()
+        };
+        let flags = CmarkFlags {
+            tables: true,
+            math: true,
+            ..Default::default()
+        };
+        let html = SampleId::Basics
+            .sample()
+            .variant(crate::engine::ConversionMode::HtmlToMarkdown)
+            .expect("basics has an HTML variant");
+        let md = convert_html_to_md(html, &opts, &[]).unwrap();
+        let round_tripped = convert_md_to_html(&md, &flags);
+        assert_eq!(canonicalize(html), canonicalize(&round_tripped));
     }
 
     /// FR-5:125 — foreign content keeps its native case (`viewBox`); SVG
