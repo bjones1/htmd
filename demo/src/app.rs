@@ -272,6 +272,40 @@ fn other_tab(tab: ActiveTab) -> ActiveTab {
 
 // ---------- engine actions → conversion → commit ----------
 
+/// §6:211's `performance.mark`/`measure` instrumentation, a stable
+/// contract for the CI Playwright performance suite: marks
+/// `htmd:convert:start` / `htmd:convert:end` and measure `htmd:convert`
+/// around each dispatched run's conversion work.
+const CONVERT_START_MARK: &str = "htmd:convert:start";
+const CONVERT_END_MARK: &str = "htmd:convert:end";
+const CONVERT_MEASURE: &str = "htmd:convert";
+
+/// The page's `Performance` object when one exists. Off the web target
+/// the wasm-bindgen externs are unimplemented stubs, so native test
+/// builds skip the instrumentation entirely.
+fn performance() -> Option<web_sys::Performance> {
+    if cfg!(not(target_arch = "wasm32")) {
+        return None;
+    }
+    web_sys::window().and_then(|window| window.performance())
+}
+
+fn convert_perf_mark(name: &str) {
+    if let Some(performance) = performance() {
+        let _ = performance.mark(name);
+    }
+}
+
+fn convert_perf_measure() {
+    if let Some(performance) = performance() {
+        let _ = performance.measure_with_start_mark_and_end_mark(
+            CONVERT_MEASURE,
+            CONVERT_START_MARK,
+            CONVERT_END_MARK,
+        );
+    }
+}
+
 /// Execute the actions an engine input returned. Dispatches convert
 /// synchronously on the main thread (FR-2's execution model) and
 /// commits in one step.
@@ -289,10 +323,20 @@ fn run_actions(core: &CoreRef, ui: &Ui, actions: Vec<Action>) {
     }
 }
 
-/// One dispatched run: convert the active buffer, then apply FR-2's
-/// commit gate. A blocked HTML conversion enters its FR-7 banner and
-/// clears the output instead of committing.
+/// One dispatched run, bracketed by the §6:211 performance marks: the
+/// measure `htmd:convert` spans dispatch through commit, including
+/// canonicalization and diff generation when active.
 fn convert_and_commit(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) {
+    convert_perf_mark(CONVERT_START_MARK);
+    convert_and_commit_inner(c, ui, seq, queue);
+    convert_perf_mark(CONVERT_END_MARK);
+    convert_perf_measure();
+}
+
+/// One dispatched run's work: convert the active buffer, then apply
+/// FR-2's commit gate. A blocked HTML conversion enters its FR-7 banner
+/// and clears the output instead of committing.
+fn convert_and_commit_inner(c: &mut Core, ui: &Ui, seq: u64, queue: &mut Vec<Action>) {
     let mode = c.engine.mode();
     let buffer = ui.buffer(mode).get_untracked();
     let cmark = ui.cmark.get_untracked();
@@ -1747,6 +1791,91 @@ mod tests {
     /// it: a "<p>{99_999 a's}</p>\n" render is 100_007 bytes.
     fn amplifying_markdown() -> String {
         format!("a{}", "a".repeat(99_998))
+    }
+
+    /// §8.3:249's amplification, adapted to what pulldown-cmark 0.13.6
+    /// actually amplifies. Reference links cannot: the parser's
+    /// `link_ref_expansion_limit` fuel (`max(input len, 100_000)` bytes,
+    /// consumed by each expansion's URL length) caps their output near
+    /// the input size. Aligned empty table cells have no such cap: each
+    /// 1-byte `|` renders `<td style="text-align: left"></td>` (34
+    /// bytes), so 50 left-aligned columns × `rows` empty body rows
+    /// amplify a sub-100 kB input past the 2 MB display cap (1,200 rows
+    /// → 2,053,756 bytes; 1,100 → 1,882,756, just under).
+    fn amplifying_table_markdown(rows: usize) -> String {
+        let mut md = "|".repeat(51);
+        md.push('\n');
+        md.push_str(&"|:-".repeat(50));
+        md.push_str("|\n");
+        for _ in 0..rows {
+            md.push_str(&"|".repeat(51));
+            md.push('\n');
+        }
+        md
+    }
+
+    /// §6:214 / §8.3:249 — an MD input whose HTML output exceeds
+    /// 2,000,000 bytes: both output tabs clear, the cap banner shows,
+    /// and the empty-output rule disables "Use Output as Input".
+    #[test]
+    fn output_over_two_mb_cap_clears_both_tabs_and_disables_use_output() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            let md = amplifying_table_markdown(1_200);
+            assert!(md.len() <= MAX_INPUT_BYTES, "input stays under the ceiling");
+            assert!(
+                convert_md_to_html(&md, &h.ui.cmark.get_untracked()).len()
+                    > MAX_DISPLAY_OUTPUT_BYTES,
+                "the amplification must actually cross the cap"
+            );
+            h.ui.buf_md.set(md.clone());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_edit(&md);
+            }
+            h.run_pending_batch();
+            assert!(h.ui.cap_banner.get(), "the cap banner shows");
+            let out = h.ui.out_md.get();
+            assert!(
+                !out.valid,
+                "the empty-output rule disables Use Output as Input"
+            );
+            assert!(out.source.is_empty(), "the Source tab is cleared");
+            assert!(out.preview.is_empty(), "the Rendered tab is cleared");
+            // No batch is armed after the halt: nothing stale commits.
+            h.run_pending_batch();
+            assert!(h.ui.cap_banner.get());
+            assert!(h.ui.out_md.get().source.is_empty());
+        });
+    }
+
+    /// §6:214 — output just under the cap still displays on both tabs
+    /// with no banner.
+    #[test]
+    fn output_just_under_the_two_mb_cap_still_displays() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            let md = amplifying_table_markdown(1_100);
+            let html = convert_md_to_html(&md, &h.ui.cmark.get_untracked());
+            assert!(
+                html.len() > 1_800_000 && html.len() <= MAX_DISPLAY_OUTPUT_BYTES,
+                "genuinely near the cap but under it ({} bytes)",
+                html.len()
+            );
+            h.ui.buf_md.set(md.clone());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c.engine.on_edit(&md);
+            }
+            h.run_pending_batch();
+            assert!(!h.ui.cap_banner.get());
+            let out = h.ui.out_md.get();
+            assert!(out.valid);
+            assert_eq!(out.source, html);
+            assert!(!out.preview.is_empty());
+        });
     }
 
     #[test]

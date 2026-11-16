@@ -1,9 +1,11 @@
 //! Production [`Clock`]: one generic web-sys timer registry usable as
 //! both `Clock<EngineEvent>` and `Clock<StorageEvent>` (FR-2's timers and
-//! FR-8's 500 ms save debounce share the abstraction). `schedule` maps to
-//! `window.setTimeout` and `cancel` to `clearTimeout`; a fired or
-//! cancelled token never fires again, and the callback is released as
-//! soon as it runs, so one-shot timers do not accumulate.
+//! FR-8's 500 ms save debounce share the abstraction). `schedule` maps
+//! zero-delay events to `window.requestAnimationFrame` — FR-2:52 pins
+//! the immediate path to the "next animation frame" — and positive
+//! delays to `window.setTimeout`; `cancel` retracts either handle. A
+//! fired or cancelled token never fires again, and the callback is
+//! released as soon as it runs, so one-shot timers do not accumulate.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -14,9 +16,17 @@ use wasm_bindgen::closure::Closure;
 
 use crate::engine::{Clock, TimerToken};
 
-/// One live timer: its JS timeout handle and the keep-alive closure.
+/// Which browser API backs a scheduled event.
+enum TimerKind {
+    Timeout,
+    AnimationFrame,
+}
+
+/// One live timer: its JS handle (a timeout id or an animation-frame
+/// request id) and the keep-alive closure.
 struct LiveTimer {
     handle: i32,
+    kind: TimerKind,
     _closure: Closure<dyn FnMut()>,
 }
 
@@ -101,17 +111,29 @@ impl<Ev: Copy + 'static> Clock<Ev> for WebClock<Ev> {
             .as_ref()
             .dyn_ref::<js_sys::Function>()
             .expect("a Closure wraps a JS function");
-        let handle = window
-            .set_timeout_with_callback_and_timeout_and_arguments(
-                function,
-                delay_ms as i32,
-                &js_sys::Array::new(),
-            )
-            .expect("setTimeout with a valid callback cannot fail");
+        // FR-2:52 — the zero-delay path is the immediate (≤ 2 kB)
+        // schedule, pinned to the next animation frame; a 0 ms timeout
+        // could preempt paint where a frame callback cannot.
+        let (kind, handle) = if delay_ms == 0 {
+            let handle = window
+                .request_animation_frame(function)
+                .expect("requestAnimationFrame with a valid callback cannot fail");
+            (TimerKind::AnimationFrame, handle)
+        } else {
+            let handle = window
+                .set_timeout_with_callback_and_timeout_and_arguments(
+                    function,
+                    delay_ms as i32,
+                    &js_sys::Array::new(),
+                )
+                .expect("setTimeout with a valid callback cannot fail");
+            (TimerKind::Timeout, handle)
+        };
         inner.live.insert(
             id,
             LiveTimer {
                 handle,
+                kind,
                 _closure: closure,
             },
         );
@@ -122,7 +144,14 @@ impl<Ev: Copy + 'static> Clock<Ev> for WebClock<Ev> {
         if let Some(window) = window()
             && let Some(timer) = self.inner.borrow_mut().live.remove(&token.0)
         {
-            window.clear_timeout_with_handle(timer.handle);
+            match timer.kind {
+                TimerKind::Timeout => {
+                    window.clear_timeout_with_handle(timer.handle);
+                }
+                TimerKind::AnimationFrame => {
+                    let _ = window.cancel_animation_frame(timer.handle);
+                }
+            }
         }
     }
 }

@@ -231,17 +231,27 @@
     <script>
       (function () {
         "use strict";
-        function revealCrashOverlay() {
+        /* FR-7:149 — wasm traps and OOM bypass the Rust panic hook; these
+           listeners are the last line of defense. The marker write matches
+           storage.rs's CRASH_MARKER_KEY and the panic hook's "1" value (the
+           FR-8 load path checks presence only). A Rust-side storage halt is
+           impossible from a dead runtime — the marker alone drives FR-8's
+           recovery on reload — and it must land before the overlay is
+           revealed. */
+        function trapCaught() {
+          try {
+            localStorage.setItem("htmd_cmark_live_crashed", "1");
+          } catch (e) {}
           var overlay = document.getElementById("crash-overlay");
           if (overlay) overlay.hidden = false;
         }
         window.addEventListener("error", function (event) {
           console.error("Uncaught error:", event.error || event.message);
-          revealCrashOverlay();
+          trapCaught();
         });
         window.addEventListener("unhandledrejection", function (event) {
           console.error("Unhandled promise rejection:", event.reason);
-          revealCrashOverlay();
+          trapCaught();
         });
       })();
     </script>

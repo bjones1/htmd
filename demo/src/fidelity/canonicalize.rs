@@ -352,8 +352,8 @@ fn is_pre_element(node: &Handle) -> bool {
 }
 
 /// FR-5:127 — `<pre>`, `<code>`, `<textarea>`, `<script>`, and `<style>`
-/// subtrees, plus any element whose first `style` declaration sets
-/// `white-space` to something other than `normal`.
+/// subtrees, plus any element whose `style` attribute declares
+/// `white-space` with a value other than `normal`.
 fn is_preserved_element(node: &Handle) -> bool {
     let NodeData::Element { name, attrs, .. } = &node.data else {
         return false;
@@ -370,19 +370,25 @@ fn is_preserved_element(node: &Handle) -> bool {
     tagged || declares_non_normal_white_space(&attrs.borrow())
 }
 
-/// Read only the first `style` declaration, case-insensitively; the demo
-/// never parses CSS, so later declarations stay invisible to the check.
+/// FR-5:127 — every `;`-separated declaration of a `style` attribute is
+/// scanned (case-insensitively); per the CSS cascade the *last*
+/// `white-space` occurrence wins, so `color:red; white-space:pre`
+/// preserves and `white-space:pre; white-space:normal` does not.
 fn declares_non_normal_white_space(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
         let name: &str = &attr.name.local;
-        name.eq_ignore_ascii_case("style")
-            && attr.value.split(';').next().is_some_and(|declaration| {
-                let Some((property, value)) = declaration.split_once(':') else {
-                    return false;
-                };
-                property.trim().eq_ignore_ascii_case("white-space")
-                    && !value.trim().eq_ignore_ascii_case("normal")
-            })
+        if !name.eq_ignore_ascii_case("style") {
+            return false;
+        }
+        let mut declared = None;
+        for declaration in attr.value.split(';') {
+            if let Some((property, value)) = declaration.split_once(':')
+                && property.trim().eq_ignore_ascii_case("white-space")
+            {
+                declared = Some(value);
+            }
+        }
+        declared.is_some_and(|value| !value.trim().eq_ignore_ascii_case("normal"))
     })
 }
 
@@ -535,6 +541,54 @@ mod tests {
         assert_eq!(canonicalize("<p>cafe\u{0301}</p>"), "<p>cafe\u{0301}</p>");
         assert_eq!(canonicalize("<p>こんにちは</p>\n"), "<p>こんにちは</p>");
         assert_eq!(canonicalize("<p>cafe\u{0301}</p>\n"), "<p>cafe\u{0301}</p>");
+    }
+
+    /// §8.7:306 through the real pipeline (convert → re-render under
+    /// `ENABLE_TABLES | ENABLE_MATH` → canonicalize → word diff): the
+    /// CJK paragraph and the U+0301 word produce zero changes.
+    #[test]
+    fn cjk_and_combining_mark_pipeline_zero_diff() {
+        use crate::convert::{convert_html_to_md, convert_md_to_html};
+        use crate::fidelity::{WordDiff, word_diff};
+        use crate::options_model::{CmarkFlags, HtmdOptions};
+        use htmd::options::TranslationMode;
+
+        let opts = HtmdOptions {
+            translation_mode: TranslationMode::Faithful,
+            ..Default::default()
+        };
+        for html in ["<p>こんにちは</p>", "<p>cafe\u{0301}</p>"] {
+            let md = convert_html_to_md(html, &opts, &[]).unwrap();
+            let round_tripped = convert_md_to_html(&md, &CmarkFlags::tables_math());
+            assert_eq!(
+                word_diff(&canonicalize(html), &canonicalize(&round_tripped)),
+                WordDiff::Inclusive
+            );
+        }
+    }
+
+    /// §8.7:306 through the real pipeline: the styled span's two spaces
+    /// survive canonicalization of the original but are lost by the
+    /// conversion itself, so the round trip yields a nonzero diff — the
+    /// false-negative guard IR1-M3's first-only style scan weakened.
+    #[test]
+    fn white_space_style_span_pipeline_nonzero_diff() {
+        use crate::convert::{convert_html_to_md, convert_md_to_html};
+        use crate::fidelity::{WordDiff, word_diff};
+        use crate::options_model::{CmarkFlags, HtmdOptions};
+        use htmd::options::TranslationMode;
+
+        let opts = HtmdOptions {
+            translation_mode: TranslationMode::Faithful,
+            ..Default::default()
+        };
+        let html = r#"<p><span style="white-space: pre">a  b</span></p>"#;
+        let md = convert_html_to_md(html, &opts, &[]).unwrap();
+        let round_tripped = convert_md_to_html(&md, &CmarkFlags::tables_math());
+        assert!(matches!(
+            word_diff(&canonicalize(html), &canonicalize(&round_tripped)),
+            WordDiff::Changes(_)
+        ));
     }
 
     /// §8.7:306 — `<span style="white-space: pre">` keeps its inner spacing,
@@ -692,9 +746,9 @@ mod tests {
         );
     }
 
-    /// FR-5:127 — the `style` declaration is parsed case-insensitively;
-    /// everything after the first `;` is ignored; `white-space: normal` does
-    /// not preserve.
+    /// FR-5:127 — the `style` declarations are parsed case-insensitively;
+    /// any declaration counts and the last `white-space` occurrence wins
+    /// per the CSS cascade; `white-space: normal` never preserves.
     #[test]
     fn style_attr_detection_rules() {
         assert_eq!(
@@ -703,7 +757,15 @@ mod tests {
         );
         assert_eq!(
             canonicalize(r#"<p style="color:red; white-space:pre">a  b</p>"#),
-            r#"<p style="color:red; white-space:pre">a b</p>"#
+            r#"<p style="color:red; white-space:pre">a  b</p>"#
+        );
+        assert_eq!(
+            canonicalize(r#"<p style="white-space:pre; color:red">a  b</p>"#),
+            r#"<p style="white-space:pre; color:red">a  b</p>"#
+        );
+        assert_eq!(
+            canonicalize(r#"<p style="white-space:pre; white-space:normal">a  b</p>"#),
+            r#"<p style="white-space:pre; white-space:normal">a b</p>"#
         );
         assert_eq!(
             canonicalize(r#"<p style="white-space: normal">a  b</p>"#),

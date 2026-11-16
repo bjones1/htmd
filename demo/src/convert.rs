@@ -149,6 +149,27 @@ mod tests {
         );
     }
 
+    /// §8.6:275's stack-heavy shapes mixed — blockquote, list, and
+    /// table nesting in one tree, all elements that genuinely nest.
+    /// Each `<blockquote><ul><li><table><tr><td>` cycle is 7 parsed
+    /// levels (html5ever implies the `<tbody>`), so 86 cycles reach
+    /// depth 602: measured exactly by the depth walk, rejected by the
+    /// 512 gate.
+    #[test]
+    fn six_hundred_deep_mixed_shapes_measure_and_reject() {
+        let input = "<blockquote><ul><li><table><tr><td>".repeat(86);
+        assert!(input.len() < MAX_INPUT_BYTES);
+        let tree = HtmlToMarkdown::builder()
+            .build()
+            .html_to_tree(&input)
+            .expect("infallible parse");
+        assert_eq!(max_element_depth(&tree), 602);
+        assert_eq!(
+            convert_html_to_md(&input, &defaults(), &[]),
+            Err(Blocked::TooDeep)
+        );
+    }
+
     #[test]
     fn malformed_html_converts_without_panic() {
         let output = convert_html_to_md("<div><p>unclosed <b>text", &defaults(), &[]);
