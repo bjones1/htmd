@@ -138,7 +138,7 @@ fn serialize_children(root: &Handle) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::build_srcdoc;
+    use super::{Blocked, build_srcdoc, build_srcdoc_within_depth_limit};
 
     /// FR-1:42's CSP meta, verbatim from the spec line.
     const CSP_META: &str = r#"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';">"#;
