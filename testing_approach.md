@@ -26,7 +26,7 @@ Markdown is compared exactly. Only HTML is compared with the "Whitespace" rules.
 
 ### Test helpers
 
-Four helpers in `tests/common/mod.rs` check the three properties of one case. Each converts with `convert_faithful_options`, renders with `render_markdown`, and compares HTML with `assert_html_equivalent` from the "Whitespace" section.
+Four helpers in `tests/common/mod.rs` check the three properties of one case. Each converts with `convert_faithful_options` and renders with `render_markdown`. `html` and the expected strings are `&str`, `htmd_options` is `&htmd::options::Options` (used for both conversions), and `cmark_options` is `pulldown_cmark::Options`.
 
 | Helper | Arguments |
 | ------ | --------- |
@@ -35,18 +35,21 @@ Four helpers in `tests/common/mod.rs` check the three properties of one case. Ea
 | `assert_faithful_unstable` | `html, expected_markdown, expected_round_trip, expected_second_markdown` |
 | `assert_faithful_unstable_options` | `html, htmd_options, cmark_options, expected_markdown, expected_round_trip, expected_second_markdown` |
 
-**Options.** The helpers without `_options` use htmd's `Options::default()` and pulldown-cmark's `Options::all()`, so the round trip reads every extension pulldown-cmark knows, and a missing escape for any of them shows. A case uses an `_options` helper only when it needs other htmd options (for example `HeadingStyle::Setex`), or when an extension reads text which htmd does not target: `ENABLE_SMART_PUNCTUATION` turns `"a"` into curly quotes. Such a call removes only that extension (`Options::all() - Options::ENABLE_SMART_PUNCTUATION`) and says why in one line. The same htmd options are used for both conversions.
+**Options.** The helpers without `_options` use htmd's `Options::default()` and `CMARK_OPTIONS`, a constant in `tests/common/mod.rs`: pulldown-cmark's `Options::all()` without the extensions which change text htmd does not escape. These are smart punctuation (`don't` gets a curly apostrophe), heading attributes, definition lists, superscript, subscript, wikilinks, both metadata blocks, and old-style footnotes. What remains (tables, footnotes, strikethrough, task lists, math and GFM) is what `translation_approach.md` targets, so a missing escape for any of them shows. A case uses an `_options` helper only for other htmd options (for example `HeadingStyle::Setex`), or to test an extension outside `CMARK_OPTIONS`.
 
-**Order of checks.** Each helper stops at the first failure and panics with a message which names the property and shows the input HTML, the Markdown, and the two values it compared:
+**Order of checks.** Each helper stops at the first failure. Its panic message starts with the property's name (`property 2:`, `property 1:`, `property 3:`) and shows the input HTML, the Markdown, and the two values it compared. HTML is compared with `html_equivalent` from the "Whitespace" section, so the helper writes its own message.
 
-1. The conversion succeeds.
+1. The conversion returns `Ok`. htmd's conversion cannot fail today, so this is only an `expect`.
 2. Property 2: the rendered HTML is equivalent to `expected_round_trip`. This comes first, so a broken translation shows the harm it does (a paragraph turned into a heading) rather than a different string.
 3. Property 1: the Markdown equals `expected_markdown` exactly.
-4. Property 3: converting the rendered HTML gives `expected_markdown` again. In the `_unstable` helpers it gives `expected_second_markdown` instead, which must differ from `expected_markdown` (otherwise the case belongs in the stable helper), and which must itself be stable: one more trip gives it again.
+4. Property 3, by converting the rendered HTML with the same options:
+   1. The stable helpers expect `expected_markdown` again.
+   2. The `_unstable` helpers expect `expected_second_markdown`, which must differ from `expected_markdown`: otherwise the case belongs in a stable helper.
+   3. The `_unstable` helpers then render and convert `expected_second_markdown` once more, with the same options, and expect it again.
 
 The expected round trip is always given. When the trip loses nothing, it is the input HTML with the standard deviations below.
 
-**Tests of the helpers.** `tests/test_helpers_tests.rs` holds, for each helper, one case which passes, and one `#[should_panic]` case for each check above which that helper makes, including an `_unstable` call on a stable case. `round_trip` and `render_markdown` stay as they are until the migration removes their last callers.
+**Tests of the helpers.** `tests/test_helpers_tests.rs` holds, for each helper, one case which passes and one `#[should_panic(expected = "property N:")]` case for each of checks 2–4 which that helper makes, including an `_unstable` call on a stable case. Check 1 has none, and check 4.3 gets one only once an input is known whose second Markdown is unstable. The helpers carry `#[allow(dead_code)]`, since not every test binary calls each one. `render_markdown` stays; `round_trip` stays until the migration removes its last caller.
 
 ### Known deviations
 
