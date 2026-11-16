@@ -1269,6 +1269,7 @@ by this review; `cargo build`, `cargo clippy`, and `cargo test` were not run.
 list; §6/§8.3 Long-Tasks scoping; §6/§8.3 output-cap clearing; Deliverable 3
 release-profile wasm tests; §6 corpus definition) and the stale round-8/9
 items closed by adjudication.
+[Record note (final review): the plan's "grep KB returns nothing" verification holds for demo-spec.md and submission.md only; review.md retains KB inside verbatim historical round quotes by record-integrity design.]
 
 ---
 
@@ -2054,6 +2055,7 @@ None.
   the comment to the true rationale (marker-gated reload recovery makes a JS-side write halt
   unnecessary).</em>
   **Status:** resolved-by-ruling (controller ruling: the JS trap listener cannot halt the Rust storage controller — its halted flag is Rust-side state only the panic hook sets, unreachable from JavaScript — so the write-halt half of FR-7:149 is impossible from the trap path, and the marker alone drives FR-8's recovery, which is sufficient. No behavior change; the index.html comment now states the true rationale — these handlers do run after a trap (a per-call RuntimeError, not a dead runtime), but the halt is impossible from here — replacing the inaccurate “dead runtime” premise).
+[Correction (final review): the write halt is unnecessary from the trap path — an implementable JS-flag mechanism exists (IR1-B1 proposed one) — not impossible; see the amended FR-7:149.]
 * ~~**IR2-L2 — §8.6:275's named conversion shapes still have no native test (convert.rs:136-171).**~~
   The IR1-L2 fix proved the depth walk on a 600-deep mixed blockquote/list/table tree, but the
   criterion also names 600 unclosed `<p>` tags, 600 `<br>` siblings, and a ≤ 512-level
