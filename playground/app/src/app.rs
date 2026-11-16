@@ -65,6 +65,11 @@ fn Toolbar(playground: Playground) -> impl IntoView {
     let share_field = NodeRef::<html::Input>::new();
     let share = move |_| {
         playground.flush();
+        // After an invalid link the address still holds it (spec,
+        // Permalinks); share what the page shows instead.
+        if playground.address_notice.get_untracked() == Some(AddressNotice::InvalidLink) {
+            playground.write_address();
+        }
         if playground.address_notice.get_untracked() == Some(AddressNotice::TooLargeToShare) {
             // The notice already says the input is too large to share.
             return;
@@ -285,7 +290,6 @@ fn ExamplesMenu(playground: Playground) -> impl IntoView {
             <button
                 type="button"
                 class="button"
-                aria-haspopup="true"
                 aria-expanded=move || open.get().to_string()
                 aria-controls="examples-list"
                 node_ref=button
@@ -333,9 +337,8 @@ fn tab_id(tab: Tab) -> String {
     format!("tab-{}", tab.label().to_lowercase())
 }
 
-fn panel_id(tab: Tab) -> String {
-    format!("panel-{}", tab.label().to_lowercase())
-}
+/// The one panel all tabs control; its content follows the selected tab.
+const PANEL_ID: &str = "output-panel";
 
 #[component]
 fn OutputTabs(playground: Playground) -> impl IntoView {
@@ -407,7 +410,7 @@ fn OutputTabs(playground: Playground) -> impl IntoView {
                                     type="button"
                                     role="tab"
                                     id=tab_id(tab)
-                                    aria-controls=panel_id(tab)
+                                    aria-controls=PANEL_ID
                                     aria-selected=move || selected().to_string()
                                     tabindex=move || if selected() { "0" } else { "-1" }
                                     on:click=move |_| playground.tab.set(tab)
@@ -433,7 +436,7 @@ fn OutputTabs(playground: Playground) -> impl IntoView {
         <div
             class="tab-panel"
             role="tabpanel"
-            id=move || panel_id(playground.tab.get())
+            id=PANEL_ID
             aria-labelledby=move || tab_id(playground.tab.get())
         >
             {move || match playground.tab.get() {
@@ -578,9 +581,11 @@ fn StatusLine(playground: Playground) -> impl IntoView {
         notices.join(" ")
     };
     view! {
-        <div class="status">
+        // The whole line is the live region, so the timing and length are
+        // announced along with notices (spec, Constraints: Accessibility).
+        <div class="status" role="status">
             <span class="metrics">{metrics}</span>
-            <span class="notices" role="status">{notices}</span>
+            <span class="notices">{notices}</span>
             <Show when=move || playground.phase.get() == Phase::Paused>
                 <button type="button" class="button" on:click=move |_| playground.convert_anyway()>
                     "Convert anyway"

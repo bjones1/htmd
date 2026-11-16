@@ -52,6 +52,16 @@ jobs:
       - name: Build
         run: ./build.sh
 
+      # Spec, Constraints: the page with all its files is under 1 MB with gzip.
+      - name: Check size
+        run: |
+          total=0
+          for file in $(find dist -type f); do
+            total=$((total + $(gzip -9 -c "$file" | wc -c)))
+          done
+          echo "dist/ with gzip: $total bytes"
+          test "$total" -lt 1000000
+
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:

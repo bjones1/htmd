@@ -179,7 +179,7 @@ impl Playground {
     }
 
     /// Record the current state in the address.
-    fn write_address(&self) {
+    pub fn write_address(&self) {
         let fits = address::write(&self.state());
         self.address_notice
             .set((!fits).then_some(AddressNotice::TooLargeToShare));
