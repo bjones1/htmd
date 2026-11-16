@@ -510,7 +510,7 @@ GitHub userid: noxfurry
 
 #### Contributions
 
-Rewrote the "Whitespace" section of `testing_approach.md` after the instructor's comments, so that it defines only how two HTML strings are compared (ASCII whitespace, normalized by how a browser renders it) while Markdown is compared exactly, and revised it over three LLM review rounds, stopping when only trivial findings remained.
+Rewrote the "Whitespace" section of `testing_approach.md` after the instructor's comments as rules for comparing whitespace in two HTML strings, revised it over three LLM review rounds, and implemented it as the HTML comparison helper in `tests/common/html_compare.rs` with its tests, revised over two LLM review rounds.
 
 #### Specification review rounds
 
@@ -694,13 +694,98 @@ Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "White
 
 #### Implementation review rounds
 
-(Table showing implementation review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 6 | Whitespace-only text in `<head>` removed; rule 3 judges a run of whitespace and comments by what surrounds it; form-feed tests added so rule 3 is actually exercised; a redundant check removed and a doc comment fixed; doctype handling left as it is |
+| 2 | 3 | No errors; tests added for comments kept between blocks and a form feed alone in its parent; the `<head>` test made independent of htmd; a doc comment updated |
 
 #### Last implementation review
 
-(LLM and prompt used)
+Claude Opus 5.5 (Claude Code), with the prompt: "Review the implementation of the "Whitespace" section of testing_approach.md in tests/common/html_compare.rs and tests/html_compare_tests.rs, writing findings to impl-review-round2.md in the repo root. Check that the code does what the section specifies, and verify each finding by running throwaway tests, and do not commit them. Do not edit any file in the repo except impl-review-round2.md." The prompt went on to say that this is round 2, to check the fixes for round 1, to report only findings which would make a test pass or fail wrongly or mislead a reader and to label smaller ones trivial, and to give the format of the review. This is the output of round 2; all its findings were applied.
 
-(LLM output, possibly with strikethrough)
+> Implementation review, round 2: HTML comparison helper
+> ======================================================
+>
+> Scope: `tests/common/html_compare.rs` and `tests/html_compare_tests.rs` against the "Whitespace" section of `testing_approach.md`, after round 1's items 1-5 were applied. Item 6 (ProcessingInstruction / doctype name) was left on purpose and is not raised again.
+>
+> Summary
+> -------
+>
+> The round 1 fixes are correct and introduced no new errors. I found no errors and no omissions or inaccuracies which would make a test pass or fail wrongly or mislead a reader. Three trivial items remain: two branches of rule 3 have no test, the `<head>` test sits under the rule 3 heading and depends on htmd, and the `Kind::Hidden` doc comment no longer covers `<head>`.
+>
+> `cargo build`, `cargo clippy -- --deny warnings`, `cargo clippy --all-targets -- --deny warnings`, `rustfmt --check` on the two files and `cargo test` all pass. All 36 helper tests pass. The files use LF like the other files in `tests/`, and `tests/common/mod.rs` only gains `pub mod html_compare;`.
+>
+> I checked every finding with throwaway code in a scratch crate outside the repo. The crate loaded copies of `html_compare.rs` through `#[path]`: the current file and five mutants, each with one piece of rule 3 or the `<head>` fix switched off. It ran the repo's test bodies against each copy, plus about 45 extra pairs and 12 real round trips (htmd Faithful, pulldown-cmark 0.13). Nothing in the repo was changed except this file.
+>
+> Errors
+> ------
+>
+> None.
+>
+> Omissions and inaccuracies
+> --------------------------
+>
+> None.
+>
+> Trivial
+> -------
+>
+> ### 1. Two branches of rule 3 have no test
+>
+> Two mutants of `remove_whitespace_between_blocks` pass all 36 tests:
+>
+> | Mutant | Wrong result it gives | Current result |
+> |---|---|---|
+> | `remove[i] = true` instead of `remove[i] = is_whitespace_text(&nodes[i])`, so a run loses its comments too | `<p>a</p>\n<!--x-->\n<p>b</p>` ≡ `<p>a</p><p>b</p>` | ≢ (correct, item 4) |
+> | `(before, after) != (Side::Edge, Side::Edge)` removed, so whitespace alone in its parent is dropped | `<div>\u{c}</div>` ≡ `<div></div>`, and `<p>\u{c}</p>` ≡ `<p></p>` | ≢ (correct: no block or table part is next to the form feed) |
+>
+> The code is correct today. The tests just wouldn't catch either regression. The first matters more: a helper that dropped comments between blocks would let a round trip that loses a comment pass.
+>
+> Suggested change: add `assert_different("<p>a</p>\n<!--x-->\n<p>b</p>", "<p>a</p><p>b</p>")` and `assert_different("<div>\u{c}</div>", "<div></div>")`.
+>
+> ### 2. The `<head>` test sits under the rule 3 heading and depends on htmd
+>
+> `whitespace_in_head_is_removed` is under `// "Comparison", rule 3.`, but removing whitespace in `<head>` is not rule 3. It follows from the section's general statement that only unrendered differences are removed. The test also builds its input with `common::round_trip`, so a change in how htmd writes `<style>` would fail it even if the helper is correct. The other round-trip tests have their own heading at the end of the file.
+>
+> Suggested change: test the helper with a fixed pair, `assert_equivalent("<style>p{}</style>\n<p>a</p>", "<style>p{}</style><p>a</p>")`, under its own short heading. If you keep the round trip, move it to "Real round trips through htmd and pulldown-cmark".
+>
+> ### 3. The `Kind::Hidden` doc comment no longer covers `<head>`
+>
+> `Kind::Hidden` is documented as "`display: none`; its content is compared exactly", and `"head"` is one of its elements. Whitespace-only text in `<head>` is now removed (lines 256-259), so that sentence is not quite true for `<head>`. The comment at line 257 explains the exception where it happens, so a reader who reads on is not misled.
+>
+> Suggested change: "`display: none`; its content is compared exactly, except whitespace-only text in `<head>`." Or leave it as it is.
+>
+> Verified as stated
+> ------------------
+>
+> * Round 1 item 1 (`<head>`):
+>   * `<script>x</script>\n<p>a</p>`, `<link rel=x>\n<p>a</p>` and `<title>a</title>\n<p>a</p>` ≡ the same strings without the `\n`.
+>   * `<style>p{}</style>\u{c}<p>a</p>` ≡ `<style>p{}</style><p>a</p>`.
+>   * `<style>p{}</style>\n<!--c-->\n<p>a</p>` ≡ `<style>p{}</style><!--c--><p>a</p>`. The comment stays in `<head>` and is still compared.
+>   * Real round trips of `<script>let x = 1;</script><p>a</p>`, `<style>p{}</style><p>a</p>` and `<script>x</script><!-- c --><p>a</p>` compare equal to their input.
+>   * Mutation: with the `head` branch disabled, only `whitespace_in_head_is_removed` fails, so the fix is tested.
+> * Round 1 item 2 (comment runs):
+>   * `<p>a</p>\u{c}<!--x-->\u{c}<!--y-->\u{c}<p>b</p>` ≡ `<p>a</p><!--x--><!--y--><p>b</p>`.
+>   * `<div>\u{c}<!--x-->\u{c}<p>a</p></div>` and `<div><p>a</p>\u{c}<!--x-->\u{c}</div>` ≡ their forms without the form feeds (edge on one side, block on the other).
+>   * `<p>a</p>\u{c}<!--x-->\u{c}b` ≢ `<p>a</p><!--x-->b`, because the run is next to inline content.
+>   * Comments in a run are never removed: `<p>a</p>\n<!--x-->\n<p>b</p>` ≢ `<p>a</p><p>b</p>`.
+> * Round 1 item 3 (tests exercise rule 3):
+>   * With the call to `remove_whitespace_between_blocks` removed, four tests fail: `form_feed_between_blocks_is_removed`, `form_feed_between_table_parts_is_removed`, `comment_between_blocks_with_whitespace_on_both_sides` and `whitespace_in_head_is_removed`.
+>   * With comments no longer skipped, `comment_between_blocks_with_whitespace_on_both_sides` fails.
+> * Round 1 items 4 and 5:
+>   * `Kind::Preformatted` now appears only in `kind` and `collapse_inline_whitespace`.
+>   * The `write_nodes` doc comment ("empty text nodes dropped and adjacent text nodes merged") is accurate.
+> * No regressions in the rules round 1 verified:
+>   * Rule 1: `<p>a <!--x--> b</p>` ≡ `<p>a <!--x-->b</p>` and ≢ `<p>a<!--x--> b</p>`. `<p>a <em> </em>b</p>` ≡ `<p>a <em></em>b</p>`.
+>   * Rule 2: `<p>a <br> b</p>` ≡ `<p>a<br>b</p>`. `<li>a\n<ul><li>b</li></ul></li>` ≡ `<li>a<ul><li>b</li></ul></li>`. `<blockquote>\n<p>a</p>\n</blockquote>\n` ≡ `<blockquote><p>a</p></blockquote>`.
+>   * Rule 3: `<ul>`/`<li>` and `<dl>`/`<dt>`/`<dd>` with form feeds between them compare equal to their forms without. `<p>a</p>\u{c}b` and `<p>a</p>\u{c}<img src=x>` stay different, because the form feed is next to inline content.
+>   * Item 1: `<pre>a\n</pre>`, `<pre>a\r\n</pre>`, `<pre><code>a\n</code></pre>\n` and `<textarea>a\n</textarea>` ≡ their forms without the final line feed. `<pre><code>\n</code></pre>` ≢ `<pre><code></code></pre>`. `<pre>\u{c}<div>a</div>\u{c}</pre>` keeps its form feeds.
+>   * Item 3: `<p>a<em> </em>b</p>` ≢ `<p>a <em></em>b</p>`. A space after `<img>` or before `<textarea>` is kept.
+> * Real round trips compare equal to their input, with the standard deviations: a comment before or between paragraphs, `<div>` then `<p>`, a script between paragraphs, a pipe table with `ENABLE_TABLES`, a loose `<ol start="3">`, a list in a blockquote, `<br>`, and a heading followed by a fenced code block with a language.
+> * Within the letter of the section:
+>   * A form feed next to a `<script>` in the body (`<p>a</p>\u{c}<script>x</script>\u{c}<p>b</p>`) is kept, since `<script>` is not a block or table part.
+>   * A form feed between an explicit `</head>` and `<body>` is also kept.
+>   * Neither occurs in a pulldown-cmark round trip, so I don't report them.
 
 ### Aidyn Tazhibay
 
