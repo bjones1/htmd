@@ -1,0 +1,107 @@
+name: Demo CI and Pages
+
+# The demo crate is standalone (demo/Cargo.toml, demo/Cargo.lock); see
+# demo/demo-spec.md §7 Deliverables 3 and 4.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "demo/**"
+      - "src/**"
+      - "Cargo.toml"
+      - ".github/workflows/demo-ci.yaml"
+  pull_request:
+    paths:
+      - "demo/**"
+      - "src/**"
+      - "Cargo.toml"
+      - ".github/workflows/demo-ci.yaml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  TRUNK_VERSION: "0.22.1"
+  WASM_SIZE_LIMIT_BYTES: "1572864"
+
+concurrency:
+  group: demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: demo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: demo
+
+      - name: Install Trunk
+        run: |
+          curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin"
+          trunk --version
+
+      - name: Clippy (wasm32)
+        run: cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Native unit tests
+        run: cargo test --locked
+
+      # The trunk build below is not given --locked; this fails if Cargo.lock
+      # is out of date, before Trunk's cargo build could rewrite it.
+      - name: Verify Cargo.lock
+        run: cargo fetch --locked --target wasm32-unknown-unknown
+
+      # GitHub Pages serves a project site under /<repo-name>/; Trunk's
+      # default public URL of / breaks asset paths there.
+      - name: Release build
+        run: trunk build --release --public-url "/${{ github.event.repository.name }}/"
+
+      - name: Gzipped wasm size check
+        working-directory: .
+        run: |
+          set -euo pipefail
+          wasm_files=(demo/dist/*.wasm)
+          if [ "${#wasm_files[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one .wasm in demo/dist, found ${#wasm_files[@]}"
+            exit 1
+          fi
+          size=$(gzip -6 -c demo/dist/*.wasm | wc -c)
+          echo "gzipped wasm: ${size} bytes (limit: < ${WASM_SIZE_LIMIT_BYTES})"
+          echo "### Gzipped wasm: ${size} bytes (limit < ${WASM_SIZE_LIMIT_BYTES})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$size" -ge "$WASM_SIZE_LIMIT_BYTES" ]; then
+            echo "::error::gzipped wasm is ${size} bytes; must be < ${WASM_SIZE_LIMIT_BYTES}"
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
