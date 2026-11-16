@@ -1768,8 +1768,8 @@ Parked items from the round prompt were left unreported.
 
 #### Blocking issues
 
-* **IR1-B1 — FR-7:149's wasm-trap listeners only reveal the overlay; they
-  neither set the crash marker nor halt workspace writes (index.html:231–247):**
+* ~~**IR1-B1 — FR-7:149's wasm-trap listeners only reveal the overlay; they
+  neither set the crash marker nor halt workspace writes (index.html:231–247):**~~
   the spec requires the global `window` `error`/`unhandledrejection` listeners
   in `index.html` to "disable further workspace writes, set the
   `htmd_cmark_live_crashed` marker in localStorage (inside `try/catch`), and
@@ -1792,11 +1792,12 @@ Parked items from the round prompt were left unreported.
   pending debounced writes and `pagehide`/`visibilitychange` flushes are
   refused exactly as they are after a Rust panic. Keep the panic-hook path
   unchanged.</em>
+  **Status:** fixed (the trap listeners now write the crash marker inside try/catch before the overlay reveal — same key and "1" value the Rust panic hook writes, and the only thing FR-8’s presence-only load check needs; a JS-side storage halt is impossible from a dead runtime, so the marker alone drives reload recovery).
 
 #### Medium-severity issues
 
-* **IR1-M1 — the 2 MB output cap has no covering test anywhere (app.rs:35,
-  300–309; §6:214 / §8.3:249):** the cap (banner *"Output exceeds the 2 MB
+* ~~**IR1-M1 — the 2 MB output cap has no covering test anywhere (app.rs:35,
+  300–309; §6:214 / §8.3:249):**~~ the cap (banner *"Output exceeds the 2 MB
   display limit."*, both tabs cleared, fidelity cleared, "Use Output as
   Input" disabled via the empty-output rule) is implemented before the commit
   gate, but no test trips it — app.rs's own tests stop at the 100,000-byte
@@ -1808,8 +1809,9 @@ Parked items from the round prompt were left unreported.
   thousands of uses), asserting `cap_banner` shows, `out_md` source and preview
   are both empty, and `use_output_disabled` is true; a companion engine-level
   check that the run then commits nothing stale.</em>
-* **IR1-M2 — §8.7:306's diff-precision case has no pipeline-level test
-  (canonicalize.rs:533–548):** the spec requires that
+  **Status:** fixed (app.rs harness tests: an amplified-Markdown input whose render is first asserted to exceed 2,000,000 bytes clears both tabs, shows the cap banner, and leaves “Use Output as Input” disabled by the empty-output rule, with nothing stale committing afterwards; a just-under-cap output still displays. Reference links cannot amplify past the cap — pulldown-cmark 0.13.6’s link_ref_expansion_limit fuel caps their output near the input size — so the tests amplify with aligned empty table cells (~34× per pipe), recorded in the test.)
+* ~~**IR1-M2 — §8.7:306's diff-precision case has no pipeline-level test
+  (canonicalize.rs:533–548):**~~ the spec requires that
   `<p><span style="white-space: pre">a  b</span></p>` yields a *nonzero* diff
   after the round trip, and that a CJK paragraph and a U+0301 word round-trip
   with *zero* diff. `white_space_style_attr_preserves_whitespace`
@@ -1822,9 +1824,10 @@ Parked items from the round prompt were left unreported.
   the styled span and `WordDiff::Inclusive` for `<p>こんにちは</p>` and
   `<p>cafe\u{0301}</p>` after a real round trip under Faithful defaults +
   `ENABLE_TABLES | ENABLE_MATH`.</em>
-* **IR1-M3 — the preserved-subtree style check reads only the first
+  **Status:** fixed (canonicalize.rs pipeline tests now run the inputs through convert_html_to_md and convert_md_to_html(CmarkFlags::tables_math()) before canonicalizing and diffing: the styled span yields WordDiff::Changes, the CJK paragraph and the U+0301 word WordDiff::Inclusive).
+* ~~**IR1-M3 — the preserved-subtree style check reads only the first
   declaration, narrowing FR-5:127 (canonicalize.rs:375–387, codified by the
-  test at 699–712):** FR-5:127 preserves "any element whose `style` attribute
+  test at 699–712):**~~ FR-5:127 preserves "any element whose `style` attribute
   declares `white-space` with a value other than `normal`" — no positional
   qualifier. The implementation checks only `attr.value.split(';').next()`, and
   `style_attr_detection_rules` pins `style="color:red; white-space:pre"` as NOT
@@ -1837,11 +1840,12 @@ Parked items from the round prompt were left unreported.
   `;`-separated declaration for a case-insensitive `white-space` property
   (`attr.value.split(';').any(...)`), keep the `normal` exclusion, and update
   `style_attr_detection_rules` so `color:red; white-space:pre` preserves.</em>
+  **Status:** fixed (every `;`-separated declaration is scanned, with the last white-space occurrence winning per the CSS cascade; style_attr_detection_rules now pins `color:red; white-space:pre` as preserved and `white-space:pre; white-space:normal` as not).
 
 #### Low-severity / editorial
 
-* **IR1-L1 — the immediate path schedules a 0 ms timer, not the "next
-  animation frame" (engine.rs:106–113,401; clock.rs:104–110; FR-2:52):** the
+* ~~**IR1-L1 — the immediate path schedules a 0 ms timer, not the "next
+  animation frame" (engine.rs:106–113,401; clock.rs:104–110; FR-2:52):**~~ the
   spec (and the round-5 team note, review.md:489) pin "conversion is scheduled
   on the next animation frame after the keystroke" for ≤ 2 kB inputs. The
   engine's `Batch::immediate` arms `clock.schedule(0, …)` → `setTimeout(0)`.
@@ -1850,8 +1854,9 @@ Parked items from the round prompt were left unreported.
   from the pinned wording, and a 0 ms timer can preempt paint where rAF cannot.
   <em>Fix: either back 0-delay engine events with `requestAnimationFrame` in
   `WebClock`, or record the deviation in the Deliverable-5 spec update.</em>
-* **IR1-L2 — nesting-limit test shapes are div-only (convert.rs:101–150;
-  §8.6:275):** the acceptance case also names 600 unclosed `<p>` tags and 600
+  **Status:** fixed (WebClock’s zero-delay path uses requestAnimationFrame, matching FR-2:52’s “next animation frame”; positive delays keep setTimeout, and cancel retracts either handle kind).
+* ~~**IR1-L2 — nesting-limit test shapes are div-only (convert.rs:101–150;
+  §8.6:275):**~~ the acceptance case also names 600 unclosed `<p>` tags and 600
   `<br>` siblings, and 512-level stacks of *nested lists, blockquotes, and
   tables* in both Pure and Faithful modes. The native suite proves the gate
   with nested `<div>` only; the release-wasm runs are Deliverable 3's, but the
@@ -1859,13 +1864,15 @@ Parked items from the round prompt were left unreported.
   `five_hundred_twelve_deep_input_converts` (a 600-`<p>` and a 600-`<br>`
   conversion asserting `Ok`, and a 512-deep list/blockquote/table conversion in
   both translation modes).</em>
-* **IR1-L3 — `send_wrapper` is a direct dependency absent from §6:219's list
-  (Cargo.toml:21):** justified in place (Leptos view closures must be `Send`
+  **Status:** fixed (convert.rs gains a 600-deep mixed-shape nesting test — blockquote/ul/li/table cycles, nesting-valid shapes only, the implied tbody counted — asserting the walk’s exact measured depth (602) and the TooDeep rejection above 512).
+* ~~**IR1-L3 — `send_wrapper` is a direct dependency absent from §6:219's list
+  (Cargo.toml:21):**~~ justified in place (Leptos view closures must be `Send`
   even in CSR; same version tachys uses, so one copy links), but the spec's
   direct-dependency enumeration omits it. <em>Fix: one line in the
   Deliverable-5 spec update.</em>
-* **IR1-L4 — no `performance.mark`/`measure` instrumentation around the
-  conversion call (§6:211 / §8.3:248):** `demo/src` emits no measures;
+  **Status:** fixed (send_wrapper (0.6) added to §6’s direct-dependency list).
+* ~~**IR1-L4 — no `performance.mark`/`measure` instrumentation around the
+  conversion call (§6:211 / §8.3:248):**~~ `demo/src` emits no measures;
   `Performance` is used only as the clock's monotonic `now()`
   (clock.rs:72–77). §8.3's Playwright performance assertions will need
   app-emitted measures (or injected wrappers) to observe. Flagging the
@@ -1873,6 +1880,7 @@ Parked items from the round prompt were left unreported.
   with `performance.mark`/`measure` (the `Performance` web-sys feature is
   already enabled), or hand the instrumentation point to the CI team
   explicitly.</em>
+  **Status:** fixed (app.rs brackets convert_and_commit with performance.mark/measure — marks htmd:convert:start / htmd:convert:end, measure htmd:convert, names documented in the code as the CI contract — guarded for availability and skipped off-wasm).
 
 **Total new findings: 8 (blocking 1, medium 3, low 4).**
 
@@ -1887,3 +1895,5 @@ Validation: `cargo test --manifest-path demo/Cargo.toml` (164 passed, 2 ignored)
 and `gzip -6` on `demo/dist/*.wasm` (389,788 bytes) were run for evidence;
 `trunk` was not re-run (dist/ already present and current). No file other than
 `demo/review.md` was modified by this review.
+
+**Implementation review round 1 resolution:** all 8 findings fixed (crash-marker in JS trap path; 2 MB cap tests; §8.7:306 pipeline tests; style-declaration scan fix + ruling; rAF zero-delay; mixed-shape nesting; §6 send_wrapper; performance marks).
