@@ -1,6 +1,8 @@
 use leptos::mount::mount_to_body;
 
 mod app;
+#[cfg(all(test, target_arch = "wasm32"))]
+mod browser_tests;
 mod clock;
 mod convert;
 mod engine;

@@ -98,23 +98,35 @@ and reloads on file changes. Add `--release` to check the optimized build.
 
 ### Browser tests (`wasm-bindgen-test`, headless Chromium)
 
-**Not yet available.** The crate has no `wasm-bindgen-test` dev-dependency
-and no `#[wasm_bindgen_test]` cases yet. Playwright runs separately (see
-below). Until the wasm unit suite lands, the commands below do not run a
-browser suite. Once it lands, point Cargo's wasm runner at `wasm-bindgen-test-runner` and the runner at
-`chromedriver`, then run the suite in both profiles:
+The suite lives in [`src/browser_tests.rs`](src/browser_tests.rs). It covers
+the FR-7 nesting cases against the real 1 MiB wasm stack: 512 levels of
+nested lists, blockquotes, tables, and a mix of all three, in Pure and
+Faithful modes; 600 unclosed `<p>` and 600 `<br>` siblings; and the 50,000
+`>` preview. It also checks the panic hook's crash steps (marker, storage
+halt, overlay, `inert` root, focus) without a real panic.
+
+Install `wasm-bindgen-test-runner` at the same version as `wasm-bindgen` in
+`Cargo.lock` (currently 0.2.130), from the
+[wasm-bindgen release](https://github.com/wasm-bindgen/wasm-bindgen/releases/tag/0.2.130)
+or with `cargo install wasm-bindgen-cli --version 0.2.130 --locked`. Point
+Cargo's wasm runner at it and the runner at `chromedriver` (which must match
+your Chrome), then run both profiles:
 
 ```
 export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner
 export CHROMEDRIVER=/path/to/chromedriver
+export WASM_BINDGEN_TEST_TIMEOUT=600
 cargo test --locked --target wasm32-unknown-unknown
 cargo test --locked --target wasm32-unknown-unknown --release
 ```
 
-The runner is headless by default; set `NO_HEADLESS=1` to watch it in a
-visible browser window. At minimum the FR-7 nesting cases must pass under
-`--release`. The crash-recovery cases (§8.6)
-need the `demo-panic-test` feature; see [Panic testing](#panic-testing).
+The nesting cases run only under `--release`. Debug builds report them as
+ignored, because debug stack frames are far larger than the release frames
+the 512-level ceiling is sized for. The 50,000-level preview case takes tens
+of seconds, so raise the runner's 20-second default timeout as above. The
+runner is headless by default; set `NO_HEADLESS=1` to watch it in a visible
+browser window. Plain `#[test]` functions are not run in the browser; they
+run in the native `cargo test`.
 
 ### Playwright end-to-end, accessibility, and performance tests
 
@@ -230,15 +242,30 @@ toolbar, used to verify the crash overlay and the reload-recovery path
 
 ```
 trunk serve --features demo-panic-test
-trunk build --release --features demo-panic-test
-cargo test --locked --target wasm32-unknown-unknown --features demo-panic-test
 ```
 
-The last command needs the browser suite, which is not yet available (see
-[Browser tests](#browser-tests-wasm-bindgen-test-headless-chromium)).
+The §8.6 crash-loop recovery cases live in
+[`e2e/crash-recovery.spec.ts`](e2e/crash-recovery.spec.ts) and run only
+against such a build. Build it into its own directory, so a panic build
+never sits in `dist/`, and point the test server at it. In PowerShell:
+
+```
+trunk build --features demo-panic-test --dist dist-panic
+$env:DEMO_PANIC_TEST = "1"
+$env:DEMO_DIST = "dist-panic"
+npm run test:e2e -- --project=chromium
+```
+
+Add `--release` to the `trunk build` line for the release profile; CI runs
+both. With `DEMO_PANIC_TEST=1` only the crash-recovery spec runs; without it
+that spec is skipped. The spec panics on a persisted input and checks the
+Rust hook's overlay, `inert` root, and focus. It then reloads twice without
+choosing, checking that the workspace is restored with empty outputs, an
+empty diff, and the recovery banner. Last, it checks that each of "Convert
+restored input" and "Clear buffers" removes the crash marker.
 
 Never enable this feature in a build you deploy: the Pages build in CI is
-built without it, and a `dist/` built with it must not be published.
+built without it, and a build with it must not be published.
 
 Continuous integration and deployment
 -------------------------------------
@@ -248,8 +275,10 @@ Continuous integration and deployment
 the pinned Trunk, runs the wasm-target Clippy and native tests, builds with
 `trunk build --release --public-url /htmd/`, and applies the size check. A
 three-browser Playwright matrix tests that same release artifact, running
-the end-to-end, axe, and performance checks and uploading reports. Deployment
-depends on all browser jobs passing. On pushes to `demo-spec`, the workflow
+the end-to-end, axe, and performance checks and uploading reports. Separate
+jobs run the `wasm-bindgen-test` suite in headless Chromium in debug and
+release, and the crash-recovery spec against `demo-panic-test` builds in
+debug and release. Deployment depends on all of these jobs passing. On pushes to `demo-spec`, the workflow
 deploys `demo/dist/` to GitHub Pages. The Pages source must
 be set to **GitHub Actions** in the repository's Settings → Pages.
 

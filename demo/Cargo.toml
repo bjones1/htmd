@@ -39,6 +39,12 @@ web-sys = { version = "0.3.107", features = [
     "console",
 ] }
 
+# Must track the wasm-bindgen pin above: 0.3.80 is the release built
+# against wasm-bindgen 0.2.130, and wasm-bindgen-test-runner (installed
+# by CI) must be that same 0.2.130.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.80"
+
 [profile.release]
 opt-level = "z"
 lto = true

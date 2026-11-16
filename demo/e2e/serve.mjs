@@ -5,9 +5,11 @@ import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { publicPath } from './public-path.mjs';
 
-const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
+// DEMO_DIST (relative to demo/) serves another build, such as the
+// `demo-panic-test` builds the crash-recovery spec runs against.
+const dist = resolve(dirname(fileURLToPath(import.meta.url)), '..', process.env.DEMO_DIST ?? 'dist');
 await access(resolve(dist, 'index.html')).catch(() => {
-  throw new Error('Build the release demo first: trunk build --release');
+  throw new Error(`No index.html in ${dist}: build the demo first (trunk build --release)`);
 });
 
 const contentTypes = {

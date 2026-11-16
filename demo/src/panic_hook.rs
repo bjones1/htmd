@@ -6,9 +6,10 @@
 //! only -- Leptos signals may be borrowed at the panic site, and
 //! re-entering them would panic again before the overlay shows.
 //!
-//! The hook is compile-verified here and runtime-verified by Task 11's
-//! deliberate-panic smoke test (`demo-panic-test`); its behavior is
-//! feature-independent.
+//! The browser suite (`browser_tests.rs`) drives [`enter_crashed_state`]
+//! directly; `e2e/crash-recovery.spec.ts` verifies the whole hook with a
+//! real panic in `demo-panic-test` builds. The hook's behavior does not
+//! depend on that feature.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -63,12 +64,21 @@ pub fn install() {
     }
 }
 
-/// The hook body, in FR-7's order: crash marker (the hook's only
-/// storage write), storage halt, overlay reveal, `inert` root, focus,
-/// log. Every DOM lookup is null-guarded -- an element missing means
-/// that step is skipped, never a panic inside the panic hook.
+/// The hook body: FR-7's crash steps, then the log.
 #[cfg(target_arch = "wasm32")]
 fn handle_panic(info: &std::panic::PanicHookInfo<'_>) {
+    enter_crashed_state();
+    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&info.to_string()));
+}
+
+/// FR-7's crash steps, in order: crash marker (the hook's only storage
+/// write), storage halt, overlay reveal, `inert` root, focus. Every DOM
+/// lookup is null-guarded -- an element missing means that step is
+/// skipped, never a panic inside the panic hook. Separate from
+/// [`handle_panic`] so the browser suite can run it without panicking,
+/// which traps the test under wasm's abort-only panics.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn enter_crashed_state() {
     let window = web_sys::window();
     if let Some(window) = window.as_ref() {
         write_crash_marker(window);
@@ -93,7 +103,6 @@ fn handle_panic(info: &std::panic::PanicHookInfo<'_>) {
             let _ = el.focus();
         }
     }
-    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&info.to_string()));
 }
 
 /// FR-7 crash marker (`htmd_cmark_live_crashed`): a direct

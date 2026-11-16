@@ -103,6 +103,116 @@ jobs:
         with:
           path: demo/dist
 
+  # §7 Deliverable 3: the wasm-bindgen-test suite (demo/src/browser_tests.rs)
+  # in headless Chromium, in both profiles. The FR-7 stack-depth cases are
+  # ignored in debug and run in release.
+  wasm-tests:
+    name: wasm-bindgen-test (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [debug, release]
+    defaults:
+      run:
+        working-directory: demo
+    env:
+      CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+      # The release-only 50,000-level preview case is slow; the runner's
+      # default is 20 s for the whole suite.
+      WASM_BINDGEN_TEST_TIMEOUT: "600"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: demo
+          key: wasm-tests-${{ matrix.profile }}
+
+      # The runner must match the wasm-bindgen version in demo/Cargo.lock.
+      - name: Install wasm-bindgen-test-runner
+        run: |
+          version=$(cargo pkgid --locked wasm-bindgen | sed 's/.*@//')
+          curl -sSfL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}/wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" "wasm-bindgen-${version}-x86_64-unknown-linux-musl/wasm-bindgen-test-runner"
+          wasm-bindgen-test-runner --version
+
+      # Setting CHROMEDRIVER selects Chromium; the runner otherwise prefers
+      # the runner image's geckodriver.
+      - name: Use the preinstalled chromedriver
+        run: echo "CHROMEDRIVER=${CHROMEWEBDRIVER}/chromedriver" >> "$GITHUB_ENV"
+
+      - name: Browser unit tests
+        run: cargo test --locked --target wasm32-unknown-unknown ${{ matrix.profile == 'release' && '--release' || '' }}
+
+  # §8.6 crash-loop recovery against demo-panic-test builds, in both
+  # profiles. These builds stay out of the Pages artifact.
+  crash-recovery:
+    name: Crash recovery (${{ matrix.profile }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [debug, release]
+    defaults:
+      run:
+        working-directory: demo
+    env:
+      DEMO_PANIC_TEST: "1"
+      DEMO_DIST: dist-panic
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: demo
+          key: crash-recovery-${{ matrix.profile }}
+
+      - name: Install Trunk
+        run: |
+          curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin"
+          trunk --version
+
+      - name: Verify Cargo.lock
+        run: cargo fetch --locked --target wasm32-unknown-unknown
+
+      - name: Build with demo-panic-test
+        run: trunk build --features demo-panic-test --dist "$DEMO_DIST" ${{ matrix.profile == 'release' && '--release' || '' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: demo/package-lock.json
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Install browser and system dependencies
+        run: npx playwright install --with-deps --no-shell chromium
+
+      - name: Crash-recovery spec
+        run: npm run test:e2e -- --project=chromium
+
+      - name: Upload browser report and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-crash-recovery-${{ matrix.profile }}
+          path: |
+            demo/playwright-report
+            demo/test-results
+          retention-days: 14
+
   browser-tests:
     name: Playwright (${{ matrix.browser }})
     needs: build
@@ -155,7 +265,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: [build, browser-tests]
+    needs: [build, wasm-tests, crash-recovery, browser-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/demo-spec'
     runs-on: ubuntu-latest
     permissions:
