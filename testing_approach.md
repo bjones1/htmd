@@ -7,7 +7,7 @@ Contributions
 * Miras Shaltayev: wrote the initial draft of this document.
 * Armanzhan Onggarbay: 
 * Nurlybek Orynbassar: wrote the "Whitespace" section.
-* Aidyn Tazhibay: wrote the "Test helpers" section.
+* Aidyn Tazhibay: wrote and implemented the "Test helpers" section.
 
 Approach
 --------
@@ -52,7 +52,7 @@ Four helpers in `tests/common/mod.rs` check the three properties of one case. Ea
 
 When the trip loses nothing, the expected round trip is the input HTML with the standard deviations below.
 
-**Tests of the helpers.** `tests/test_helpers_tests.rs` holds, for each helper, one case which passes and one `#[should_panic(expected = ...)]` case for each check which that helper makes: check 0 expects `unstable helper misused:`, check 2 `property 2:`, check 3 `property 1:`, and check 4 `property 3:`. Each case makes only the expected value of its own check wrong. The unstable input is `<p><code>a\nb</code></p>`: its Markdown is `<code>a b</code>` and its second Markdown is `` `a b` ``. The stable helpers' check 4 case passes this input; the check 0 case passes a stable input (`<p>a</p>`, both Markdown strings `a`), so that only check 0 can fail. Check 4.3 gets a `#[should_panic]` case only once an input is known whose second Markdown is unstable. The helpers carry `#[allow(dead_code)]`, since not every test binary calls each one. `render_markdown` stays; `round_trip` stays until the migration removes its last caller.
+**Tests of the helpers.** `tests/test_helpers_tests.rs` holds, for each helper, one case which passes and one `#[should_panic(expected = ...)]` case for each check which that helper makes: check 0 expects `unstable helper misused:`, check 2 `property 2:`, check 3 `property 1:`, and check 4 `property 3:`. Each case makes only the expected value of its own check wrong. The unstable input is `<p><code>a\nb</code></p>`: its Markdown is `<code>a b</code>` and its second Markdown is `` `a b` ``. Its instability is an htmd bug (the line feed is already lost in the first Markdown), so the test file says so, and a fix in htmd needs a new unstable input. The passing `_options` cases use `HeadingStyle::Setex` (`<h1>a</h1>` gives `a\n=`), so the options must reach the conversion. The stable helpers' check 4 case passes this input; the check 0 case passes a stable input (`<p>a</p>`, both Markdown strings `a`), so that only check 0 can fail. Check 4.3 gets a `#[should_panic]` case only once an input is known whose second Markdown is unstable. The helpers carry `#[allow(dead_code)]`, since not every test binary calls each one. `render_markdown` stays; `round_trip` stays until the migration removes its last caller.
 
 ### Known deviations
 
