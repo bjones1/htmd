@@ -182,7 +182,16 @@ Final submission
 
 * Altynay: Fixed issues 5, 6, 13 and 14. Eliminated duplicated information,
   added block diagram for the pipeline. Generated draft source code.
-* Aiym:
+* Aiym: Addressed professor review Major 7–8 and audited all ten Minor
+  findings against team main `a8f476d`. Aligned the source/round-trip parser
+  contract with htmd document parsing; added exact rand 0.9.2 / rand_chacha
+  0.9.0 dev-dependencies and lockfile entries; replaced the draft's custom
+  PRNG with ChaCha8Rng and per-case wrapping seed derivation. Clarified
+  error classification, block membership, defaults, executable snapshots,
+  replay metadata, Unicode scalar limits, decoded entities, and reducer path
+  preservation. Retained the already-fixed scope deduplication. Added seven
+  executable contract tests and a reusable body-extraction/block-set helper.
+  This contribution does not claim a complete fuzzer or a fuzzing campaign.
 * Daulet: Fixed issues 1, 2, 9 and 10.
 * Ali:
 
@@ -201,3 +210,42 @@ Final submission
 ### Last LLM spec review
 
 ### Last LLM implementation review
+
+
+### Aiym — assigned-review verification (2026-11-16)
+
+Scope: professor's review on upstream PR #17, Major 7–8 and the ten bullets
+under Minor. Review performed against source, not just the specification.
+
+| Finding | Resolution / evidence |
+| --- | --- |
+| Major 7 | §4 uses document parsing with htmd's options for both inputs, then extracts HTML body children. Executable parser parity fixtures cover recovery/whitespace/entities/raw content. |
+| Major 8 | Exact dev-dependencies and Cargo.lock added. Draft now uses actual ChaCha8Rng, uniform u32 bounded draws, and independent wrapping per-case seeds. Stream fixture and replay tests guard drift. |
+| Minor 1 | §3 explicitly identifies Out of Scope as a generator-regression guard. |
+| Minor 2 | §3 explains why the current in-memory built-in API has no expected ordinary I/O error. |
+| Minor 3 | §6 names the authoritative BLOCK_ELEMENTS set; the helper's versioned copy has a source-equality test. |
+| Minor 4 | §8 states that only translation_mode differs from defaults. |
+| Minor 5 | §9 requires executable tests using common helpers; existing snapshots are reused, as already requested in the review. |
+| Minor 6 | §10 logs generator/text-pool/dependency versions and configuration with scheduled seeds. |
+| Minor 7 | §11.4 counts Unicode scalar values before escaping, separately from serialized UTF-8 bytes. |
+| Minor 8 | §11.6 stores decoded characters; raw entity spelling is confined to parser fixtures. Text-pool version is incremented. |
+| Minor 9 | §13 requires valid attributes and unchanged translate/serialize decisions for the failing element and relevant ancestors during reduction. |
+| Minor 10 | Already resolved in team main: scope appears only in §2. Verified and retained. |
+
+Validation in the assistant's Linux environment (not Aiym's Windows laptop):
+`cargo build`, `cargo clippy -- --deny warnings`, and `cargo test` passed.
+The added `tests/fuzzer_contract_tests.rs` tests exercise the parser contract,
+block-set drift, Unicode/entity interpretation, the pinned PRNG stream,
+isolated replay, seed addition, and index overflow. The draft is imported by
+that integration test so the modified PRNG code is compiled and exercised.
+No 15,000-case campaign or worker-isolation verification was performed.
+
+Remaining team implementation work observed during this review:
+`fuzzer-implementation.rs` is still a draft. Its round-trip routine compares a
+normalized tree with its own clone and emits placeholder Markdown, rather than
+running htmd and pulldown-cmark. The malformed-input routine also simulates a
+parser outcome; worker isolation and JSON artifacts are not implemented there.
+The new parser helper is tested but still needs integration into the real
+oracle. These existing placeholders must be replaced before the team claims
+round-trip, crash-safety, or resource-limit validation. Other members' assigned
+normalization/GFM findings remain outside this contribution's completion claim.

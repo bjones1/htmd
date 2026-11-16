@@ -46,11 +46,19 @@ Each result is assigned exactly one category:
 | Isolation Setup Failure | Resource-isolation self-test fails              | Abort          |
 
 `Out of Scope` indicates a generator defect: section 6 requires
-HTML-namespace input. Count it separately from conversion failures.
+HTML-namespace input. This category is a guard against generator regressions;
+a conforming `core` or `gfm` generator never produces it. Count it separately
+from conversion failures.
 
 Expected-error list: starts empty. Add a case only with a documented reason to
 expect `htmd` to return `Err` and a predefined test asserting it. Generated
-valid HTML is not expected to fail.
+valid HTML is not expected to fail. At the reviewed revision,
+`HtmlToMarkdown::html_to_tree` parses an in-memory UTF-8 `&str` with `.one()`
+and returns `Ok`; `convert` wraps the resulting Markdown in `Ok`. No ordinary
+I/O error kind is expected from this built-in path, even for malformed HTML
+(the parser repairs it). The `io::Result` signature alone does not imply an
+expected error. Panics and worker/resource failures retain their own categories;
+reassess this list if the conversion API or implementation changes.
 
 4\. Round-trip oracle
 ---------------------
@@ -76,15 +84,32 @@ flowchart LR
 
 Steps:
 
-1. Parse `HTML_in` as a body fragment with `html5ever`.
-2. Convert `HTML_in` with `htmd`.
+1. Parse `HTML_in` as a **document**, using `html5ever::parse_document`,
+   `RcDom`, and the same `ParseOpts` as `HtmlToMarkdown::html_to_tree` in
+   `src/lib.rs`. Use `TreeBuilderOpts { scripting_enabled: true,
+   ..Default::default() }` and otherwise default parse options, matching the
+   converter used by this suite. The generator produces body content, but this
+   does not mean the parser uses `parse_fragment`.
+2. Convert the identical, unmodified `HTML_in` with `htmd` in `Faithful` mode.
 3. Parse the generated Markdown with `pulldown-cmark` using the selected
-   profile.
-4. Parse the generated HTML with `html5ever` in the same mode.
-5. Normalize both DOMs and compare them.
+   profile and render it to HTML.
+4. Parse that HTML as a document with the exact same options as step 1.
+5. Extract the ordered children of the HTML-namespace `body` element from each
+   document, then normalize and compare them. Do not compare either document
+   directly with the generator's pre-serialization tree.
 
-Only body-fragment children are compared; generated `html`, `head`, and `body`
-wrappers are ignored.
+Ignore document wrappers and `head` content when extracting body children;
+never find `body` by matching a tag in a foreign namespace. Failure to find a
+body is an oracle setup error, not an empty passing tree. A generator validation
+failure is separate from a converter mismatch. Retain the original input in
+artifacts, including whitespace and character-reference spelling.
+
+The public `HtmlToMarkdown::html_to_tree` method may be reused for both parse
+steps to prevent parser-option drift. `tests/common/fuzzer_support.rs` supplies
+this body-extraction helper. `tests/fuzzer_contract_tests.rs` checks it against
+explicit document parsing for leading whitespace, stray table parts, initial
+`pre` newlines, character references, and raw-content elements. These are parser
+contract tests; malformed fixtures do not acquire a round-trip guarantee.
 
 5\. Markdown parser profiles
 ----------------------------
@@ -163,18 +188,15 @@ treating `code` as always opaque would report specified behavior as a mismatch.
 
 Block vs. inline:
 
-* Block elements are `address`, `article`, `aside`, `blockquote`, `body`,
-  `caption`, `center`, `dd`, `details`, `dialog`, `dir`, `div`, `dl`, `dt`,
-  `fieldset`, `figcaption`, `figure`, `footer`, `form`, `h1`–`h6`, `head`,
-  `header`, `hgroup`, `hr`, `html`, `legend`, `li`, `main`, `menu`, `nav`, `ol`,
-  `p`, `pre`, `search`, `section`, `summary`, `table`, `tbody`, `td`, `tfoot`,
-  `th`, `thead`, `tr`, and `ul`.
-* Inline elements include `a`, `abbr`, `b`, `bdi`, `bdo`, `br`, `button`,
-  `cite`, `code`, `data`, `del`, `dfn`, `em`, `i`, `img`, `input`, `ins`, `kbd`,
-  `label`, `mark`, `meter`, `output`, `progress`, `q`, `ruby`, `s`, `samp`,
-  `select`, `small`, `span`, `strong`, `sub`, `sup`, `textarea`, `time`, `u`,
-  and `var`. Elements outside these lists use their HTML content model;
-  generated cases use only the listed inventory.
+* Use exactly `BLOCK_ELEMENTS` in `src/util/node.rs` for block membership;
+  every other HTML element is inline for this split. This is htmd's CommonMark
+  serialization classification, not CSS display or the HTML content-model
+  classification. Content-model validation remains a separate generator check.
+* The set is private to the library. An external harness must maintain a
+  versioned copy with an executable equality check against that source set;
+  updating the pinned htmd revision requires rechecking it. Do not substitute
+  an open-ended tag list or infer membership from handler names. In particular,
+  `textarea` is in the block set and is also opaque under the rule above.
 * Inline runs are maximal sequences of non-block children within a block
   container
 * For the list-item pass above, inline-content children are text, comments, and
@@ -219,6 +241,8 @@ let options = Options {
 };
 ```
 
+The explicit heading, bullet, and code-block styles equal `Options::default()`
+at the pinned revision; only `translation_mode` overrides its default (`Pure`).
 Other fields inherit from `Options::default()` at the pinned `htmd` version.
 Log all effective options with every failure.
 
@@ -235,7 +259,12 @@ Known-loss allowlist:
 Run predefined tests first and compare Markdown exactly. Use existing unit and
 integration tests as the regression corpus; add snapshots only for uncovered
 required behaviors. Maintain an inventory mapping each requirement to its
-assertion, and verify expected output against the pinned implementation.
+assertion, and verify expected output against the pinned implementation. New
+Markdown snapshots must be executable integration tests under `tests/`, using
+the conversion helpers in `tests/common/mod.rs` (Faithful by default). Reuse
+existing assertions instead of duplicating a snapshot table or test suite.
+`cargo test` must execute these assertions; a prose statement that output was
+checked is insufficient. Parser/PRNG contract tests need not assert Markdown.
 
 10\. Execution order and seeds
 ------------------------------
@@ -252,7 +281,8 @@ Default CI seed plan:
 * 1,000 cases per class/profile per seed
 * 15,000 total CI cases for the default plan
 * Scheduled runs may use a fresh entropy-derived seed, logged and stored with
-  every artifact
+  every artifact together with the generator version, text-pool version,
+  exact PRNG dependency versions, and effective generator configuration
 * Parser-only math and strikethrough fixtures are additional predefined checks,
   not part of the fuzz-case total
 
@@ -276,15 +306,31 @@ reconstructs the intended tree.
 
 ### 11.1 Case derivation
 
-A case is deterministically identified by (master seed, case index):
+A case is identified by (generator version, configuration, class/profile,
+master seed, case index). This revision uses generator version 2 and text-pool
+version 2; seeds from previous drafts are not compatible.
+
+The project adds exact development dependencies `rand = "=0.9.2"` and
+`rand_chacha = "=0.9.0"` in `Cargo.toml` and commits their resolved `Cargo.lock`.
+Use `rand::SeedableRng` and `rand_chacha::ChaCha8Rng`; they are test/harness
+dependencies, not library runtime dependencies.
+
+Case derivation:
 
 * Use `rand_chacha::ChaCha8Rng`, pinned in `Cargo.lock`. The algorithm is
-  required; replacing it invalidates every stored seed.
+  required; a similarly named custom PRNG is not a substitute.
 * Set each case seed to `master_seed.wrapping_add(case_index as u64)` and
   initialize its PRNG with `SeedableRng::seed_from_u64`. Use this PRNG in
-  sequence for all case draws, including retries.
+  sequence for all case draws, including retries. Create a fresh PRNG for each
+  requested case. For uniform bounded choices, use `rand::Rng::random_range`
+  on `u32` bounds and cast the result to `usize`; this avoids target-width
+  differences and modulo bias. Repeated generation increments the case index
+  with wrapping arithmetic and reseeds from the resulting pair.
 * Record the generator version in every failure artifact. Increment it when
-  changing the grammar, element tiers, or content domains below. Stored input is
+  changing the grammar, element tiers, content domains, draw order, bounded
+  sampling method, or either PRNG dependency version. Such changes invalidate
+  seed-only replay across versions; retain old versions for historical replay.
+  Record both `rand` and `rand_chacha` versions, even for a patch upgrade. Stored input is
   the definitive replay path; seed replay is valid only within one version.
 
 ### 11.2 Element tiers
@@ -358,7 +404,10 @@ Every run fixes and logs:
 
 * maximum tree depth, default 6; root elements have depth 1
 * maximum children per node, default 4
-* maximum text length per node, default 64 characters
+* maximum text length per node, default 64 Unicode scalar values (`text.chars().count()`
+  in Rust), counted before HTML escaping; combining marks count separately and
+  a non-BMP scalar counts once. This is neither a grapheme count nor a byte
+  count. The serialized fragment has a separate 4096-byte UTF-8 limit
 
 The depth bound is required because blockquote and list nesting is unbounded and
 list translation depends on depth.
@@ -387,7 +436,7 @@ valid hyperlink or image coverage.
 
 ### 11.6 Text domain
 
-Text pool version 1 has equally likely classes. For each text node, choose one
+Text pool version 2 has equally likely classes. For each text node, choose one
 complete, untrimmed value from a class. Both profiles use this pool; GFM coverage
 comes from that profile's generated structures. Classes and representative
 values:
@@ -401,7 +450,9 @@ values:
 * Apparent inline constructs: `[label](https://example.test/)`,
   `![alt](image.png)`, `<span>raw</span>`, and `~~deleted~~`.
 * GFM and extension markers: `| cell |`, `- [ ] task`, `$x^2$`, and `$$x^2$$`.
-* Character references: `&amp;`, `&#10;`, and `&nbsp;`.
+* Decoded character-reference values: `&` (U+0026), newline (U+000A),
+  and non-breaking space (U+00A0). Store the decoded scalars in text nodes,
+  not the strings `&amp;`, `&#10;`, or `&nbsp;`.
 * Whitespace: empty text, a single space, multiple spaces, tabs, newlines,
   leading and trailing spaces, and mixed runs such as `two  spaces`.
 * Unicode: `Привет`, punctuation adjacent to emphasis delimiters, combining
@@ -411,6 +462,11 @@ values:
 
 These are text values, not markup. Escape literal `&`, `<`, and `>` exactly once
 as `&amp;`, `&lt;`, and `&gt;`, but do not escape serializer markup delimiters.
+Thus U+0026 serializes as `&amp;`, U+000A as a literal newline, and U+00A0
+as a literal UTF-8 non-breaking space. Raw reference spellings are covered by
+separate parser fixtures, outside the random text pool. If a fixture deliberately
+stores the literal text `&#10;`, it must serialize as `&amp;#10;` and parse back
+to those five literal characters, not a newline.
 Do not minify HTML, which could change tested whitespace. Emit deterministic
 markup without separator whitespace between adjacent nodes.
 
@@ -512,7 +568,9 @@ Each failure writes a JSON artifact containing:
 * input class and parser profile
 * original HTML source
 * effective options
-* versions of `htmd`, `html5ever`, `pulldown-cmark`, and `rand_chacha`
+* generator version, text-pool version, and complete generator configuration
+* versions of `htmd`, `html5ever`, `pulldown-cmark`, `rand`, and `rand_chacha`
+* htmd source commit and lockfile identity used for the run
 * generated Markdown and round-trip HTML
 * normalized DOMs and the first differing path
 * failure category and allowlist match, if any
@@ -525,7 +583,19 @@ Reduce failures as follows:
 2. Reduce the tree by removing nodes, hoisting children, and shortening
    text/attributes.
 
-3. Keep only reductions that preserve the same failure category.
+3. Keep only reductions that preserve the same failure category, input
+   class/profile, content-model validity (for valid inputs), and the failing
+   element's translate-or-serialize decision in the pinned `Faithful` handlers.
+   Track the failing element and its relevant ancestors through each edit;
+   reject candidates that remove that element or change its path selection.
+   For example, removing an extra attribute can turn a serialized anchor into
+   translated Markdown, while shortening `href`, `src`, `start`, `colspan`, or
+   a language class can leave its valid domain. Such reductions are rejected
+   even when they still produce `Round-Trip Mismatch`. Revalidate attributes
+   and recompute decisions using the actual handler predicates, including
+   ancestor-sensitive table/pre fallback. If the harness cannot establish
+   unchanged decisions, conservatively reject that reduction. Preserve both
+   original and reduced inputs with their recorded decisions in the artifact.
 
 4. Save the minimal reproducer as a regression test.
 

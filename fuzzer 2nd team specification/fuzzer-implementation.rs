@@ -1,4 +1,8 @@
-use std::panic::{catch_unwind, AssertUnwindSafe};
+//! Draft only: the placeholder oracle below does not validate htmd round trips.
+
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaseClass {
@@ -83,53 +87,31 @@ pub struct CaseOutcome {
 }
 
 #[derive(Clone, Debug)]
-struct ChaChaLikeRng {
-    state: u64,
-}
+struct CaseRng(ChaCha8Rng);
 
-impl ChaChaLikeRng {
+impl CaseRng {
     fn seed_from_u64(seed: u64) -> Self {
-        let mut state = seed ^ 0x9E3779B97F4A7C15u64;
-        if state == 0 {
-            state = 0xD1B54A35C7D5AABB;
-        }
-        Self { state }
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
-        let mut x = self.state;
-        x ^= x >> 30;
-        x = x.wrapping_mul(0xBF58476D1CE4E5B9);
-        x ^= x >> 27;
-        x = x.wrapping_mul(0x94D049BB133111EB);
-        x ^= x >> 31;
-        (x & 0xFFFF_FFFF) as u32
+        Self(ChaCha8Rng::seed_from_u64(seed))
     }
 
     fn next_range(&mut self, upper: usize) -> usize {
-        if upper == 0 {
-            return 0;
-        }
-        let n = self.next_u32() as usize;
-        n % upper
+        let upper = u32::try_from(upper).expect("generator bound must fit u32");
+        assert!(upper > 0, "generator choice set must not be empty");
+        self.0.random_range(0..upper) as usize
     }
 }
 
 pub struct Fuzzer {
     master_seed: u64,
     options: FuzzerOptions,
-    rng: ChaChaLikeRng,
+    rng: CaseRng,
     profile: ParserProfile,
     case_index: u64,
 }
 
 impl Fuzzer {
     pub fn new(master_seed: u64, case_index: u64, profile: ParserProfile) -> Self {
-        let mut rng = ChaChaLikeRng::seed_from_u64(master_seed);
-        for _ in 0..(case_index as usize) {
-            let _ = rng.next_u32();
-        }
+        let rng = CaseRng::seed_from_u64(master_seed.wrapping_add(case_index));
         Self {
             master_seed,
             options: FuzzerOptions::default(),
@@ -140,13 +122,16 @@ impl Fuzzer {
     }
 
     pub fn generate_valid_case(&mut self) -> FuzzerCase {
+        self.rng = CaseRng::seed_from_u64(self.master_seed.wrapping_add(self.case_index));
+        let case_index = self.case_index;
         let root = self.generate_node(1, false);
+        self.case_index = self.case_index.wrapping_add(1);
         let input = root;
         FuzzerCase {
             class: CaseClass::Valid,
             profile: self.profile,
             master_seed: self.master_seed,
-            case_index: self.case_index,
+            case_index,
             input,
         }
     }
@@ -160,9 +145,8 @@ impl Fuzzer {
             return self.generate_inline_node(depth);
         }
 
-        let block_kind = ["div", "p", "blockquote", "ul", "ol", "pre", "section", "h1"][
-            self.rng.next_range(8)
-        ];
+        let block_kind =
+            ["div", "p", "blockquote", "ul", "ol", "pre", "section", "h1"][self.rng.next_range(8)];
         let child_count = 1 + self.rng.next_range(self.options.max_children_per_node);
         let mut children = Vec::with_capacity(child_count);
 
@@ -202,7 +186,8 @@ impl Fuzzer {
             return self.generate_leaf_node();
         }
 
-        match ["div", "p", "blockquote", "ul", "ol", "pre", "section", "h1"][self.rng.next_range(8)] {
+        match ["div", "p", "blockquote", "ul", "ol", "pre", "section", "h1"][self.rng.next_range(8)]
+        {
             "p" => Node::Element {
                 tag: "p".to_string(),
                 attrs: Vec::new(),
@@ -255,14 +240,23 @@ impl Fuzzer {
             },
             "a" => Node::Element {
                 tag: "a".to_string(),
-                attrs: vec![Attribute { name: "href".to_string(), value: "https://example.test/page".to_string() }],
+                attrs: vec![Attribute {
+                    name: "href".to_string(),
+                    value: "https://example.test/page".to_string(),
+                }],
                 children: vec![self.generate_inline_node(depth + 1)],
             },
             "img" => Node::Element {
                 tag: "img".to_string(),
                 attrs: vec![
-                    Attribute { name: "src".to_string(), value: "https://example.test/x.png".to_string() },
-                    Attribute { name: "alt".to_string(), value: "example".to_string() },
+                    Attribute {
+                        name: "src".to_string(),
+                        value: "https://example.test/x.png".to_string(),
+                    },
+                    Attribute {
+                        name: "alt".to_string(),
+                        value: "example".to_string(),
+                    },
                 ],
                 children: vec![],
             },
@@ -290,10 +284,19 @@ impl Fuzzer {
 
     fn random_attrs_for_tag(&mut self, tag: &str) -> Vec<Attribute> {
         match tag {
-            "a" => vec![Attribute { name: "href".to_string(), value: "https://example.test/page".to_string() }],
+            "a" => vec![Attribute {
+                name: "href".to_string(),
+                value: "https://example.test/page".to_string(),
+            }],
             "img" => vec![
-                Attribute { name: "src".to_string(), value: "https://example.test/image.png".to_string() },
-                Attribute { name: "alt".to_string(), value: "example".to_string() },
+                Attribute {
+                    name: "src".to_string(),
+                    value: "https://example.test/image.png".to_string(),
+                },
+                Attribute {
+                    name: "alt".to_string(),
+                    value: "example".to_string(),
+                },
             ],
             _ => Vec::new(),
         }
@@ -329,7 +332,11 @@ impl Fuzzer {
         match node {
             Node::Text(text) => escape_text(text),
             Node::Comment(comment) => format!("<!--{}-->", comment),
-            Node::Element { tag, attrs, children } => {
+            Node::Element {
+                tag,
+                attrs,
+                children,
+            } => {
                 let mut s = format!("<{}", tag);
                 for attr in attrs {
                     s.push(' ');
@@ -361,7 +368,11 @@ impl Fuzzer {
         match node {
             Node::Text(text) => Node::Text(normalize_whitespace(text)),
             Node::Comment(_) => node.clone(),
-            Node::Element { tag, attrs, children } => {
+            Node::Element {
+                tag,
+                attrs,
+                children,
+            } => {
                 let mut normalized_children = Vec::new();
                 for child in children {
                     let child_node = Self::normalize_dom(child);
@@ -387,7 +398,11 @@ impl Fuzzer {
         let round_trip = normalized.clone();
         let ok = normalized == round_trip;
         CaseOutcome {
-            result: if ok { Ok(()) } else { Err(FailureCategory::RoundTripMismatch) },
+            result: if ok {
+                Ok(())
+            } else {
+                Err(FailureCategory::RoundTripMismatch)
+            },
             input_html: rendered.clone(),
             generated_markdown: render_markdown_like(&body),
             round_trip_html: rendered,
@@ -452,7 +467,10 @@ fn render_markdown_like(node: &Node) -> String {
         Node::Text(text) => text.clone(),
         Node::Comment(_) => "".to_string(),
         Node::Element { tag, children, .. } => {
-            let inner = children.iter().map(render_markdown_like).collect::<String>();
+            let inner = children
+                .iter()
+                .map(render_markdown_like)
+                .collect::<String>();
             format!("({} {})", tag, inner)
         }
     }
@@ -477,7 +495,10 @@ fn corrupt_once(html: &str) -> String {
 }
 
 fn render_case_summary(case: &FuzzerCase) -> String {
-    format!("case {:?} profile {:?} seed={} idx={}", case.class, case.profile, 0, case.case_index)
+    format!(
+        "case {:?} profile {:?} seed={} idx={}",
+        case.class, case.profile, case.master_seed, case.case_index
+    )
 }
 
 fn main() {
