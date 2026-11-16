@@ -212,3 +212,41 @@ fn pure_combines_adjacent_and_flattens_nested() {
         "<p><sub><em>a</em></sub></p>\n",
     );
 }
+
+/// A run of adjacent subscripts is combined whatever its members hold; writing
+/// each one would join their delimiters into a `~~` run, as in `~a~~*b*~`.
+#[test]
+fn pure_combines_any_adjacent_subscripts() {
+    assert_pure(
+        "<p><sub>a</sub><sub><em>b</em></sub></p>",
+        "~a*b*~",
+        "<p><sub>a<em>b</em></sub></p>\n",
+    );
+    assert_pure(
+        r#"<p><sub>a</sub><sub class="x">b</sub></p>"#,
+        "~ab~",
+        "<p><sub>ab</sub></p>\n",
+    );
+    assert_pure(
+        "<p><sub>a</sub><!--c--><sub>b</sub></p>",
+        "~ab~",
+        "<p><sub>ab</sub></p>\n",
+    );
+    assert_pure(
+        "<p><sub>a</sub><sub>b</sub><sub><em>c</em></sub></p>",
+        "~ab*c*~",
+        "<p><sub>ab<em>c</em></sub></p>\n",
+    );
+    // Whitespace between them separates two subscripts.
+    assert_pure(
+        "<p><sub>a</sub> <sub>b</sub></p>",
+        "~a~ ~b~",
+        "<p><sub>a</sub> <sub>b</sub></p>\n",
+    );
+    // Faithful mode keeps each element of the run as HTML.
+    assert_faithful(
+        "<p><sub>a</sub><sub><em>b</em></sub></p>",
+        "<sub>a</sub><sub>*b*</sub>",
+        "<p><sub>a</sub><sub><em>b</em></sub></p>\n",
+    );
+}

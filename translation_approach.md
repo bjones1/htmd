@@ -795,7 +795,8 @@ children in an inline context, moves leading and trailing whitespace outside the
 subscript, and surrounds the remaining content with single `~` delimiters.
 If no content remains, it drops the element rather than writing `~~`.
 Adjacent subscripts are combined under the adjacent-inline rule in the emphasis
-section. A subscript with a `<sub>` ancestor contributes only its content, so a
+section, whatever their children or attributes, since separate delimiters would
+join into a `~~` run. A subscript with a `<sub>` ancestor contributes only its content, so a
 nested subscript keeps one level rather than writing `~~a~~`.
 
 1. Retain the opening and closing `<sub>` tags, including attributes, if the

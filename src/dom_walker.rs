@@ -318,8 +318,10 @@ fn can_combine(n1: &Node, n2: &Node) -> bool {
     }
 
     // Don't combine adjacent hyperlinks, or adjacent math, which pulldown-cmark
-    // reads apart: `$a$$b$` is two math expressions.
+    // reads apart: `$a$$b$` is two math expressions. The `<sub>` handler
+    // combines its own runs, whatever their children.
     *name1.local != *"a"
+        && *name1.local != *"sub"
         && !(*name1.local == *"span" && is_math_span(&attrs1.borrow()))
         && (name1 == name2
             // Treat `i` and `em` tags as the same element; likewise for `b` and

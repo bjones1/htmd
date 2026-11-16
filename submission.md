@@ -410,12 +410,14 @@ Changed files:
 - `src/element_handler/sub.rs` (new): the `<sub>` handler. Faithful mode always
   keeps the tags (Approach step 4) and translates the children inline. Pure
   mode moves edge whitespace outside, writes `~content~`, drops an empty
-  subscript, and keeps only the outer level of a nested one.
+  subscript, keeps only the outer level of a nested one, and combines a run of
+  adjacent subscripts into one, whatever their children or attributes.
 - `src/element_handler/mod.rs`: registers the handler for `sub`.
 - `src/dom_walker.rs`: escapes every literal `~` in text as `\~` (Approach
-  step 3), not only a `~` at the start of a line.
+  step 3), not only a `~` at the start of a line; leaves combining `<sub>`
+  runs to the handler.
 - `src/util/escape.rs`: the same escaping for image `alt` text.
-- `tests/subscript_tests.rs` (new): 11 tests; each converts HTML and reads the
+- `tests/subscript_tests.rs` (new): 12 tests; each converts HTML and reads the
   Markdown back with pulldown-cmark `ENABLE_SUBSCRIPT`.
 - `tests/basic_tests.rs`, `tests/turndown_online_demo_tests.rs`,
   `tests/html/turndown_test_index.html`: expected output updated for the
@@ -424,7 +426,13 @@ Changed files:
   mode's handling of a nested subscript is stated.
 
 Results: `cargo build` and `cargo clippy -- --deny warnings` passed;
-`cargo test` passed 278 tests (267 before plus 11 new), 1 ignored.
+`cargo test` passed 279 tests (267 before plus 12 new), 1 ignored.
+
+Pavel's implementation review round 1 found that Pure mode wrote `~a~~*b*~`
+for `<p><sub>a</sub><sub><em>b</em></sub></p>`, because `can_combine` merges
+only elements holding a single text node. The `<sub>` handler now combines
+the run itself, giving `~a*b*~`; the same fix covers adjacent subscripts with
+different attributes (`~a~~b~` before, `~ab~` now).
 
 Limitations:
 
