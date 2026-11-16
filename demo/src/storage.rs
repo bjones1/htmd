@@ -96,6 +96,23 @@ impl Store for MemoryStore {
     }
 }
 
+/// Forwarding impl so boxed stores -- the wasm adapter's
+/// `Box<dyn Store>` -- satisfy the controller's `S: Store` bound
+/// directly (`StorageController::new(store_or_fallback(), clock)`).
+impl<S: Store + ?Sized> Store for Box<S> {
+    fn get(&self, key: &str) -> Option<String> {
+        (**self).get(key)
+    }
+
+    fn set(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        (**self).set(key, value)
+    }
+
+    fn remove(&self, key: &str) {
+        (**self).remove(key);
+    }
+}
+
 /// FR-8 `mode`: `"md-to-html"` or `"html-to-md"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -131,9 +148,11 @@ pub enum HtmlSample {
 }
 
 /// FR-8's persisted-state schema, exactly: one JSON blob under
-/// [`WORKSPACE_KEY`]. Every listed field is required on read (missing or
-/// mistyped fields invalidate the whole workspace per §8.6 -- no
-/// per-field salvage); unknown fields are ignored (forward-compat).
+/// [`WORKSPACE_KEY`]. A mistyped field invalidates the whole workspace
+/// per §8.6 -- no per-field salvage; unknown fields are ignored
+/// (forward-compat). Absence is tolerated only for the fields whose
+/// schema line states a default (`scroll_*`: 0, `sample_*`: null);
+/// every other field is required on read.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Workspace {
     /// `1` (global); any other value is a future format and wipes.
@@ -145,8 +164,10 @@ pub struct Workspace {
     pub input_html_to_md: String,
     pub active_tab: ActiveTab,
     /// Input scroll offset per mode, number ≥ 0, default `0`.
+    #[serde(default)]
     pub scroll_md_to_html: f64,
     /// Input scroll offset per mode, number ≥ 0, default `0`.
+    #[serde(default)]
     pub scroll_html_to_md: f64,
     /// The 15 FR-4 `pulldown-cmark` booleans.
     pub cmark: CmarkFlags,
@@ -356,6 +377,15 @@ impl<S: Store> StorageController<S> {
         self.arm_save_timer();
     }
 
+    /// FR-4:108: `skip_tags` field edits are debounced on the same
+    /// 500 ms save timer as text input (FR-8) -- no synchronous flush.
+    /// The raw text is capped at 200 characters, the same rule
+    /// [`validate`] enforces on read.
+    pub fn on_skip_tags_edit(&mut self, raw: &str) {
+        self.state.skip_tags = raw.chars().take(SKIP_TAGS_MAX_CHARS).collect();
+        self.arm_save_timer();
+    }
+
     /// FR-8 flush-before-write (mode toggle): merge the mode change with
     /// the latest buffers, cancel the pending text timer, write now.
     pub fn set_mode(&mut self, mode: Mode) -> Option<BannerSignal> {
@@ -502,7 +532,10 @@ impl<S: Store> StorageController<S> {
 /// `localStorage` when accessible, [`MemoryStore`] when blocked.
 #[cfg(target_arch = "wasm32")]
 pub mod web {
-    use super::{MemoryStore, Store, StoreError};
+    use std::rc::Rc;
+
+    use super::{MemoryStore, StorageController, StorageEvent, Store, StoreError};
+    use crate::engine::Clock;
 
     /// `localStorage`-backed [`Store`]; every call is wrapped so a
     /// throwing or blocked storage surfaces as a [`StoreError`] or
@@ -539,6 +572,14 @@ pub mod web {
             None => Box::new(MemoryStore::new()),
         }
     }
+
+    // Compile-level guarantee (review round 1): the adapter's result
+    // satisfies the controller's `S: Store` bound, so the Task 10
+    // wiring `StorageController::new(store_or_fallback(), clock)`
+    // typechecks.
+    type AdaptedController = StorageController<Box<dyn Store>>;
+    const _: fn(Rc<dyn Clock<StorageEvent>>) -> AdaptedController =
+        |clock| StorageController::new(store_or_fallback(), clock);
 }
 
 #[cfg(test)]
@@ -885,6 +926,16 @@ mod tests {
         );
         let mut expected = distinct_workspace();
         expected.sample_md_to_html = None;
+        assert_eq!(validate(v), Ok(expected));
+        // Same reading for the scroll offsets, whose schema line states
+        // "default 0" (FR-8:168).
+        let v = mutated(
+            &distinct_workspace(),
+            "-scroll_html_to_md",
+            serde_json::Value::Null,
+        );
+        let mut expected = distinct_workspace();
+        expected.scroll_html_to_md = 0.0;
         assert_eq!(validate(v), Ok(expected));
     }
 
@@ -1273,6 +1324,50 @@ mod tests {
         h.advance(1);
         assert_eq!(h.store.workspace_writes().len(), 1);
         assert_eq!(h.store.stored_workspace().scroll_md_to_html, 42.5);
+    }
+
+    #[test]
+    fn skip_tags_edits_ride_the_500ms_save_timer() {
+        // FR-4:108: skip_tags edits use the same 500 ms save timer as
+        // text input (FR-8): three keystrokes within 300 ms write once.
+        let mut h = Harness::new();
+        h.controller.load();
+        h.controller.on_skip_tags_edit("im");
+        h.advance(100);
+        h.controller.on_skip_tags_edit("img");
+        h.advance(100);
+        h.controller.on_skip_tags_edit("img, sp");
+        h.advance(100); // t=300: 300 ms since the first keystroke
+        assert!(h.store.workspace_writes().is_empty());
+        assert_eq!(h.advance(399), vec![], "t=699: window not yet elapsed");
+        assert_eq!(h.advance(1), vec![None]); // t=700: 500 ms after the last edit
+        assert_eq!(h.store.workspace_writes().len(), 1);
+        assert_eq!(h.store.stored_workspace().skip_tags, "img, sp");
+    }
+
+    #[test]
+    fn skip_tags_edit_then_interaction_writes_once_combined() {
+        let mut h = Harness::new();
+        h.controller.on_skip_tags_edit("img");
+        assert_eq!(h.controller.set_mode(Mode::HtmlToMd), None);
+        assert_eq!(
+            h.store.workspace_writes().len(),
+            1,
+            "flush-before-write absorbs the pending skip_tags edit"
+        );
+        let stored = h.store.stored_workspace();
+        assert_eq!(stored.skip_tags, "img");
+        assert_eq!(stored.mode, Mode::HtmlToMd);
+        assert_eq!(h.advance(700), vec![]);
+    }
+
+    #[test]
+    fn skip_tags_edit_caps_input_at_200_chars() {
+        let mut h = Harness::new();
+        h.controller.on_skip_tags_edit(&"t".repeat(250));
+        assert_eq!(h.controller.workspace().skip_tags.chars().count(), 200);
+        h.advance(500);
+        assert_eq!(h.store.stored_workspace().skip_tags.chars().count(), 200);
     }
 
     // ---------- quota guard ----------
