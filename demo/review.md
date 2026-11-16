@@ -1897,3 +1897,212 @@ and `gzip -6` on `demo/dist/*.wasm` (389,788 bytes) were run for evidence;
 `demo/review.md` was modified by this review.
 
 **Implementation review round 1 resolution:** all 8 findings fixed (crash-marker in JS trap path; 2 MB cap tests; §8.7:306 pipeline tests; style-declaration scan fix + ruling; rAF zero-delay; mixed-shape nesting; §6 send_wrapper; performance marks).
+
+## Implementation review round 2 — open findings (awaiting processing)
+
+```text
+You are a fresh-context LLM reviewer performing Implementation Review Round 2 for a university assignment. Round 1 (section `## Implementation review round 1` in `/home/danial/htmd/demo/review.md`) found 8 issues, all just fixed (resolution block at that section's end; commits 002381a + d9cd3fa). Your job: (1) verify every IR1 fix landed correctly, (2) find anything still wrong in the implementation vs the spec. If only trivial findings remain, say so plainly — that is a legitimate outcome (the loop stops there).
+
+## What to review
+
+Same scope as round 1: `demo/demo-spec.md` (authority; spec review is closed) vs everything under `/home/danial/htmd/demo/`. The implementation is a standalone Leptos CSR crate wrapping the `htmd` crate: src/{options_model,convert,fidelity/{canonicalize,diff},engine,storage,limits,panic_hook,samples,preview,app,main}.rs + index.html + Trunk.toml + Cargo.toml + inline tests.
+
+## Method
+
+1. IR1 verification first — each finding (B1 trap-path crash marker; M1 2MB cap tests; M2 §8.7:306 pipeline tests; M3 style-declaration scan-all ruling; L1 rAF zero-delay; L2 mixed-shape nesting; L3 send_wrapper in §6; L4 performance marks): read the fix, confirm it addresses the finding and matches the spec clause. Known parked items (skip unless load-bearing): mode-switch limit-banner re-evaluation; banner-slot theoretical reassignment; canonicalize/preview serializer duplication; basics sample superset.
+2. Then a fresh pass over FR-1…FR-8 clause-level compliance and §8 coverage, focusing where round 1 did NOT look (it mapped FRs broadly — you go deeper on the interaction seams: engine↔storage timer interplay, app.rs state ownership, recovery flow edge cases, sample/undo interplay with limits, the fidelity panel's data flow end-to-end, index.html CSP vs iframe sandbox interaction).
+3. Known implementer concern to adjudicate: §8.3:249's "reference-link amplification" premise is wrong for pulldown-cmark 0.13.6 (link-ref expansion fuel caps output near input size; the cap tests amplify via empty table cells ~34×/`|` instead). Decide: is the acceptance criterion (cap behavior) still satisfiable and tested (yes, via table amplification), and does the spec's example wording need an amendment note, or is it fine as illustrative?
+4. Tests: run `cargo test --manifest-path demo/Cargo.toml` only if a specific doubt needs evidence (fast suite; never --ignored). Root gates from /home/danial/htmd. No trunk --release runs (slow; last measured gzip 389,845).
+
+## Output
+
+Append to `/home/danial/htmd/demo/review.md` a section `## Implementation review round 2 — open findings (awaiting processing)` in the established format (prompt verbatim in fenced block, reviewer identity, "What checks out" incl. per-fix IR1 verification, "Blocking issues", "Medium-severity issues", "Low-severity / editorial", IDs `IR2-B#`/`IR2-M#`/`IR2-L#`, file:line, concrete fixes).
+
+CRLF WARNING: append with line-ending preservation; verify `git diff --stat demo/review.md` shows only appended lines.
+
+Commit ONLY review.md: `git add demo/review.md && git commit -m "Implementation review round 2: N findings (X blocking, Y medium, Z low)"`. No other files. No push.
+
+Report back ONLY (under 12 lines): IR1 fix verification summary (all landed? any regression?); counts by severity; one-line per blocking/medium; your adjudication of the §8.3:249 amplification wording; explicit judgment whether remaining findings are trivial; commit SHA; confirmation only review.md changed.
+```
+
+Reviewed by **GLM-5.3** (OpenCode agent, fresh context) with the round-2 implementation-review
+prompt quoted above. The review re-verified all eight IR1 fixes in HEAD (commits `002381a` +
+`d9cd3fa`), then made a fresh clause-level pass over FR-1…FR-8 and §8 focused on the interaction
+seams round 1 did not cover, against the real `htmd` crate, the pinned `tachys` 0.2.19 and
+`pulldown-cmark` 0.13.4/0.13.6 sources in the local Cargo registry, and the built `demo/dist/`.
+Evidence runs: `cargo test --manifest-path demo/Cargo.toml` — **169 passed, 0 failed, 2 ignored**
+(the slow depth proofs stayed ignored); `gzip -6 -c demo/dist/*.wasm | wc -c` — **389,845 bytes**
+(24.8% of the 1,572,864-byte ceiling). Parked items from the round-1 prompt were left unreported.
+
+#### What checks out
+
+**IR1 verification — all eight fixes landed; no regression.**
+
+* **IR1-B1 (trap-path crash marker) — fixed in its load-bearing half.** `index.html:241-247`:
+  `trapCaught()` writes `htmd_cmark_live_crashed` = `"1"` inside try/catch *before* revealing the
+  overlay, from both the `error` and `unhandledrejection` listeners; the key and value match
+  `storage.rs:26` and the Rust hook's write (panic_hook.rs:105-109), and FR-8:160's load path
+  checks presence only — so reload recovery now works for traps that bypass the Rust hook. The
+  unimplemented remainder of FR-7:149 (the write halt) and the resolution note's rationale are
+  IR2-L1 below.
+* **IR1-M1 (2 MB cap tests) — fixed.** `output_over_two_mb_cap_clears_both_tabs_and_disables_use_output`
+  (app.rs:1820-1851) asserts the amplification actually crosses 2,000,000 bytes, the cap banner
+  shows, both tabs are empty, the empty-output rule disables "Use Output as Input", and nothing
+  stale commits on a re-run; `output_just_under_the_two_mb_cap_still_displays` (app.rs:1855-1879)
+  pins the just-under boundary (>1.8 MB, no banner). Both ran green in the suite. The
+  amplification vector's deviation from §8.3:249's wording is recorded in the test and adjudicated
+  as IR2-L3.
+* **IR1-M2 (§8.7:306 pipeline tests) — fixed.** `cjk_and_combining_mark_pipeline_zero_diff` and
+  `white_space_style_span_pipeline_nonzero_diff` (canonicalize.rs:549-592) run the inputs through
+  the real `convert_html_to_md` → `convert_md_to_html(CmarkFlags::tables_math())` → canonicalize →
+  `word_diff` pipeline, asserting `Inclusive` for the CJK/U+0301 cases and `Changes(_)` for the
+  styled span — exactly the suggested shape.
+* **IR1-M3 (style-declaration scan-all) — fixed with a sound ruling.**
+  `declares_non_normal_white_space` (canonicalize.rs:377-393) now scans every `;`-separated
+  declaration with the *last* `white-space` occurrence winning per the CSS cascade — which is also
+  how the browser actually applies the declaration block, so preserved-subtree detection matches
+  rendering; `style_attr_detection_rules` (canonicalize.rs:753-774) pins
+  `color:red; white-space:pre` → preserved, `white-space:pre; white-space:normal` → not.
+* **IR1-L1 (rAF zero-delay) — fixed.** `WebClock::schedule` routes 0 ms events to
+  `requestAnimationFrame` and positive delays to `setTimeout` (clock.rs:114-131); `cancel`
+  retracts either handle kind (clock.rs:143-155). Matches FR-2:52's pinned primitive.
+* **IR1-L2 (mixed-shape nesting) — fixed in substance.**
+  `six_hundred_deep_mixed_shapes_measure_and_reject` (convert.rs:158-171) drives blockquote /
+  ul / li / table / tr / td cycles through the real parse and asserts the walk's exact measured
+  depth (602) plus the TooDeep rejection. The specific conversion shapes §8.6:275 names remain
+  untested natively — IR2-L2.
+* **IR1-L3 (send_wrapper in §6) — fixed.** demo-spec.md:219 now lists `send_wrapper` (0.6) among
+  the direct dependencies (commit `d9cd3fa`); `Cargo.toml:21` and the lockfile (0.6.0) match.
+* **IR1-L4 (performance marks) — fixed.** app.rs:275-307/329-334 brackets
+  `convert_and_commit` with `htmd:convert:start` / `htmd:convert:end` marks and the
+  `htmd:convert` measure, spanning dispatch through commit including canonicalization and diff —
+  §6:211's exact scope — guarded for availability and skipped off-wasm, with the names documented
+  in-code as the CI contract.
+* No regressions: the suite grew 164 → 169 with the five fix tests; the size budget holds
+  (389,845 bytes); the hygiene ledger is unchanged (exactly 5 targeted commented
+  `allow(dead_code)` — storage.rs:25,40,75; panic_hook.rs:48; samples.rs:12; no `unsafe`; the few
+  non-test `unwrap`/`expect` remain invariant-guarded with justifying comments, including the two
+  new ones in clock.rs).
+
+**Fresh pass — interaction seams round 1 did not cover.**
+
+* **Engine ↔ storage timer interplay:** two independent `WebClock` registries re-enter `Core`
+  through `LateCore`, which is filled after `Core` exists but before any timer can arm (app.rs:917-945);
+  one-shot closures self-deregister before delivering, so re-entrant `schedule`/`cancel` from a
+  handler sees consistent state (clock.rs:105-109); the storage clock and every app-side storage
+  call site check `panic_hook::storage_halted()` (app.rs:936-938, 552, 627, 643, 678, 690, 741,
+  776, 803, 831, 848, 868, 1010); all borrows are statement-scoped, so no re-entrancy deadlock is
+  reachable.
+* **app.rs state ownership:** reactive state lives in `Copy` `Ui` signals; non-reactive modules in
+  `Core` behind one `SendWrapper<Rc<RefCell<Core>>>` opened only on the main thread; handlers
+  re-fetch through the `CORE` thread_local instead of capturing, keeping closures `Fn` + `Send`.
+  Every buffer mutation reaches the storage controller's in-memory state (`on_text_edit` on every
+  path), so no data loss is possible regardless of debounce timing — B4's concern is closed by
+  construction.
+* **Recovery-flow edges:** the marker is kept until the user acts and removed only on a successful
+  recovery conversion (storage.rs:485-501, app.rs:431-436); an oversized restored buffer halts with
+  the banner and keeps `recovery_converting` pending (tested, app.rs:1979-1996); a lone marker
+  with no workspace is removed (storage.rs:327-333); an invalid workspace takes the marker with it
+  (storage.rs:346-355); "Clear buffers" empties both buffers, removes the marker, saves, and
+  mirrors the engine for both modes (app.rs:865-880). One letter-compliant edge remains — IR2-L4.
+* **Sample/undo × limits:** every programmatic buffer overwrite that can carry arbitrary size
+  ("Use Output as Input", Undo, recovery conversion) runs `overwrite_with_ceiling_check` — the
+  eager 100,000-byte gate with banner, halt, and cleared target output — pinned by three tests
+  (app.rs:1933-2022); sample loads are ≤ ~1 kB so they cannot cross a limit; the cross-mode
+  sample click flushes storage via `set_mode` and the selection flush, so nothing is lost.
+* **Fidelity panel end-to-end:** the panel is computed inside the commit gate — output
+  `srcdoc`, Source text, and fidelity are written in one synchronous step behind the run's
+  sequence number (app.rs:376-414); the round-trip side renders under exactly
+  `ENABLE_TABLES | ENABLE_MATH` with a negative control proving sidebar flags would diverge
+  (samples.rs:738-780); both sides canonicalize through the same function; Pure mode and the Err
+  path clear the panel. The identical-output corner was analyzed and is benign: Leptos memo
+  equality can skip the `srcdoc` rewrite so no `load` fires for that sequence, but every batch arm
+  follows `advance_seq`, which releases the stale in-flight slot (engine.rs:327-338), so no
+  permanent stall is reachable — confirmed against tachys 0.2.19, whose property `rebuild` writes
+  unconditionally whenever it does run (`html/property.rs:313-318`).
+* **CSP × sandbox interaction:** `sandbox=""` is a static attribute (no tokens), the CSP
+  `<meta>` sits inside the generated `srcdoc` ahead of the demo's own `<base target="_blank">`
+  (preview.rs:17-42, pinned byte-exact by test), `style-src 'unsafe-inline'` covers pulldown's
+  table-alignment inline styles, and the parent document needs no CSP of its own (its only inline
+  script is the static bootstrap). `prop:srcdoc` assigns the DOM property; the Source tab and all
+  banners/toasts render through text-content macros.
+* **Dependencies/§6:** `Cargo.toml` matches §6:219's list exactly (including `send_wrapper` 0.6);
+  the lockfile carries exactly one `html5ever` 0.39.0 and one `markup5ever_rcdom` 0.39.0+unofficial,
+  the same versions the root crate uses.
+
+#### Blocking issues
+
+None.
+
+#### Medium-severity issues
+
+None.
+
+#### Low-severity / editorial
+
+* **IR2-L1 — FR-7:149's "disable further workspace writes" is still unimplemented on the JS trap
+  path, and the recorded justification's premise is inaccurate (index.html:234-247; app.rs:930-945;
+  storage.rs:561-580).** A trapped wasm instance is not a dead runtime: a trap (panic-abort
+  `unreachable`, stack exhaustion) surfaces as a per-call `RuntimeError` and the instance remains
+  callable, so an already-armed 500 ms `SaveDue` timer re-enters wasm after the trap and writes —
+  `STORAGE_HALTED` is set only by the Rust panic hook. The outcome is benign (the write persists
+  exactly the state FR-8:160's recovery flow restores, and it never touches the marker, so no
+  crash loop), but the spec clause is unmet and the index.html comment asserts a false
+  impossibility. <em>Fix: set a `window.__htmdStorageHalted` flag in `trapCaught()` and make
+  `WebStore::set` return `Err(StoreError::Blocked)` while that flag (or the marker key) is
+  present; or keep the code and record the deviation in the Deliverable-5 spec update, rewording
+  the comment to the true rationale (marker-gated reload recovery makes a JS-side write halt
+  unnecessary).</em>
+* **IR2-L2 — §8.6:275's named conversion shapes still have no native test (convert.rs:136-171).**
+  The IR1-L2 fix proved the depth walk on a 600-deep mixed blockquote/list/table tree, but the
+  criterion also names 600 unclosed `<p>` tags, 600 `<br>` siblings, and a ≤ 512-level
+  list/blockquote/table stack converted in both `Pure` and `Faithful` — none of those `Ok`
+  conversions exists anywhere in the suite (the release-wasm runs are Deliverable 3's, but these
+  are cheap native conversions). <em>Fix: add the three conversions next to
+  `five_hundred_twelve_deep_input_converts`, one asserting `Ok` for each shape and one
+  Faithful-mode 512-deep stack.</em>
+* **IR2-L3 — §8.3:249's "reference-link amplification" recipe is unsatisfiable on every parser
+  version the spec considered and needs a Deliverable-5 amendment note (demo-spec.md:214, 249).**
+  Verified in the local registry: pulldown-cmark initializes `link_ref_expansion_limit =
+  max(text.len(), 100_000)` and consumes `url.len() + title.len()` of fuel per expansion
+  (`pulldown-cmark-0.13.6/src/parse.rs:300, 376-378`; 0.13.4 has the same guard at parse.rs:288),
+  so a ≤ 100,000-byte input cannot emit anywhere near 2 MB of reference-link output — the spec's
+  example was never executable. The acceptance criterion's *substance* (the cap trips, banner
+  shows, both tabs and the fidelity panel clear, "Use Output as Input" disables, boundary
+  behavior) is satisfiable and now tested via aligned empty table cells (~34× per `|`: 1,200 rows
+  → 2,053,756 bytes; 1,100 → 1,882,756, just under). <em>Adjudication: keep the criterion, amend
+  the wording — replace "reference-link amplification" with table-cell (or generic output)
+  amplification in §6:214 and §8.3:249 so the CI team's checklist recipe is executable.</em>
+* **IR2-L4 — the recovery banner and crash marker have no exit through normal editing
+  (app.rs:844-880, 983-985; storage.rs:485-501).** FR-8:160 defines marker removal only for the
+  two banner actions; if the user instead types (or toggles an option) after a crash-restore,
+  conversions run and commit successfully, but `recovery_converting` is armed only by
+  `on_recovery_convert` — so the marker stays set, the banner (with its now-stale "restored
+  without converting" text) remains, and every reload re-enters the recovery flow until one of
+  the two buttons is clicked. Letter-compliant, but the crash-loop hazard the marker guards is
+  gone once restored input converts successfully. <em>Fix: arm `recovery_converting` at
+  startup on `LoadOutcome::CrashRecovery` so the first successful commit clears the marker (and
+  dismiss the banner with it), or record the banner-only exit in the Deliverable-5 update.</em>
+* **IR2-L5 — FR-7:150's "future-proof" wrapper is not actually forward-compatible
+  (convert.rs:54).** `html_to_tree(...).expect("infallible parse")` would panic — and
+  `panic = "abort"` turns that into the terminal crash overlay — on a future htmd that returns an
+  `Err`, instead of taking the specified non-fatal `Err` banner path. Untestable today (htmd
+  0.5.5's parse has no reachable `Err`), so trivial, but the wrapper's stated purpose would not
+  survive contact with the future it guards against. <em>Fix: propagate a parse error into the
+  existing `Err` handling (a new `Blocked` variant or equivalent) whenever htmd grows one.</em>
+
+**Total new findings: 5 (blocking 0, medium 0, low 5).**
+
+Reviewer's judgment: all eight IR1 fixes landed without regression, and the remaining findings
+are minor — two narrow state-machine edges with benign outcomes and one-line fixes or spec notes
+(IR2-L1, IR2-L4), one cheap coverage add (IR2-L2), one one-line spec amendment (IR2-L3), and one
+untestable-until-htmd-changes nit (IR2-L5). No structural, correctness, security, or consequential
+spec-noncompliance remains; the implementation review loop can reasonably stop after one small
+cleanup pass (or here, if the team prefers to fold L1/L3/L4 into the Deliverable-5 spec update
+and L2/L5 into a follow-up commit).
+
+Validation: `cargo test --manifest-path demo/Cargo.toml` (169 passed, 0 failed, 2 ignored) and
+`gzip -6 -c demo/dist/*.wasm | wc -c` (389,845 bytes) were run for evidence; the `tachys` 0.2.19
+and `pulldown-cmark` 0.13.4/0.13.6 sources were read from the local Cargo registry; `trunk` was
+not run and no root-repo gate was needed (no Rust source changed). No file other than
+`demo/review.md` was modified by this review.
