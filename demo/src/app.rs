@@ -118,6 +118,7 @@ struct Ui {
     undo_visible: RwSignal<bool>,
     size_banner: RwSignal<bool>,
     nesting_banner: RwSignal<bool>,
+    conversion_banner: RwSignal<bool>,
     cap_banner: RwSignal<bool>,
     save_failed: RwSignal<bool>,
     external_write: RwSignal<bool>,
@@ -146,6 +147,7 @@ impl Ui {
             undo_visible: RwSignal::new(false),
             size_banner: RwSignal::new(false),
             nesting_banner: RwSignal::new(false),
+            conversion_banner: RwSignal::new(false),
             cap_banner: RwSignal::new(false),
             save_failed: RwSignal::new(false),
             external_write: RwSignal::new(false),
@@ -199,11 +201,12 @@ struct Core {
     /// Set while the FR-8 recovery banner's "Convert restored input"
     /// run is in flight; its success removes the crash marker.
     recovery_converting: bool,
-    /// Which mode's buffer each FR-7 limit banner was entered for: a
+    /// Which mode's buffer each FR-7 banner was entered for: a
     /// commit or an in-range edit of one mode's buffer says nothing
     /// about the other mode's, so banner exits are scoped to it.
     size_banner_mode: Option<ConversionMode>,
     nesting_banner_mode: Option<ConversionMode>,
+    conversion_banner_mode: Option<ConversionMode>,
 }
 
 /// The shared core. `SendWrapper` because Leptos views (including their
@@ -428,6 +431,7 @@ fn conversion_succeeded(c: &mut Core, ui: &Ui, mode: ConversionMode) {
     }
     exit_limit_banner(c, ui, BannerKind::SizeLimit, mode);
     exit_limit_banner(c, ui, BannerKind::NestingLimit, mode);
+    exit_limit_banner(c, ui, BannerKind::ConversionError, mode);
     if c.recovery_converting {
         c.recovery_converting = false;
         if !panic_hook::storage_halted() {
@@ -470,6 +474,7 @@ fn banner_mode_slot(c: &mut Core, kind: BannerKind) -> &mut Option<ConversionMod
     match kind {
         BannerKind::SizeLimit => &mut c.size_banner_mode,
         BannerKind::NestingLimit => &mut c.nesting_banner_mode,
+        BannerKind::ConversionError => &mut c.conversion_banner_mode,
     }
 }
 
@@ -482,6 +487,8 @@ fn sync_banners(c: &mut Core, ui: &Ui) {
         .set(c.banners.active().any(|k| k == BannerKind::SizeLimit));
     ui.nesting_banner
         .set(c.banners.active().any(|k| k == BannerKind::NestingLimit));
+    ui.conversion_banner
+        .set(c.banners.active().any(|k| k == BannerKind::ConversionError));
     let _ = c.banners.take_announced().count();
 }
 
@@ -959,6 +966,7 @@ pub fn App() -> impl IntoView {
         recovery_converting: false,
         size_banner_mode: None,
         nesting_banner_mode: None,
+        conversion_banner_mode: None,
     };
     let outcome = bootstrap.storage.load();
     let core_ref: CoreRef = SendWrapper::new(Rc::new(RefCell::new(bootstrap)));
@@ -1054,6 +1062,9 @@ pub fn App() -> impl IntoView {
         }
         if ui.nesting_banner.get() {
             items.push(("banner-nesting", BannerKind::NestingLimit.text()));
+        }
+        if ui.conversion_banner.get() {
+            items.push(("banner-conversion", BannerKind::ConversionError.text()));
         }
         if ui.cap_banner.get() {
             items.push(("banner-cap", OUTPUT_CAP_TEXT));
@@ -1761,6 +1772,7 @@ mod tests {
             recovery_converting: false,
             size_banner_mode: None,
             nesting_banner_mode: None,
+            conversion_banner_mode: None,
         })));
         Harness { ui, core }
     }

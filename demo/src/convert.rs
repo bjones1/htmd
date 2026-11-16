@@ -30,6 +30,10 @@ pub enum Blocked {
     TooLarge,
     /// The parsed tree nests elements deeper than 512 levels.
     TooDeep,
+    /// The parse itself failed (FR-7:150's future fallible `htmd`).
+    /// Unreachable today: html5ever reports parse errors without
+    /// failing, so a `&str` input always yields a tree.
+    ParseFailed,
 }
 
 /// Convert HTML to Markdown, enforcing the FR-7 limits: the size gate runs
@@ -49,9 +53,13 @@ pub fn convert_html_to_md(
         builder = builder.skip_tags(tags);
     }
     let converter = builder.build();
-    // The io::Result is future-proofing on htmd's side: html5ever reports
-    // parse errors without failing, so a &str input always yields a tree.
-    let tree = converter.html_to_tree(html).expect("infallible parse");
+    // The io::Result is future-proofing on htmd's side: html5ever
+    // reports parse errors without failing, so this arm is unreachable
+    // on htmd 0.5.5. A future fallible htmd still takes FR-7:150's
+    // non-fatal Err path instead of aborting under `panic = "abort"`.
+    let tree = converter
+        .html_to_tree(html)
+        .map_err(|_| Blocked::ParseFailed)?;
     if max_element_depth(&tree) > MAX_ELEMENT_DEPTH {
         return Err(Blocked::TooDeep);
     }
@@ -168,6 +176,45 @@ mod tests {
             convert_html_to_md(&input, &defaults(), &[]),
             Err(Blocked::TooDeep)
         );
+    }
+
+    /// §8.6:275's flat shape: 600 unclosed `<p>` tags. html5ever
+    /// auto-closes a `<p>` before the next, so these are siblings,
+    /// not depth.
+    #[test]
+    fn six_hundred_unclosed_paragraphs_convert() {
+        let input = "<p>".repeat(600);
+        assert!(input.len() < MAX_INPUT_BYTES);
+        assert!(convert_html_to_md(&input, &defaults(), &[]).is_ok());
+    }
+
+    /// §8.6:275's flat shape: 600 `<br>` siblings.
+    #[test]
+    fn six_hundred_br_siblings_convert() {
+        let input = "<br>".repeat(600);
+        assert!(input.len() < MAX_INPUT_BYTES);
+        assert!(convert_html_to_md(&input, &defaults(), &[]).is_ok());
+    }
+
+    /// §8.6:275's 512-level stack of nesting-valid shapes, converted
+    /// in both translation modes: 73 blockquote/ul/li/table/tr/td
+    /// cycles (7 parsed levels each, the implied `<tbody>` counted)
+    /// reach 511; a trailing `<blockquote>` tops the stack at exactly
+    /// 512, the deepest level that must still convert.
+    #[test]
+    fn five_hundred_twelve_deep_stack_converts_in_both_modes() {
+        let mut input = "<blockquote><ul><li><table><tr><td>".repeat(73);
+        input.push_str("<blockquote>");
+        assert!(input.len() < MAX_INPUT_BYTES);
+        let tree = HtmlToMarkdown::builder()
+            .build()
+            .html_to_tree(&input)
+            .expect("infallible parse");
+        assert_eq!(max_element_depth(&tree), 512);
+        assert!(convert_html_to_md(&input, &defaults(), &[]).is_ok());
+        let mut faithful = defaults();
+        faithful.translation_mode = TranslationMode::Faithful;
+        assert!(convert_html_to_md(&input, &faithful, &[]).is_ok());
     }
 
     #[test]

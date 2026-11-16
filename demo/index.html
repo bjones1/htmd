@@ -234,10 +234,13 @@
         /* FR-7:149 — wasm traps and OOM bypass the Rust panic hook; these
            listeners are the last line of defense. The marker write matches
            storage.rs's CRASH_MARKER_KEY and the panic hook's "1" value (the
-           FR-8 load path checks presence only). A Rust-side storage halt is
-           impossible from a dead runtime — the marker alone drives FR-8's
-           recovery on reload — and it must land before the overlay is
-           revealed. */
+           FR-8 load path checks presence only) and must land before the
+           overlay is revealed. These handlers do run after a trap (a wasm
+           trap is a per-call RuntimeError, not a dead runtime), but they
+           cannot halt the Rust storage controller: its halted flag is
+           Rust-side state only the panic hook sets, unreachable from
+           JavaScript. The marker alone drives FR-8's recovery on reload,
+           which is sufficient. */
         function trapCaught() {
           try {
             localStorage.setItem("htmd_cmark_live_crashed", "1");

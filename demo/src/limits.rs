@@ -1,7 +1,8 @@
-//! FR-7 limit banners: the state machine deciding when each
-//! `aria-live="assertive"` limit banner appears. Banners are announced
-//! exactly once per *transition into* a limit state, stay visible while
-//! the state persists, and clear when the input returns within the limit.
+//! FR-7 banners: the state machine deciding when each
+//! `aria-live="assertive"` limit or error banner appears. Banners are
+//! announced exactly once per *transition into* a limit state, stay
+//! visible while the state persists, and clear when the input returns
+//! within the limit.
 
 use crate::convert::Blocked;
 
@@ -16,16 +17,27 @@ pub const SIZE_LIMIT_TEXT: &str =
 /// nesting depth.").
 pub const NESTING_LIMIT_TEXT: &str = "Input exceeds the supported nesting depth.";
 
-/// Every banner kind, in the order banners stack in the region.
-const ALL: [BannerKind; 2] = [BannerKind::SizeLimit, BannerKind::NestingLimit];
+/// FR-7:150's conversion-error banner. The spec fixes no verbatim
+/// text for it (it guards a future fallible `htmd`, unreachable
+/// today), only the lifecycle: non-fatal, once per transition into
+/// the error state.
+pub const CONVERSION_ERROR_TEXT: &str = "The input could not be converted.";
 
-/// One FR-7 limit banner; each kind is an independent child element of
+/// Every banner kind, in the order banners stack in the region.
+const ALL: [BannerKind; 3] = [
+    BannerKind::SizeLimit,
+    BannerKind::NestingLimit,
+    BannerKind::ConversionError,
+];
+
+/// One FR-7 banner; each kind is an independent child element of
 /// the single banner region (§5: concurrent banners stack, each
 /// announced once when added).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BannerKind {
     SizeLimit,
     NestingLimit,
+    ConversionError,
 }
 
 impl BannerKind {
@@ -34,6 +46,7 @@ impl BannerKind {
         match self {
             BannerKind::SizeLimit => SIZE_LIMIT_TEXT,
             BannerKind::NestingLimit => NESTING_LIMIT_TEXT,
+            BannerKind::ConversionError => CONVERSION_ERROR_TEXT,
         }
     }
 
@@ -41,6 +54,7 @@ impl BannerKind {
         match self {
             BannerKind::SizeLimit => 0,
             BannerKind::NestingLimit => 1,
+            BannerKind::ConversionError => 2,
         }
     }
 }
@@ -52,6 +66,7 @@ impl From<Blocked> for BannerKind {
         match blocked {
             Blocked::TooLarge => BannerKind::SizeLimit,
             Blocked::TooDeep => BannerKind::NestingLimit,
+            Blocked::ParseFailed => BannerKind::ConversionError,
         }
     }
 }
@@ -62,10 +77,10 @@ impl From<Blocked> for BannerKind {
 #[derive(Debug, Default)]
 pub struct Banners {
     /// Slot holds `true` while its limit state persists.
-    active: [bool; 2],
+    active: [bool; 3],
     /// Slot holds `true` from the transition into the limit until the
     /// announcement is drained.
-    announced: [bool; 2],
+    announced: [bool; 3],
 }
 
 impl Banners {
@@ -232,5 +247,9 @@ mod tests {
     fn blocked_maps_to_banner_kinds() {
         assert_eq!(BannerKind::from(Blocked::TooLarge), BannerKind::SizeLimit);
         assert_eq!(BannerKind::from(Blocked::TooDeep), BannerKind::NestingLimit);
+        assert_eq!(
+            BannerKind::from(Blocked::ParseFailed),
+            BannerKind::ConversionError
+        );
     }
 }
