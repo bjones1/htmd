@@ -2040,9 +2040,9 @@ None.
 
 #### Low-severity / editorial
 
-* **IR2-L1 — FR-7:149's "disable further workspace writes" is still unimplemented on the JS trap
+* ~~**IR2-L1 — FR-7:149's "disable further workspace writes" is still unimplemented on the JS trap
   path, and the recorded justification's premise is inaccurate (index.html:234-247; app.rs:930-945;
-  storage.rs:561-580).** A trapped wasm instance is not a dead runtime: a trap (panic-abort
+  storage.rs:561-580).**~~ A trapped wasm instance is not a dead runtime: a trap (panic-abort
   `unreachable`, stack exhaustion) surfaces as a per-call `RuntimeError` and the instance remains
   callable, so an already-armed 500 ms `SaveDue` timer re-enters wasm after the trap and writes —
   `STORAGE_HALTED` is set only by the Rust panic hook. The outcome is benign (the write persists
@@ -2053,7 +2053,8 @@ None.
   present; or keep the code and record the deviation in the Deliverable-5 spec update, rewording
   the comment to the true rationale (marker-gated reload recovery makes a JS-side write halt
   unnecessary).</em>
-* **IR2-L2 — §8.6:275's named conversion shapes still have no native test (convert.rs:136-171).**
+  **Status:** resolved-by-ruling (controller ruling: the JS trap listener cannot halt the Rust storage controller — its halted flag is Rust-side state only the panic hook sets, unreachable from JavaScript — so the write-halt half of FR-7:149 is impossible from the trap path, and the marker alone drives FR-8's recovery, which is sufficient. No behavior change; the index.html comment now states the true rationale — these handlers do run after a trap (a per-call RuntimeError, not a dead runtime), but the halt is impossible from here — replacing the inaccurate “dead runtime” premise).
+* ~~**IR2-L2 — §8.6:275's named conversion shapes still have no native test (convert.rs:136-171).**~~
   The IR1-L2 fix proved the depth walk on a 600-deep mixed blockquote/list/table tree, but the
   criterion also names 600 unclosed `<p>` tags, 600 `<br>` siblings, and a ≤ 512-level
   list/blockquote/table stack converted in both `Pure` and `Faithful` — none of those `Ok`
@@ -2061,8 +2062,9 @@ None.
   are cheap native conversions). <em>Fix: add the three conversions next to
   `five_hundred_twelve_deep_input_converts`, one asserting `Ok` for each shape and one
   Faithful-mode 512-deep stack.</em>
-* **IR2-L3 — §8.3:249's "reference-link amplification" recipe is unsatisfiable on every parser
-  version the spec considered and needs a Deliverable-5 amendment note (demo-spec.md:214, 249).**
+  **Status:** fixed (convert.rs gains §8.6:275's shapes beside five_hundred_twelve_deep_input_converts: six_hundred_unclosed_paragraphs_convert and six_hundred_br_siblings_convert assert Ok for the two flat shapes, and five_hundred_twelve_deep_stack_converts_in_both_modes builds a measured-exactly-512-deep blockquote/ul/li/table/tr/td stack (73 seven-level cycles plus a trailing blockquote) and asserts Ok in both Pure and Faithful modes).
+* ~~**IR2-L3 — §8.3:249's "reference-link amplification" recipe is unsatisfiable on every parser
+  version the spec considered and needs a Deliverable-5 amendment note (demo-spec.md:214, 249).**~~
   Verified in the local registry: pulldown-cmark initializes `link_ref_expansion_limit =
   max(text.len(), 100_000)` and consumes `url.len() + title.len()` of fuel per expansion
   (`pulldown-cmark-0.13.6/src/parse.rs:300, 376-378`; 0.13.4 has the same guard at parse.rs:288),
@@ -2073,8 +2075,9 @@ None.
   → 2,053,756 bytes; 1,100 → 1,882,756, just under). <em>Adjudication: keep the criterion, amend
   the wording — replace "reference-link amplification" with table-cell (or generic output)
   amplification in §6:214 and §8.3:249 so the CI team's checklist recipe is executable.</em>
-* **IR2-L4 — the recovery banner and crash marker have no exit through normal editing
-  (app.rs:844-880, 983-985; storage.rs:485-501).** FR-8:160 defines marker removal only for the
+  **Status:** fixed (spec amendment: §6:214 and §8.3:249 now name empty table-cell amplification — ~34× per `|` — as the 2 MB-cap vector and record the mechanism: pulldown-cmark 0.13.x's link-reference expansion fuel (`max(len, 100_000)` bytes, consumed by each expansion's URL length) caps reference-link output near the input size, so the old recipe was never executable. Deliverable 5's submission notes never mentioned the recipe — grep finds no “reference-link” outside review.md and the amended spec — so no mirror was needed).
+* ~~**IR2-L4 — the recovery banner and crash marker have no exit through normal editing
+  (app.rs:844-880, 983-985; storage.rs:485-501).**~~ FR-8:160 defines marker removal only for the
   two banner actions; if the user instead types (or toggles an option) after a crash-restore,
   conversions run and commit successfully, but `recovery_converting` is armed only by
   `on_recovery_convert` — so the marker stays set, the banner (with its now-stale "restored
@@ -2083,13 +2086,15 @@ None.
   gone once restored input converts successfully. <em>Fix: arm `recovery_converting` at
   startup on `LoadOutcome::CrashRecovery` so the first successful commit clears the marker (and
   dismiss the banner with it), or record the banner-only exit in the Deliverable-5 update.</em>
-* **IR2-L5 — FR-7:150's "future-proof" wrapper is not actually forward-compatible
-  (convert.rs:54).** `html_to_tree(...).expect("infallible parse")` would panic — and
+  **Status:** resolved-by-ruling (FR-8:160's words do not support a marker exit on a successful edit-commit: they bind removal to the two banner actions — “`Convert restored input` … removes the marker once conversion succeeds” and “`Clear buffers` … removes the marker” — while the startup clause says “keep the marker in localStorage”; nothing licenses an exit on a plain edit-path commit, so the banner-only exit is letter-compliant and the behavior stands unchanged).
+* ~~**IR2-L5 — FR-7:150's "future-proof" wrapper is not actually forward-compatible
+  (convert.rs:54).**~~ `html_to_tree(...).expect("infallible parse")` would panic — and
   `panic = "abort"` turns that into the terminal crash overlay — on a future htmd that returns an
   `Err`, instead of taking the specified non-fatal `Err` banner path. Untestable today (htmd
   0.5.5's parse has no reachable `Err`), so trivial, but the wrapper's stated purpose would not
   survive contact with the future it guards against. <em>Fix: propagate a parse error into the
   existing `Err` handling (a new `Blocked` variant or equivalent) whenever htmd grows one.</em>
+  **Status:** fixed (the `expect("infallible parse")` at convert.rs:54 is gone: `html_to_tree`'s error now maps to a new `Blocked::ParseFailed`, which flows through the existing Err handling — a third `BannerKind::ConversionError` (FR-7:150's non-fatal error banner; the spec fixes no verbatim text for it) enters once per transition, clears the output, and exits on the next successful commit for the same mode. Unreachable on htmd 0.5.5, where html5ever reports parse errors without failing, so the suite pins the Blocked→BannerKind mapping instead).
 
 **Total new findings: 5 (blocking 0, medium 0, low 5).**
 
@@ -2106,3 +2111,5 @@ Validation: `cargo test --manifest-path demo/Cargo.toml` (169 passed, 0 failed, 
 and `pulldown-cmark` 0.13.4/0.13.6 sources were read from the local Cargo registry; `trunk` was
 not run and no root-repo gate was needed (no Rust source changed). No file other than
 `demo/review.md` was modified by this review.
+
+**Implementation review round 2 resolution:** all 5 low findings resolved (2 fixed, 2 by ruling, 1 spec amendment). The implementation review converged at round 2: zero blocking, zero medium. No findings remain open from IR1–IR2.
