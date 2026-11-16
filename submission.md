@@ -510,7 +510,7 @@ GitHub userid: noxfurry
 
 #### Contributions
 
-Rewrote the "Whitespace" section of `testing_approach.md` after the instructor's comments, so that it defines only how two HTML strings are compared (ASCII whitespace, normalized by how a browser renders it) while Markdown is compared exactly, and revised it over two LLM review rounds.
+Rewrote the "Whitespace" section of `testing_approach.md` after the instructor's comments, so that it defines only how two HTML strings are compared (ASCII whitespace, normalized by how a browser renders it) while Markdown is compared exactly, and revised it over three LLM review rounds, stopping when only trivial findings remained.
 
 #### Specification review rounds
 
@@ -518,271 +518,179 @@ Rewrote the "Whitespace" section of `testing_approach.md` after the instructor's
 | ----- | -------- | ----------------- |
 | 5 | 8 | Form feed is text, not collapsible whitespace; a final line feed in `<pre>` is not rendered; whitespace between table parts is removed; a collapsed run keeps its first space; `&#13;` stays a carriage return; attribute order ignored; citations fixed |
 | 6 | 6 | An empty code block is not equal to one holding a blank line; form feed written as `\u{c}`; a line also ends beside a block child (`<li>a\n<ul>`); comments and form feeds between blocks are skipped; lossless round trip includes the standard deviations; a remaining difference is a deviation or a bug |
+| 7 | 4 | No errors; the table example in rule 3 is wrapped in `<table>`, which the parser needs to keep its rows and cells; the nested-list helper test names both strings; two trivial findings left as they are |
 
 #### Last specification review
 
-Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Whitespace" in testing_approach.md, writing findings to review-round6.md in the repo root. Verify each claim about HTML parsing (html5ever, which the crate already depends on) and browser rendering by running throwaway code or citing the WHATWG HTML, Infra, CSS Text and CSS 2 specifications, and do not commit it. Do not edit testing_approach.md." The prompt went on to say that this is round 6, to check that the round-5 findings were applied and that the section agrees with the rest of the document, and to give the format of the review. This is the output of round 6; all its findings were applied.
+Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Whitespace" in testing_approach.md, writing findings to review-round7.md in the repo root. Verify each claim about HTML parsing (html5ever, which the crate already depends on) and browser rendering by running throwaway code or citing the WHATWG HTML, Infra, CSS Text and CSS 2 specifications, and do not commit it. Do not edit testing_approach.md." The prompt went on to say that this is round 7, to check that the round-6 findings were applied, to report only findings which would mislead a test writer or the implementer of the comparison helper and to label smaller ones trivial, and to give the format of the review. This is the output of round 7. O1 and T3 were applied. Strikethrough marks T1 and T2, which I deemed irrelevant: the review itself finds that both statements are correct as written.
 
-> Review of "Whitespace" in testing_approach.md (round 6)
+> Review of "Whitespace" in testing_approach.md (round 7)
 > ======================================================
 >
 > This reviews the section as of the working tree on `standardize-testing-2`
-> (after 2ea382a), lines 53-94 of `testing_approach.md`.
+> (after 6f1360b; the round-6 changes are in 7b9918f), lines 53-94 of
+> `testing_approach.md`.
 >
-> Method. Parsing claims were checked with a throwaway crate (since deleted)
-> which parsed each string with `html5ever::parse_document` (0.39, into
-> `markup5ever_rcdom`, as `src/lib.rs` does) and printed the `<body>` subtree,
-> text nodes as Rust string literals. Round trips used htmd in
+> Method. Parsing claims were checked with a throwaway crate outside the repo
+> (since deleted) which parsed each string with `html5ever::parse_document`
+> (0.39, into `markup5ever_rcdom`, as `src/lib.rs` does) and printed the whole
+> DOM, text nodes as Rust string literals. Round trips used htmd in
 > `TranslationMode::Faithful` and pulldown-cmark 0.13.4 (`push_html`, with
-> `ENABLE_TABLES`). Rendering claims were checked in the Chromium of the Claude
-> desktop app's browser pane (Chrome 156): each fragment was inserted into a
-> blank standards-mode page with the default style sheet, inside an absolutely
-> positioned `display: flow-root` wrapper, and measured with
-> `getBoundingClientRect()` (width x height in CSS px, margins of the children
-> included). Citations were checked against the WHATWG HTML, Infra, CSS Text 3
-> and CSS 2 specifications; every link and anchor in the section resolves.
+> `ENABLE_TABLES`). No browser was used this round: every rendering claim which
+> changed in 7b9918f was measured in round 6 (Chromium of the Claude desktop
+> app's browser pane, Chrome 156), and those measurements are cited below.
+> Citations were checked against the WHATWG HTML and Infra specifications, CSS
+> Text 3 and CSS 2.
 >
 > Summary
 > -------
 >
-> All six round-5 findings were applied, and applied correctly in substance:
-> form feed is now text (E1), a single trailing line feed in preformatted text
-> is ignored (E2), table whitespace is removed (O1), the collapsed space stays
-> where the run starts (O2), `&#13;` is called out (O3), the stricter choices
-> and attribute order are stated (O4), the citations are fixed (O5), and the
-> helper's tests fit the items (O6).
+> All six round-6 findings were applied correctly: the trailing-line-feed
+> exception now needs a character before the line feed and has the empty code
+> block as a counter-example (E1), the form feed is written `\u{c}` (E2),
+> rule 2 ends a line before and after a block child (O1), comments are skipped
+> between blocks (O2), rule 3 removes a whitespace-only node with a form feed
+> and line 57 says so (O3), and "Rules for tests" items 2 and 5 match "Test
+> helpers" and "Known deviations" (O4). None of these changes introduced an
+> error.
 >
-> Two of those changes introduced errors. The trailing-line-feed exception also
-> makes an empty code block equal to one holding a blank line, which renders a
-> line taller, and htmd's trip for an empty code block hits exactly this (E1).
-> The form-feed pair in "Rules for tests" is written `\f`, which is not a Rust
-> escape, so the test as specified does not compile (E2).
+> No errors were found. One inaccuracy remains, older than round 6: rule 3's
+> table example parses to plain text, because the parser drops `<tr>` and
+> `<td>` outside a `<table>`, so a helper test built from it does not test
+> tables (O1). Three trivial points follow.
 >
-> There are four omissions or inaccuracies. Text which ends before a nested
-> block (`<li>a\n<ul>`, as pulldown-cmark writes every tight nested list) is not
-> clearly at the end of a line (O1). Whitespace beside a comment between blocks
-> is not removed, so every trip with a comment fails (O2). A form feed between
-> blocks or table parts is kept, though Chrome does not render it there (O3).
-> Two sentences do not match the new "Test helpers" and "Known deviations"
-> sections (O4).
+> By the stopping criterion, the section is done once O1 is fixed.
 >
 > Conflicts in other sections are listed at the end and are not counted.
 >
 > Errors
 > ------
 >
-> ### E1. The trailing-line-feed exception equates an empty block with a blank line
->
-> "Where whitespace matters" item 1, second exception (line 79): "A single line
-> feed at the end of the content is not rendered, since the empty line after it
-> has no height." That is true when the line feed ends a line which holds
-> something. When the line feed is the whole content, it ends a line which is
-> otherwise empty, and that line does have height: CSS 2
-> [§9.4.2](https://www.w3.org/TR/CSS2/visuren.html#inline-formatting) makes a
-> line box zero-height only if it holds nothing "and [does] not end with a
-> preserved newline". So the exception makes `<pre><code></code></pre>` equal to
-> `<pre><code>\n</code></pre>` (the latter normalizes to the former), though:
->
-> | HTML                          | Chrome 156 size |
-> | ----------------------------- | --------------- |
-> | `<pre><code></code></pre>`    | 0 x 13          |
-> | `<pre><code>\n</code></pre>`  | 0 x 41          |
-> | `<pre><code>a</code></pre>`   | 7.83 x 41       |
-> | `<pre><code>a\n</code></pre>` | 7.83 x 41       |
->
-> The empty block is 28 px (one line) shorter. The last two rows confirm the
-> exception where it is meant to apply.
->
-> This is not hypothetical. htmd writes an empty code block with a blank line:
->
-> | HTML                         | Markdown       | Round trip                         |
-> | ---------------------------- | -------------- | ---------------------------------- |
-> | `<pre><code></code></pre>`   | ``"```\n\n```"`` | `"<pre><code>\n</code></pre>\n"` |
->
-> (pulldown-cmark renders ``"```\n```"`` as `<pre><code></code></pre>`.) With the
-> exception as written this trip passes, and the comparison hides a change in
-> rendering which may be an htmd bug.
->
-> Suggested change. Limit the exception: "A single line feed at the end of the
-> content is not rendered when a character other than a line feed comes before
-> it, since the empty line after it has no height. So `<pre>a\n</pre>` is
-> equivalent to `<pre>a</pre>`, and `<pre><code>a\n</code></pre>` to
-> `<pre><code>a</code></pre>`, but `<pre>a\n\n</pre>` is not, and neither is
-> `<pre><code>\n</code></pre>` to `<pre><code></code></pre>`." Add the last pair to
-> the helper's tests (Rules for tests, item 3) as one which must not compare
-> equal.
->
-> ### E2. `\f` is not a Rust escape
->
-> Rules for tests item 3 (line 92) specifies the helper test "`<p>a\fb</p>`
-> against `<p>a b</p>`", and item 4 says to write invisible characters as
-> escapes. Rust has no `\f` escape:
->
-> ```
-> error: unknown character escape: `f`
->  --> m.rs:1:26
->   |
-> 1 | fn main(){ let s = "<p>a\fb</p>"; ... }
-> ```
->
-> (rustc, edition 2021; 2024 is the same.) A reader following item 4 will write
-> `\f` and the test will not compile.
->
-> Suggested change. Write the pair as `"<p>a\u{c}b</p>"` against `"<p>a b</p>"`,
-> and add `\u{c}` (form feed) to item 4's list of escapes.
+> None.
 >
 > Omissions and inaccuracies
 > --------------------------
 >
-> ### O1. Text before or after a nested block is not clearly at a line edge
+> ### O1. Rule 3's table example loses its table tags when parsed
 >
-> Comparison rule 2 (line 68): "A line starts and ends at the edges of a block
-> container ... and at a `<br>`." pulldown-cmark writes a tight nested list with
-> a line feed between the item's text and the nested list:
+> Rule 3 (line 69): "`<tr>\n<td>a</td>\n</tr>` [is equivalent] to
+> `<tr><td>a</td></tr>`." The comparison parses with `parse_document`, and in
+> the "in body" insertion mode a `<tr>` or `<td>` start tag is a parse error and
+> is ignored (WHATWG HTML,
+> [in body](https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody):
+> "A start tag whose tag name is one of: ... "tbody", "td", "tfoot", "th",
+> "thead", "tr"" - "Parse error. Ignore the token."). html5ever does this:
 >
-> | HTML                                      | Markdown           | Round trip parses to |
-> | ----------------------------------------- | ------------------ | -------------------- |
-> | `<ul><li>a<ul><li>b</li></ul></li></ul>` | `"*   a\n    *   b"` | `<ul>"\n"<li>"a\n"<ul>"\n"<li>"b"</li>"\n"</ul>"\n"</li>"\n"</ul>"\n"` |
+> | HTML                                     | Parses to (`<body>`) |
+> | ---------------------------------------- | -------------------- |
+> | `<tr>\n<td>a</td>\n</tr>`                | `"\na\n"`            |
+> | `<tr><td>a</td></tr>`                    | `"a"`                |
+> | `<table><tr>\n<td>a</td>\n</tr></table>` | `<table><tbody><tr>"\n"<td>"a"</td>"\n"</tr></tbody></table>` |
 >
-> Rule 3 removes the whitespace-only nodes. But `"a\n"` is not whitespace-only,
-> and it is not at the edge of its block container (`<li>`): a sibling `<ul>`
-> follows. Its trailing line feed is removed only if "the edge of a block
-> container" is read to include the start of a block-level sibling. Read
-> literally, as a helper which checks "is this text at the end of its parent
-> block" would, every nested-list trip in `list_tests.rs` fails. Chrome renders
-> the two the same (both 88 x 69; the text node `"a\n"` measures 7.10 wide, the
-> same as `"a"`), because the anonymous block box around `"a\n"` ends at the
-> `<ul>` (CSS 2 [§9.2.1.1](https://www.w3.org/TR/CSS2/visuren.html#anonymous-block-level)).
-> The same holds for `<div><p>a</p> <em>b</em></div>`, where the `" "` starts
-> the line after a block (Chrome: 8 x 69 with or without it).
+> So the stated equivalence holds, but only through rule 2 (whitespace at the
+> edges of `<body>`); no table part is involved. "Rules for tests" item 3 asks
+> for a pair per rule, and the obvious pair for the table half of rule 3 is this
+> example. That test passes with a helper which has no table handling at all,
+> and the helper then fails on every pulldown-cmark table, which has
+> `<tbody>\n<tr>` and `</tr>\n</tbody>`. (`<li>a\n<ul>` in rule 2 is fine: `<li>`
+> is allowed in `<body>` and parses as written.)
 >
-> Suggested change. Rule 2: "A line starts and ends at the edges of a block
-> container ..., before and after a block-level child of it, and at a `<br>`.
-> So ... and `<li>a\n<ul>` to `<li>a<ul>`." Add that pair to the helper's
-> tests.
+> Suggested change. Rule 3: "... and `<table>\n<tr>\n<td>a</td>\n</tr>\n</table>`
+> to `<table><tr><td>a</td></tr></table>`." Round 6 measured this pair in Chrome
+> (13.10 x 24.50 both), and it parses with the line feeds inside `<tbody>` and
+> `<tr>`, where only rule 3 can remove them.
 >
-> ### O2. Whitespace beside a comment between blocks is not removed
+> Trivial
+> -------
 >
-> Rule 3 (line 69) removes a whitespace-only text node "between two block
-> elements ... or between one of these and the edge of its parent". A comment is
-> neither, so the line feeds around it stay. htmd keeps a comment as an HTML
-> block, and pulldown-cmark puts line feeds around it:
+> ### ~~T1. `&#13;` is "not equivalent to a line feed" only in preformatted text~~
 >
-> | HTML                          | Round trip                                | Trip parses to |
-> | ----------------------------- | ----------------------------------------- | -------------- |
-> | `<p>a</p><!-- x --><p>b</p>` | `"<p>a</p>\n<!-- x -->\n<p>b</p>\n"`     | `<p>"a"</p>"\n"<!--" x "-->"\n"<p>"b"</p>"\n"` |
+> ~~Line 63: "`&#13;` stays a carriage return and is not equivalent to a line~~
+> ~~feed." That is a statement about parsing, and it is true (`"a&#13;b"` parses~~
+> ~~to `"a\rb"`). In `white-space: normal` text, rule 1 still makes the carriage~~
+> ~~return equivalent to a space or line feed, since line 57 counts it as~~
+> ~~whitespace; htmd's trip of `<p>a&#13;b</p>` is `<p>a b</p>\n`, which compares~~
+> ~~equal. A helper-test writer could read line 63 as "`<p>a&#13;b</p>` must not~~
+> ~~equal `<p>a\nb</p>`", but no test asks for that pair. Suggested change, if~~
+> ~~any: "... so `&#13;` stays a carriage return: in a `<pre>` it is not~~
+> ~~equivalent to a line feed."~~
 >
-> The input has no text nodes between the blocks, so the comparison fails,
-> though the two render the same (Chrome: 8 x 85 each). Since item 4 asks that
-> a trip keep comments, the test cannot be written in the input's form.
+> ### ~~T2. Rule 2 at a line edge can move whitespace across an element boundary~~
 >
-> Suggested change. Rule 3: "... between two block elements, ..., or between one
-> of these and the edge of its parent, ignoring comments in between. So ...
-> `<p>a</p>\n<!-- x -->\n<p>b</p>` is equivalent to
-> `<p>a</p><!-- x --><p>b</p>`." (Comments themselves are still compared
-> exactly, per item 4.)
+> ~~Rule 2 makes `<p><em> a</em></p>` and `<p> <em>a</em></p>` both equivalent to~~
+> ~~`<p><em>a</em></p>`, and so to each other, though "Where whitespace matters"~~
+> ~~item 3 says "A trip which moves whitespace into or out of an element is a~~
+> ~~difference". Both are right (rule 2 removes the space before item 3 applies,~~
+> ~~and a removed space is not rendered under any decoration), and the helper~~
+> ~~follows the order "normalize, then compare". Suggested change, if any: begin~~
+> ~~item 3 with "Where the whitespace is kept, ...".~~
 >
-> ### O3. A form feed between blocks or table parts is not rendered
+> ### T3. Rule 2's helper test names one string
 >
-> Line 57 now makes a form feed text, "compared exactly", because a browser
-> "renders a form feed as a visible character". That holds inside a line
-> (Chrome: `"a b"` 19.10 x 50.50, `"a\fb"` 20.43 x 56.00, with `nowrap`), but not
-> where a form feed is the only content between blocks or table parts:
->
-> | HTML                                              | Chrome 156 size |
-> | ------------------------------------------------- | --------------- |
-> | `<p>a</p><p>b</p>`                                | 8 x 85          |
-> | `<p>a</p>\f<p>b</p>`                              | 8 x 85          |
-> | `<p>a</p>\f\f\f<p>b</p>`                          | 8 x 85          |
-> | `<div>a</div>x<div>b</div>` (any text)            | 8 x 55.5        |
-> | `<table><tr><td>a</td></tr></table>`              | 13.10 x 24.50   |
-> | `<table>\f<tr>\f<td>a</td>\f</tr>\f</table>`      | 13.10 x 24.50   |
->
-> The HTML parser also treats it as whitespace there: `<table>\f<tr>` keeps
-> `"\u{c}"` inside the table, as it does a space, while `<table>x<tr>`
-> foster-parents `"x"` before the table. CSS Text §4 would, read literally,
-> render it as a glyph in its own anonymous block, so Chrome and the spec
-> disagree here.
->
-> The case comes up: htmd drops a form feed between blocks
-> (`<p>a</p>\f<p>b</p>` gives `"a\n\nb"`, trip `<p>a</p>\n<p>b</p>\n`), and
-> under line 57 that trip is a difference, though the rendering in Chrome is
-> unchanged.
->
-> Suggested change. Either let rule 3 remove a text node holding only ASCII
-> whitespace (form feed included), matching the parser and Chrome, and say so
-> in line 57 ("... is text and is compared exactly, except in a text node which
-> rule 3 removes"); or keep it exact and say that this is a deliberate choice
-> which follows CSS Text rather than Chrome.
->
-> ### O4. Two sentences do not match "Test helpers" and "Known deviations"
->
-> * Rules for tests item 2 (line 91): "When the trip loses nothing, this is the
->   input HTML itself." "Test helpers" (line 31) says "it is the input HTML with
->   the standard deviations below", and the comparison keeps element names
->   exact, so the input itself does not compare equal: `<b>a</b>` comes back as
->   `<p><strong>a</strong></p>\n`, and `a <em>b</em>` as `<p>a <em>b</em></p>\n`.
->   Suggested change: "... this is the input HTML with the standard deviations
->   (see 'Known deviations'), ..."
-> * Rules for tests item 5 (line 94) and "Where whitespace matters" item 3 (line
->   81) call any remaining difference "a deviation". "Known deviations" now
->   splits differences into standard deviations, other deviations (explained in
->   `translation_approach.md`) and bugs ("If no section explains it, it is a
->   bug"). Suggested change: "... is a deviation or a bug, recorded as described
->   in 'Known deviations'."
+> "Rules for tests" item 3: "rule 2 gets `<li>a\n<ul>`". The other string,
+> `<li>a<ul>`, is in rule 2 itself, so a reader will find it. Suggested change,
+> if any: "rule 2 gets `<li>a\n<ul>` against `<li>a<ul>`".
 >
 > Verified as stated
 > ------------------
 >
-> 1. **Round-5 findings applied.** E1 (line 57), E2 (line 79), O1 (lines 68-69,
->    "block container" and the table parts with `<caption>`), O2 (line 67, with
->    the `<em>a </em> b` example), O3 (line 63), O4 (lines 59 and 63), O5 (lines
->    59 and 77, MDN link now answers 200 with title "Handling whitespace") and
->    O6 (line 92) are all in the text as suggested, apart from the two new
->    problems in E1 and E2 above.
-> 2. **Scope.** Lines 55 and 25 agree: only HTML (property 2) uses these rules;
->    Markdown (properties 1 and 3) is exact. Property 2 (line 22) refers to this
->    section.
-> 3. **ASCII whitespace and what collapses.** Infra lists TAB, LF, FF, CR and
->    SPACE; the MDN glossary gives the same five. CSS Text
->    [§4.1](https://www.w3.org/TR/css-text-3/#white-space-rules) processes only
->    spaces, tabs and segment breaks, and §4 says "Carriage returns (U+000D) are
->    treated identically to spaces (U+0020) in all respects" and renders other
->    control characters as visible glyphs. Chrome renders `a\fb` wider and taller
->    than `a b` (O3 table), so within a line the claim holds.
-> 4. **Parser equivalences (line 63).** Line endings, character references,
->    tag and attribute spelling, and `&#13;` staying a CR (re-checked:
->    `"a&#13;b"` parses to `"a\rb"`).
-> 5. **Rule 1 and its examples.** CSS Text §4.1.1 keeps the first space of a run
->    across inline boundaries; `<em>a </em> b` against `<em>a </em>b` follows.
-> 6. **Rule 2 examples.** CSS Text §4.1.2; `a <br> b` and `<p><em> a</em></p>`
->    as stated.
-> 7. **Rule 3 for blocks and tables.** `<p>a</p>\n<p>b</p>` and
->    `<table>\n<tr>\n<td>a</td>\n</tr>\n</table>` render the same as without the
->    line feeds (Chrome: 8 x 85; 13.10 x 24.50), and CSS 2 §17.2.1 (rules 1.3 and
->    1.4 of "Remove irrelevant boxes") covers the table case.
-> 8. **Preformatted elements (item 1).** `pre, listing, plaintext, xmp` have
->    `white-space: pre` under
->    [flow content](https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3),
->    `textarea` has `pre-wrap` under
->    [form controls](https://html.spec.whatwg.org/multipage/rendering.html#form-controls);
->    the default style sheet sets no `white-space` on `code` (line 84). The
->    leading-line-feed exception is as stated. The trailing one holds where a
->    character precedes the line feed (E1 table: `a` and `a\n` both 7.83 x 41).
-> 9. **Line 73.** CSS Text
->    [§4.1.3](https://www.w3.org/TR/css-text-3/#line-break-transform) removes a
->    segment break between two East Asian wide characters (other than Hangul),
->    so "may remove it" is accurate, and tests use Latin text.
-> 10. **Item 4 and line 86.** Attribute values, comments, `<script>` and
->     `<style>` are kept in the DOM as written, and the section says that this
->     is stricter than rendering.
+> 1. **Round-6 findings applied.** E1 (line 79, and the counter-example in line
+>    92), E2 (lines 92 and 93), O1 (line 68, and the pair in line 92), O2 (line
+>    69), O3 (lines 57 and 69, and the pair in line 92) and O4 (lines 81, 91 and
+>    94) are in the text as suggested.
+> 2. **The trailing-line-feed exception (line 79).** With the new condition,
+>    `<pre><code>a\n</code></pre>` normalizes to `<pre><code>a</code></pre>` and
+>    `<pre><code>\n</code></pre>` does not normalize to `<pre><code></code></pre>`,
+>    matching the round-6 Chrome sizes (7.83 x 41 for both of the first pair;
+>    0 x 41 against 0 x 13) and CSS 2
+>    [§9.4.2](https://www.w3.org/TR/CSS2/visuren.html#inline-formatting). htmd's
+>    trip of an empty code block (`<pre><code>\n</code></pre>\n`) is now
+>    reported as a difference, as it should be. `<pre>\n\n</pre>` parses to
+>    `<pre>"\n"</pre>` and is correctly not equivalent to `<pre></pre>`.
+> 3. **Comments between blocks (line 69).** Re-checked with htmd's trips:
+>    `<p>a</p><!-- x --><p>b</p>` gives
+>    `<p>a</p>\n<!-- x -->\n<p>b</p>\n`, and two adjacent comments give
+>    `<p>a</p>\n<!-- x -->\n<!-- y -->\n<p>b</p>\n`; skipping comments, every
+>    `"\n"` lies between two blocks. A comment at the end of a block container
+>    (`<p>a</p><!-- x -->` gives `<p>a</p>\n<!-- x -->`; in a blockquote,
+>    `<blockquote>\n<p>a</p>\n<!-- x --></blockquote>`) leaves a line feed
+>    directly after a block, which rule 2 removes as whitespace at the start of
+>    a line. A comment at the very start goes before `<html>` on both sides
+>    (initial insertion mode), and the line feed after it is dropped by the
+>    parser. Chrome renders the comment cases as without the line feeds (round
+>    6: 8 x 85).
+> 4. **Form feed (lines 57 and 69, pair in line 92).** `<p>a</p>\u{c}<p>b</p>`
+>    parses to a text node `"\u{c}"` between the paragraphs, which rule 3 now
+>    removes; Chrome renders it as `<p>a</p><p>b</p>` (round 6: 8 x 85), and
+>    `a\u{c}b` wider than `a b` (round 6), so the two pairs in line 92 are right.
+>    `\u{c}` is a valid Rust escape.
+> 5. **Rule 2 and nested lists (line 68).** `<li>a\n<ul>` parses to
+>    `<li>"a\n"<ul></ul></li>`, and the line feed ends a line before the block
+>    child, as stated; Chrome renders the two the same (round 6: 88 x 69).
+>    pulldown-cmark's other block whitespace (`<ul>\n<li>`, `<li>\n<p>`,
+>    `<p>a</p>\n<table>`, `<tbody>\n<tr>`, trailing `\n` in `<body>`) is removed
+>    by rules 2 and 3.
+> 6. **Parser equivalences (line 63).** `"a\r\nb\rc"` parses to `"a\nb\nc"`,
+>    `&#10;` to a line feed and `&#13;` to `"\r"`; the leading line feed after
+>    `<pre>`, `<listing>` and `<textarea>` is dropped by html5ever (line 78), as
+>    the WHATWG parser specifies.
+> 7. **Rules for tests item 2 (line 91).** htmd's trip of `<b>a</b>` is
+>    `<p><strong>a</strong></p>\n`, which compares equal to the stated form.
+> 8. **Unchanged claims.** Lines 57 (Infra, CSS Text §4.1), 67 (rule 1), 73
+>    (CSS Text §4.1.3), 77 (HTML rendering: `pre, listing, plaintext, xmp` with
+>    `white-space: pre`, `textarea` with `pre-wrap`), 80-86 are as verified in
+>    round 6 and were not changed.
 >
 > Conflicts in other sections (not counted)
 > -----------------------------------------
 >
-> * **Contributions, line 10** credits the "Escaping" section, which the
->   document no longer has (its sections are Properties, Test helpers, Known
->   deviations, Migration and Whitespace). Line 8 has an empty entry.
+> * **Contributions, line 10** still credits the "Escaping" section, which the
+>   document does not have, and line 8 is still an empty entry (both reported
+>   in round 6). The other sections (Properties, Test helpers, Known
+>   deviations, Migration) agree with the Whitespace section: property 2 and
+>   line 25 refer to it, line 31 matches "Rules for tests" item 2, the
+>   deviation/bug split matches line 81 and item 5, and Migration starts with
+>   the helper and its tests, as item 3 requires.
 
 #### Implementation review rounds
 
