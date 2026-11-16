@@ -1553,3 +1553,337 @@ specification review converged at round 14: zero blocking, zero medium, two
 trivial lows — fixed. No findings remain open from rounds 1–14.
 
 **Post-round-14 amendment (controller ruling):** §6/FR-7 release-profile strip wording corrected to strip=false + wasm-opt — Task 0 empirically verified rustc strip=true breaks wasm-opt 116–133 (memory.copy/target_features); recorded for transparency after convergence.
+
+## Implementation review round 1 — open findings (awaiting processing)
+
+```text
+You are a fresh-context LLM reviewer performing Implementation Review Round 1 for a university assignment. The specification (`demo/demo-spec.md`) converged after 14 spec-review rounds; the implementation now exists in the `demo/` crate (a standalone Leptos CSR web app wrapping the `htmd` HTML-to-Markdown crate). Your job: review the implementation against the spec — every functional requirement and acceptance criterion — and report findings. You do NOT review the spec itself (that process is closed; a post-round-14 amendment is recorded in review.md).
+
+## What to review
+
+- Spec: read `/home/danial/htmd/demo/demo-spec.md` in full — §2 goals, FR-1…FR-8, §6 non-functional requirements, §7 deliverables (Deliverables 1–2 are yours to check: the crate + the built app; Deliverables 3–5 CI/corpus/README belong to another team member — skip those), §8 acceptance criteria (§8.6's automated-checkable cases and §8.7's goldens are largely covered by the crate's test suite — verify by reading tests, not re-running).
+- Implementation: everything under `/home/danial/htmd/demo/` — `src/` (options_model, convert, fidelity/{canonicalize,diff}, engine, storage, limits, panic_hook, samples, preview, app, main), `index.html`, `Trunk.toml`, `Cargo.toml`, tests inline. Read the code.
+
+## Method
+
+1. For each FR (FR-1…FR-8): find the implementing code, verify each clause, note clause-level compliance. Where a clause is UI-runtime behavior (needs a browser), verify by code-reading the wiring (e.g. srcdoc set via property, aria attributes, listener registrations) and mark it "verified by inspection — browser check pending" rather than guessing.
+2. For §6 non-functionals: size budget (`gzip -6` of the release wasm vs the 1,572,864-byte constant — you may run the measurement on `demo/dist/` if it exists, else compute from what's there), profile settings, dependency constraints (single html5ever copy — check Cargo.lock), accessibility §5.
+3. For §8: map each §8.6 case and §8.7 golden to a named test; list any case with no covering test.
+4. Also check: `#[allow(dead_code)]` leftovers (should be ~5 targeted, commented — the ledger says exactly 5), comment discipline (AGENTS.md), no `unsafe`, no unwrap/expect in wasm-reachable paths.
+5. Known parked items (do not re-report unless you find them load-bearing): mode-switch doesn't re-evaluate target buffer's limit banner until an edit; banner-slot theoretical reassignment; ~30-line serializer duplication between canonicalize.rs and preview.rs; basics sample is a superset of FR-6's list; task-3 parked minors.
+
+Run tests if you need evidence for a specific doubt: `cargo test --manifest-path demo/Cargo.toml` (fast suite; 2 ignored are slow depth proofs — do NOT run --ignored). Root gates from /home/danial/htmd. You may run `trunk build` in demo/ if dist/ is missing (do not run --release; it's slow).
+
+## Output
+
+Append to `/home/danial/htmd/demo/review.md` a section `## Implementation review round 1 — open findings (awaiting processing)` in the established round format (prompt quoted verbatim in a fenced block, reviewer identity, "What checks out", "Blocking issues", "Medium-severity issues", "Low-severity / editorial", IDs `IR1-B#`/`IR1-M#`/`IR1-L#` with file:line and concrete fixes).
+
+CRLF WARNING: working tree is CRLF — append with line-ending preservation; verify `git diff --stat demo/review.md` shows only appended lines.
+
+Commit ONLY review.md: `git add demo/review.md && git commit -m "Implementation review round 1: N findings (X blocking, Y medium, Z low)"`. Do NOT modify any other file. Do NOT push.
+
+Report back ONLY (under 12 lines): counts by severity; one-line per blocking/medium finding (ID + gist + file:line); FR clause map summary (any FR not fully compliant — which clause); §8.6/§8.7 coverage gaps if any; whether findings feel trivial/structural; commit SHA; confirmation only review.md changed.
+```
+
+Reviewed by **GLM-5.3** (OpenCode agent, fresh context) with the round-1
+implementation-review prompt quoted above. The review read the post-amendment
+specification in full, then every file under `demo/src/` plus `index.html`,
+`Trunk.toml`, `Cargo.toml`, `Cargo.lock`, and the built `demo/dist/`, against the
+real `htmd` crate and the pinned `html5ever` 0.39.0 / `markup5ever_rcdom`
+0.39.0+unofficial / `leptos` 0.8.23 / `similar` 2.7.0 sources in the local Cargo
+registry. The fast suite was run for evidence: **164 passed, 0 failed, 2 ignored**
+(the slow depth proofs stayed ignored per the round instructions). UI-runtime
+clauses (iframe wiring, aria attributes, listeners) are verified by inspection of
+the wiring; browser-level confirmation belongs to the CI/Playwright team.
+Parked items from the round prompt were left unreported.
+
+#### What checks out
+
+* **FR-1 (preview isolation) — fully compliant by inspection.** `prop:srcdoc`
+  assigns the DOM property (app.rs:1159); `sandbox=""`, `title="Rendered
+  preview"`, `referrerpolicy="no-referrer"` on the frame (app.rs:1154–1168);
+  the CSP `<meta>` is verbatim FR-1:42 and precedes the demo's own
+  `<base target="_blank">` (preview.rs:17–20,42); preview content is parsed as a
+  `<body>`-context fragment with `RcDom`, stripped of `<base>`/`<meta>`/`<link>`/
+  `<noscript>`/`<template>` whole and every `target` attribute by an explicit-stack
+  walk, and serialized per the FR-5 rule (preview.rs:29–121) — with the §8.6:292
+  adversarial snippets (refresh meta, `x-dns-prefetch-control`,
+  `dns-prefetch`/`preconnect`/`prefetch`/`prerender`, `<noscript>` re-parse trap,
+  declarative-shadow-DOM `<template>`) all pinned by tests (preview.rs:165–227).
+  The Source tab shows the unstripped output (app.rs:1177–1179). Malformed HTML is
+  permissive by construction (html5ever; convert.rs test `malformed_html…`).
+* **FR-2 (debounce/engine) — clause-by-clause compliant and heavily tested.**
+  Adaptive split at 2,000 bytes, 250 ms debounce, 900 ms forced deadline measured
+  from the batch's first edit with only the 250 ms timer reset by later edits
+  (engine.rs:106–123,387–424); dispatch clears both timers; single in-flight +
+  single queued with latest-wins and immediate slot release on sequence advance
+  (engine.rs:327–338); mode switch cancels the pending batch (engine.rs:249–264);
+  output validity per mode with the FR-2:60 switch semantics
+  (engine.rs:300–308,722–761). Engine tests cover the §8.6 concurrency case
+  (suspension writes nothing, newer run commits — engine.rs:666–692), the
+  size-crossing-during-suspension case (engine.rs:695–708), the forced-deadline
+  case (first dispatch by 900 ms under 100 ms edits, no run accumulation —
+  engine.rs:636–652,899–929), and mode-switch isolation. Wiring: synchronous
+  main-thread conversion with one-step commit gated on the run's sequence number
+  (app.rs:278–374); clearing assigns `""` to `srcdoc` without waiting for load
+  (app.rs:398–404, engine.rs:448–455); the iframe stays in the DOM while its
+  panel is hidden (app.rs:1144–1168); load events are matched against the
+  current commit and stale loads ignored (app.rs:1160–1167, engine.rs:313–321).
+  Input isolation, per-mode buffers, scroll/selection preservation across
+  switches (app.rs:543–593), the undo-toast lifetime (app.rs:453–457 and its
+  call sites), and "Use Output as Input" disabled on empty/invalid output
+  (app.rs:982–988) all match the spec text.
+* **FR-3 (output views) — compliant.** Tabs implement the ARIA pattern
+  (roles, `aria-selected`, `aria-controls`, roving `tabindex`, arrow/Home/End,
+  inactive panes `hidden` — app.rs:1122–1180, on_tablist_keydown at 669–683).
+  All user-derived text (Source tab, fidelity columns as `<ins>`/`<del>`/`<span>`
+  tokens, banners, toasts) renders through Leptos text-content view macros; the
+  sandboxed iframe is the only markup receiver. The HTML→Markdown Rendered tab
+  re-renders with the sidebar's flags (app.rs:336).
+* **FR-4 (options & reset) — compliant.** All 15 `pulldown-cmark` flags map 1:1
+  (options_model.rs:47–96; the all-on/all-off/preset bitsets are pinned by
+  tests at 350–416); the 12 `htmd` options round-trip through the remote-derive
+  mirrors (options_model.rs:106–242); the preset is exactly 7-on/8-off plus
+  crate defaults with `Pure` (options_model.rs:274–288); Reset restores only the
+  sidebar and reconverts immediately (app.rs:627–641, engine.rs:238–242,
+  storage test `reset_options_restores_only_the_sidebar_configuration`);
+  `br_style` is disabled while Faithful is active (app.rs:1635–1637); the
+  `skip_tags` parser implements FR-4:108 exactly — comma split, trim, lowercase,
+  drop empties/duplicates/`[a-z][a-z0-9-]*` misses, 200-char cap, and the
+  empty-list case omits the `skip_tags` call to avoid htmd's panic guard
+  (options_model.rs:244–269, convert.rs:46–50), with the §8.6 parsing cases
+  tested at options_model.rs:294–324.
+* **FR-5 (fidelity pipeline) — compliant except IR1-M3 below.** The panel runs
+  only in Faithful mode with the Pure explanatory note (app.rs:51–52,989–995,
+  1184–1235); the forward conversion uses the sidebar options (Faithful active
+  by construction) plus `skip_tags`; the round-trip renders with exactly
+  `ENABLE_TABLES | ENABLE_MATH` via `CmarkFlags::tables_math()`
+  (app.rs:336–351, options_model.rs:38–44, negative-control test
+  samples.rs:738–780); both sides are canonicalized identically
+  (canonicalize.rs:21–49); every walk is iterative; serialization is per
+  top-level child with `IncludeNode`, never the `RcDom` document;
+  `similar` 2.7.0 with the shared word tokenizer and the 5,000-token middle cap
+  applied after prefix/suffix strip, no deadline API (diff.rs:42–80); the
+  "Diff too large to display" boundary is pinned at exactly 5,000
+  (diff.rs:182–199).
+* **FR-6 (samples) — compliant.** Availability matrix, cross-mode click
+  semantics (Inline HTML clicked in MD mode switches mode and touches only the
+  HTML buffer/selection), per-mode selection persisted with the spec's exact
+  spellings (`basics`/`math`, `basics`/`inline_html`/`math`), Reload defaulting
+  to basics *without* selecting it, one-shot Undo that leaves the new selection
+  in place — all implemented in samples.rs:195–366 and tested at 403–665; the
+  variants are pulldown-consistent and round-trip-lossless in both modes
+  (samples.rs:664–722), and the basics sample is §8.7:307 golden corpus
+  (canonicalize.rs:568–590).
+* **FR-7 (limits & panics) — compliant except IR1-B1 below.** The 100,000-byte
+  ceiling and 512-level nesting gate run before any parse/convert
+  (convert.rs:38–58), the depth is measured on the parsed tree with an iterative
+  walk (children of `<head>`/`<body>` at depth 1 — convert.rs:61–85), the same
+  tree is converted, and the byte-exact cases are pinned (100,000 converts /
+  100,001 halts / 512 converts / 513 rejects / oversized-deep — convert.rs:105–150;
+  "measured via `TextEncoder`" is realized as Rust `str::len()`, the same UTF-8
+  byte count). Banner texts are verbatim and the state machine announces exactly
+  once per transition (limits.rs, tests 112–235); oversized text stays in the
+  editor and is persisted (app.rs:497–527 writes storage before the gate). The
+  panic hook chains `console_error_panic_hook`, is null-guarded and idempotent,
+  writes the marker, sets the storage-halt flag consulted by *every* storage
+  call site and the storage clock, reveals the overlay, sets `inert` on the app
+  root (overlay outside it, index.html:218–247), moves focus, and logs —
+  raw `web-sys` only (panic_hook.rs:56–109); `panic = "abort"` is set and the
+  `demo-panic-test` panic button is feature-gated (app.rs:997–1004). The
+  `Result` wrapper's `Err` path clears output/diff and shows its banner
+  (app.rs:323–331); the mode-scoped banner bookkeeping is tested (app.rs:1752–1893).
+* **FR-8 (storage) — compliant.** The schema is exactly the 12 specified fields
+  with the specified spellings (storage.rs:160–209, pinned by test 816–859);
+  validation wipes on version≠1, corrupt JSON, wrong types (nested included),
+  bad enum variants, spacing outside 1–4, and >200-char `skip_tags`, while
+  ignoring unknown fields and defaulting only the fields whose schema line
+  states a default (tests 861–1133); the controller debounces text 500 ms,
+  flushes before every non-text interaction, guards quota and external-write
+  transitions once-each with tests, and the `pagehide`/`visibilitychange` flush
+  plus the `storage` listener are wired with the halt guard (app.rs:952–973;
+  the `let _ = window_event_listener(...)` claim was verified against
+  `leptos_dom` 0.8.8 — `WindowListenerHandle` has no `Drop`, so the listeners
+  really are page-lifetime). Crash-marker recovery keeps the marker until the
+  user acts, defers marker removal to conversion success, and clears buffers
+  atomically (storage.rs:485–501, app.rs:800–836, tests 1138–1220). Safe reads
+  map errors to `None`/`StoreError` with an in-memory fallback when
+  `localStorage` is blocked (storage.rs:561–590).
+* **§6 non-functionals.** Release profile exactly as specified
+  (Cargo.toml:42–48: `opt-level = "z"`, `lto`, `codegen-units = 1`,
+  `panic = "abort"`, `strip = false`); `data-wasm-opt="z"` on the Trunk rust
+  link (index.html:7) and `Trunk.toml` pins `wasm-bindgen = "0.2.130"` /
+  `wasm-opt = version_131`, matching `wasm-bindgen = "0.2.130"` in Cargo.toml.
+  **Size budget measured: `gzip -6 -c demo/dist/*.wasm | wc -c` = 389,788
+  bytes — 24.8% of the 1,572,864-byte ceiling.** Dependency constraints hold:
+  exactly one `html5ever` 0.39.0 and one `markup5ever_rcdom` 0.39.0+unofficial
+  in `demo/Cargo.lock` (same versions as the root crate), `similar` 2.7.0 (2.x),
+  `pulldown-cmark` 0.13.6 with `default-features = false, features = ["html"]`;
+  the demo is genuinely standalone (root `Cargo.toml` declares no workspace,
+  demo carries its own lockfile). §5 layout, radiogroup/fieldset/legend
+  structure, always-in-tree live regions that only visually collapse, and the
+  single light theme all match.
+* **Hygiene.** Exactly 5 targeted, commented `allow(dead_code)` attributes
+  (storage.rs:25,40,75; panic_hook.rs:48; samples.rs:12) — the ledger's count
+  is right. No `unsafe` anywhere. The few `unwrap`/`expect` outside `#[cfg(test)]`
+  are invariant-guarded with justifying comments (clock.rs:103,110;
+  convert.rs:54; preview.rs:118,120; app.rs:229; samples.rs:344) — none is a
+  reachable failure path. Comment discipline follows AGENTS.md (Markdown doc
+  comments, spec-line citations, no history comments).
+* **§8.6/§8.7 coverage map (named tests).** §8.6: empty input →
+  `empty_input_clears_output_without_dispatch` (+ preview
+  `empty_input_yields_the_minimal_document`); permissive parsing →
+  `malformed_html_converts_without_panic`; byte-accurate limit →
+  `hundred_thousand_byte_input_converts` / `…_and_one_bytes_halts_too_large` /
+  `oversized_deep_input_still_halts_too_large` + app tests for banner/persist/
+  resume; nesting → `five_hundred_twelve_deep_input_converts` /
+  `five_hundred_thirteen_deep_input_is_too_deep` (shape gap = IR1-L2);
+  concurrency → `suspended_run_writes_nothing_once_sequence_advanced`,
+  `latest_input_during_suspension_runs_once_and_commits`,
+  `size_limit_crossing_during_suspension_does_not_refill_cleared_output`,
+  `mode_switch_cancels_pending_batch_timers`; forced deadline →
+  `forced_deadline_dispatches_by_900ms_under_continuous_edits` +
+  `forced_tick_while_run_in_flight_coalesces_into_single_queued_run`;
+  skip_tags → options_model.rs:294–324; mode-switch state preservation →
+  `switch_to_valid_mode_shows_output_and_converts_nothing`,
+  `option_change_invalidates_inactive_mode_reconverted_on_switch`; refresh
+  retention → storage controller suite (flush-before-write, pagehide flush);
+  blocked storage → `blocked_store_never_panics_and_keeps_converting_state` +
+  `store_or_fallback`; malformed JSON / type & enum mismatch / out-of-bound /
+  future version → `load_wipes_*` + `validate_rejects_*` family; data-loss
+  prevention → `option_change_immediately_after_typing_writes_text_at_once`;
+  quota → `quota_failure_signals_once_until_next_success`; multiple tabs →
+  `external_write_announces_once_until_own_write` (+ listener wiring by
+  inspection); escaped views → textContent by construction + preview strip
+  tests (verified by inspection); preview navigation → sandbox/CSP/base/target
+  strip by inspection; preview stripping → preview.rs:165–277 (50,000-`>` walk
+  proven by the ignored test); crash-loop recovery → storage tests 1138–1220
+  (marker kept across reloads by `load`, restore-without-convert) + app wiring.
+  §8.7: every bullet of 297–305 maps to a named canonicalize test
+  (casing/order/quoting/void/entities/whitespace/pre-newline/CDATA at
+  canonicalize.rs:424–510, exact outputs at 514–525); the golden corpus is
+  covered by `pre_code_golden_zero_diff` and
+  `commonmark_basics_golden_zero_diff` under exactly the §8.7:307 conditions.
+  Gaps: §8.7:306 (IR1-M2) and §8.3:249's 2 MB cap (IR1-M1).
+
+#### Blocking issues
+
+* **IR1-B1 — FR-7:149's wasm-trap listeners only reveal the overlay; they
+  neither set the crash marker nor halt workspace writes (index.html:231–247):**
+  the spec requires the global `window` `error`/`unhandledrejection` listeners
+  in `index.html` to "disable further workspace writes, set the
+  `htmd_cmark_live_crashed` marker in localStorage (inside `try/catch`), and
+  show the same static crash overlay". `revealCrashOverlay()` flips `hidden`
+  and logs — nothing more (the built `dist/index.html` carries the same partial
+  script). For a trap that bypasses the Rust panic hook (OOM, a stack
+  exhaustion outside the iterative walks), (a) the crash marker is never set,
+  so a reload takes the normal startup path and re-converts the persisted input
+  — the crash loop FR-8:160's recovery flow exists to prevent — and (b)
+  already-armed save debounces keep writing: after a `panic = "abort"` trap the
+  wasm instance usually stays callable, so the pending `StorageEvent::SaveDue`
+  timer still reaches `write_now` (nothing checks a trap state; only the Rust
+  panic sets `STORAGE_HALTED`). The Rust-side panic path
+  (panic_hook.rs:71–109) is complete; only the JS half is partial.
+  <em>Fix: in the inline script, on the first `error`/`unhandledrejection`
+  also `try { localStorage.setItem("htmd_cmark_live_crashed", "1"); }
+  catch (e) {}` and set a `window.__htmdStorageHalted` flag; make
+  `storage::web::WebStore::set` (storage.rs:566–575) return
+  `Err(StoreError::Blocked)` while that flag or the marker is present, so
+  pending debounced writes and `pagehide`/`visibilitychange` flushes are
+  refused exactly as they are after a Rust panic. Keep the panic-hook path
+  unchanged.</em>
+
+#### Medium-severity issues
+
+* **IR1-M1 — the 2 MB output cap has no covering test anywhere (app.rs:35,
+  300–309; §6:214 / §8.3:249):** the cap (banner *"Output exceeds the 2 MB
+  display limit."*, both tabs cleared, fidelity cleared, "Use Output as
+  Input" disabled via the empty-output rule) is implemented before the commit
+  gate, but no test trips it — app.rs's own tests stop at the 100,000-byte
+  *input* ceiling (`amplifying_markdown`, app.rs:1746–1750, produces ~100 kB of
+  output), and nothing else exercises `MAX_DISPLAY_OUTPUT_BYTES`. §8.3:249's
+  acceptance case (100 kB of reference-link amplification) is thus unverifiable
+  by the crate suite. <em>Fix: add an app.rs harness test — a ≤100 kB Markdown
+  input whose HTML exceeds 2 MB (one long-URL reference definition plus tens of
+  thousands of uses), asserting `cap_banner` shows, `out_md` source and preview
+  are both empty, and `use_output_disabled` is true; a companion engine-level
+  check that the run then commits nothing stale.</em>
+* **IR1-M2 — §8.7:306's diff-precision case has no pipeline-level test
+  (canonicalize.rs:533–548):** the spec requires that
+  `<p><span style="white-space: pre">a  b</span></p>` yields a *nonzero* diff
+  after the round trip, and that a CJK paragraph and a U+0301 word round-trip
+  with *zero* diff. `white_space_style_attr_preserves_whitespace`
+  (canonicalize.rs:543) only asserts canonicalize preserves the spacing
+  (idempotence, no converter involved), and `cjk_and_combining_mark_round_trip`
+  (canonicalize.rs:533) compares static canonical forms — neither runs the
+  inputs through `convert_html_to_md` → `convert_md_to_html`. <em>Fix: add
+  pipeline tests beside `commonmark_basics_golden_zero_diff`
+  (canonicalize.rs:568) mirroring its shape: assert `WordDiff::Changes(_)` for
+  the styled span and `WordDiff::Inclusive` for `<p>こんにちは</p>` and
+  `<p>cafe\u{0301}</p>` after a real round trip under Faithful defaults +
+  `ENABLE_TABLES | ENABLE_MATH`.</em>
+* **IR1-M3 — the preserved-subtree style check reads only the first
+  declaration, narrowing FR-5:127 (canonicalize.rs:375–387, codified by the
+  test at 699–712):** FR-5:127 preserves "any element whose `style` attribute
+  declares `white-space` with a value other than `normal`" — no positional
+  qualifier. The implementation checks only `attr.value.split(';').next()`, and
+  `style_attr_detection_rules` pins `style="color:red; white-space:pre"` as NOT
+  preserved (canonicalize.rs:704–707). The round-5 ruling (review.md:197) asked
+  to "normalize these deliberately or state that they are out of scope", and
+  the spec chose no style normalization at all — so an element leading with
+  another declaration silently loses its preserved-subtree protection, hiding
+  real whitespace loss from the diagnostic diff (a false negative, the exact
+  failure mode §8.7:306's nonzero-diff case guards). <em>Fix: check every
+  `;`-separated declaration for a case-insensitive `white-space` property
+  (`attr.value.split(';').any(...)`), keep the `normal` exclusion, and update
+  `style_attr_detection_rules` so `color:red; white-space:pre` preserves.</em>
+
+#### Low-severity / editorial
+
+* **IR1-L1 — the immediate path schedules a 0 ms timer, not the "next
+  animation frame" (engine.rs:106–113,401; clock.rs:104–110; FR-2:52):** the
+  spec (and the round-5 team note, review.md:489) pin "conversion is scheduled
+  on the next animation frame after the keystroke" for ≤ 2 kB inputs. The
+  engine's `Batch::immediate` arms `clock.schedule(0, …)` → `setTimeout(0)`.
+  The no-debounce intent and the 100 ms keystroke-to-render budget hold (a
+  0 ms timeout fires no later than the next frame), but the primitive differs
+  from the pinned wording, and a 0 ms timer can preempt paint where rAF cannot.
+  <em>Fix: either back 0-delay engine events with `requestAnimationFrame` in
+  `WebClock`, or record the deviation in the Deliverable-5 spec update.</em>
+* **IR1-L2 — nesting-limit test shapes are div-only (convert.rs:101–150;
+  §8.6:275):** the acceptance case also names 600 unclosed `<p>` tags and 600
+  `<br>` siblings, and 512-level stacks of *nested lists, blockquotes, and
+  tables* in both Pure and Faithful modes. The native suite proves the gate
+  with nested `<div>` only; the release-wasm runs are Deliverable 3's, but the
+  shapes themselves are cheap native conversions. <em>Fix: add them next to
+  `five_hundred_twelve_deep_input_converts` (a 600-`<p>` and a 600-`<br>`
+  conversion asserting `Ok`, and a 512-deep list/blockquote/table conversion in
+  both translation modes).</em>
+* **IR1-L3 — `send_wrapper` is a direct dependency absent from §6:219's list
+  (Cargo.toml:21):** justified in place (Leptos view closures must be `Send`
+  even in CSR; same version tachys uses, so one copy links), but the spec's
+  direct-dependency enumeration omits it. <em>Fix: one line in the
+  Deliverable-5 spec update.</em>
+* **IR1-L4 — no `performance.mark`/`measure` instrumentation around the
+  conversion call (§6:211 / §8.3:248):** `demo/src` emits no measures;
+  `Performance` is used only as the clock's monotonic `now()`
+  (clock.rs:72–77). §8.3's Playwright performance assertions will need
+  app-emitted measures (or injected wrappers) to observe. Flagging the
+  cross-team contract. <em>Fix: wrap `convert_and_commit`'s conversion calls
+  with `performance.mark`/`measure` (the `Performance` web-sys feature is
+  already enabled), or hand the instrumentation point to the CI team
+  explicitly.</em>
+
+**Total new findings: 8 (blocking 1, medium 3, low 4).**
+
+Reviewer's judgment: the implementation is structurally sound and unusually
+faithful to a long, adversarial spec — the engine, storage controller,
+canonicalizer, and preview strip each carry clause-level tests, and the one
+blocking issue is a missing half of a specified defense-in-depth path (JS-side
+trap handling), not an architectural flaw. The mediums are coverage gaps and a
+single narrowed canonicalization rule; the lows are wording-level deviations.
+
+Validation: `cargo test --manifest-path demo/Cargo.toml` (164 passed, 2 ignored)
+and `gzip -6` on `demo/dist/*.wasm` (389,788 bytes) were run for evidence;
+`trunk` was not re-run (dist/ already present and current). No file other than
+`demo/review.md` was modified by this review.
