@@ -87,7 +87,7 @@ deemed incorrect or irrelevant.
 
 ### Pavel Shegay
 
-GitHub userid: pavelshegay3
+GitHub userid: pavelshegay3 (personal GitHub account - used at first mistakenly); pashegay (correct @kbtu GitHub account - switched later in latest commits)
 
 #### Contributions
 
@@ -298,7 +298,7 @@ so and whether another review round seems necessary.` produced:
 
 ### Pavel Shegay
 
-GitHub userid: pavelshegay3
+GitHub userid: pavelshegay3 (personal GitHub account - used at first mistakenly); pashegay (correct @kbtu GitHub account - switched later in latest commits)
 
 #### Contributions
 
@@ -323,11 +323,33 @@ For round 4, prompting Copilot Fusion (GPT-6 Luna), Standard, with `Review the u
 
 #### Implementation review rounds
 
-TODO (Pavel): table of implementation review rounds.
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 1 serious finding | Found that Pure mode fails to combine adjacent subscripts when one contains an element child; no implementation changes were made in this review. |
 
 #### Last implementation review
 
-TODO (Pavel): LLM, prompt, and output of the last implementation review.
+Prompting Copilot in VS Code (model not exposed in this interface) with `Review the <sub> implementation on branch subscript-spec. Check src/element_handler/sub.rs, the ~ escaping in src/dom_walker.rs and src/util/escape.rs, and tests/subscript_tests.rs against the "Subscript" section of translation_approach.md (TranslationMode::Pure and TranslationMode::Faithful, Approach steps 1-4) and against pulldown-cmark 0.13.4 with Options::ENABLE_SUBSCRIPT. For every finding give the input HTML, the actual output, and the expected output. Do not edit any files. List serious problems as numbered findings. If there are none, say so and whether another review round seems necessary.` produced:
+
+> 1. **Pure mode does not correctly translate adjacent subscripts when one has an element child.**
+>
+>    Input HTML: `<p><sub>a</sub><sub><em>b</em></sub></p>`
+>
+>    Actual Markdown output: `~a~~*b*~`
+>
+>    Pulldown-cmark 0.13.4 with `ENABLE_SUBSCRIPT` renders that as
+>    `<p>~a~~<em>b</em>~</p>`, not as subscripts.
+>
+>    Expected Markdown output: `~a*b*~`, which renders as
+>    `<p><sub>a<em>b</em></sub></p>`.
+>
+>    `can_combine` in `src/dom_walker.rs` only combines adjacent elements whose
+>    children are each a single text node. Since the second `<sub>` contains an
+>    `<em>` element, the two `<sub>` nodes are handled separately and their
+>    delimiters join into a non-matching `~~` run. The existing subscript tests
+>    cover adjacent text-only subscripts, but not this mixed-content case. The
+>    focused `cargo test --test subscript_tests` suite passes, so it does not
+>    currently catch the failure.
 
 ### Arsen Zhanserkenov
 
