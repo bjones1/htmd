@@ -3,7 +3,11 @@ use pretty_assertions::assert_eq;
 
 #[cfg(feature = "rcdom")]
 use crate::common::tree;
-use crate::common::{convert_faithful, convert_pure, round_trip};
+use crate::common::{
+    convert_faithful, convert_faithful_options, convert_pure, render_markdown, round_trip,
+};
+use htmd::options::Options;
+use pulldown_cmark::Options as CommonMarkOptions;
 
 /// A pair of adjacent emphases is merged so that it does not go out as
 /// `*a**b*`, which CommonMark reads as one emphasis holding `a**b`. Merging is
@@ -289,4 +293,36 @@ fn faithful_mode_nested_inline_html() {
         convert_faithful("<p>Nested <foo><bar><em>content</em></bar></foo></p>").unwrap(),
         "Nested <foo><bar>*content*</bar></foo>"
     );
+}
+
+/// Found by the `convert` fuzz target: an emphasis written as HTML walked its
+/// children twice, so nesting took exponential time.
+#[test]
+fn nested_emphasis_written_as_html_takes_linear_time() {
+    let tables_and_math = CommonMarkOptions::ENABLE_TABLES | CommonMarkOptions::ENABLE_MATH;
+    for (open, close) in [("<em>", "</em>"), ("<em>!", "</em>"), ("<b> ", "</b>")] {
+        let inner = format!("{}{}", open.repeat(40), close.repeat(40));
+        let html = format!("<p>{inner}</p>");
+        let markdown = convert_faithful_options(&html, Options::default()).unwrap();
+        assert_eq!(inner.trim_end(), markdown);
+        assert_eq!(
+            format!("{html}\n"),
+            render_markdown(&markdown, tables_and_math)
+        );
+    }
+}
+
+/// Found by the `convert` fuzz target: every level of nesting recurses through
+/// the DOM walker, which overflowed the stack.
+#[test]
+fn deep_nesting_does_not_overflow_the_stack() {
+    let tables_and_math = CommonMarkOptions::ENABLE_TABLES | CommonMarkOptions::ENABLE_MATH;
+    let depth = 4000;
+    let html = format!(
+        "{}w0{}",
+        "<table><tr><td>".repeat(depth),
+        "</td></tr></table>".repeat(depth)
+    );
+    let markdown = convert_faithful_options(&html, Options::default()).unwrap();
+    assert!(render_markdown(&markdown, tables_and_math).contains("<td>w0</td>"));
 }

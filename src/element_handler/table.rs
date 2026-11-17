@@ -306,10 +306,16 @@ fn is_whitespace_between_table_elements(node: &markup5ever_rcdom::Node) -> bool 
 /// Only faithful mode can keep such a comment, by writing the table as HTML.
 /// See the "Tables" section of `translation_approach.md`.
 fn holds_a_comment_with_a_pipe(node: &Rc<markup5ever_rcdom::Node>) -> bool {
-    node.children.borrow().iter().any(|child| {
-        matches!(&child.data, NodeData::Comment { contents } if contents.contains('|'))
-            || holds_a_comment_with_a_pipe(child)
-    })
+    let mut pending = vec![node.clone()];
+    while let Some(node) = pending.pop() {
+        for child in node.children.borrow().iter() {
+            if matches!(&child.data, NodeData::Comment { contents } if contents.contains('|')) {
+                return true;
+            }
+            pending.push(child.clone());
+        }
+    }
+    false
 }
 
 /// Whether `node` carries no attributes, which a Markdown table has nowhere to
@@ -326,7 +332,8 @@ fn has_no_attributes(node: &Rc<markup5ever_rcdom::Node>) -> bool {
 }
 
 fn has_explicit_headers(node: &Rc<markup5ever_rcdom::Node>) -> bool {
-    fn visit(node: &Rc<markup5ever_rcdom::Node>, is_root: bool) -> bool {
+    let mut pending = vec![(node.clone(), true)];
+    while let Some((node, is_root)) = pending.pop() {
         for child in node.children.borrow().iter() {
             if let Some(tag_name) = get_node_tag_name(child) {
                 if !is_root && tag_name == "table" {
@@ -336,16 +343,10 @@ fn has_explicit_headers(node: &Rc<markup5ever_rcdom::Node>) -> bool {
                     return true;
                 }
             }
-
-            if visit(child, false) {
-                return true;
-            }
+            pending.push((child.clone(), false));
         }
-
-        false
     }
-
-    visit(node, true)
+    false
 }
 
 fn is_inside_table_cell(node: &Rc<markup5ever_rcdom::Node>) -> bool {
