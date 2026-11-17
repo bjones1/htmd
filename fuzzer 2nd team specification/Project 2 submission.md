@@ -13,7 +13,9 @@ Draft submission
 
 * Altynay: Run the first 4 rounds of LLM reviews with constant updates
 * Aiym: Updated section 9 in round 5
-* Daulet: Generated the initial specification and addressed review findings by improving normalization rules, clarifying GFM test requirements, and defining code block generation and inline whitespace handling.
+* Daulet: Generated the initial specification and addressed review findings by
+  improving normalization rules, clarifying GFM test requirements, and defining
+  code block generation and inline whitespace handling.
 * Ali: Specified the input generator — grammar, element tiers, attribute and
   text domains, bounds, the malformed class, and the case-count breakdown — and
   fixed the list snapshot, `code` opacity, and `Out of Scope` classification
@@ -47,7 +49,11 @@ full fuzzing campaign.
 
 #### Daulet
 
-The project compiled successfully with `cargo build`. All tests passed with `cargo test`: 36 unit tests passed, 1 ignored, and all integration tests and doctests passed. `cargo clippy -- --deny warnings` also completed successfully. One non-blocking warning about redundant `package.homepage` and `package.repository` fields in `Cargo.toml` was reported.
+The project compiled successfully with `cargo build`. All tests passed with
+`cargo test`: 36 unit tests passed, 1 ignored, and all integration tests and
+doctests passed. `cargo clippy -- --deny warnings` also completed successfully.
+One non-blocking warning about redundant `package.homepage` and
+`package.repository` fields in `Cargo.toml` was reported.
 
 #### Ali
 
@@ -181,16 +187,21 @@ Final submission
 ### Contributions
 
 * Altynay: Fixed issues 5, 6, 13 and 14. Eliminated duplicated information,
-  added block diagram for the pipeline. Generated draft source code.
-* Aiym: Addressed Major issues 7–8 and all ten Minor findings. Updated the specification, corrected the draft PRNG, and added seven contract tests.
-* Daulet: Addressed review findings 3, 4, 11, and 12 by adding normalization rules for ordered lists and code blocks, clarifying GFM table requirements, defining pre element generation, and specifying inline whitespace normalization. Also fixed issues 1, 2, 9 and 10.
+  added block diagram for the pipeline. Generated draft source code. Run 2
+  rounds of Spec review and 2 rounds of Implementation review
+* Aiym: Addressed Major issues 7–8 and all ten Minor findings. Updated the
+  specification, corrected the draft PRNG, and added seven contract tests.
+* Daulet: Addressed review findings 3, 4, 11, and 12 by adding normalization
+  rules for ordered lists and code blocks, clarifying GFM table requirements,
+  defining pre element generation, and specifying inline whitespace
+  normalization. Also fixed issues 1, 2, 9 and 10.
 * Ali: Fixed issues 1, 2, 9 and 10.
 
 ### Spec review rounds
 
-| Round | Findings (issues) | Summary and round status                                                                                                                                                                                |
-| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | 5                 | The document is substantially improved and close to executable, but the remaining issues are stricter normalization rules, clearer unsupported-feature boundaries, and exact generator/replay behavior. |
+| Round | Findings (issues)     | Summary and round status                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | 5                     | The document is substantially improved and close to executable, but the remaining issues are stricter normalization rules, clearer unsupported-feature boundaries, and exact generator/replay behavior.                                                                                                                                                                                                                                                                                           |
 
 ### Implementation review rounds
 
@@ -198,45 +209,7 @@ Final submission
 | ----- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | 3                 | Implementation is feasible and realistic, but the oracle still needs stricter normalization rules and tighter handling of unsupported/parser-only features. |
 
+| 2     | 5                 | Implemented seeded generation, Faithful conversion, DOM normalization, malformed inputs, artifacts, and contract tests. Worker isolation, the full CI campaign, minimization, allowlist automation, and several spec clarifications remain. |
 ### Last LLM spec review
 
 ### Last LLM implementation review
-
-
-### Aiym — assigned-review verification (2026-11-16)
-
-Scope: professor's review on upstream PR #17, Major 7–8 and the ten bullets
-under Minor. Review performed against source, not just the specification.
-
-| Finding | Resolution / evidence |
-| --- | --- |
-| Major 7 | §4 uses document parsing with htmd's options for both inputs, then extracts HTML body children. Executable parser parity fixtures cover recovery/whitespace/entities/raw content. |
-| Major 8 | Exact dev-dependencies and Cargo.lock added. Draft now uses actual ChaCha8Rng, uniform u32 bounded draws, and independent wrapping per-case seeds. Stream fixture and replay tests guard drift. |
-| Minor 1 | §3 explicitly identifies Out of Scope as a generator-regression guard. |
-| Minor 2 | §3 explains why the current in-memory built-in API has no expected ordinary I/O error. |
-| Minor 3 | §6 names the authoritative BLOCK_ELEMENTS set; the helper's versioned copy has a source-equality test. |
-| Minor 4 | §8 states that only translation_mode differs from defaults. |
-| Minor 5 | §9 requires executable tests using common helpers; existing snapshots are reused, as already requested in the review. |
-| Minor 6 | §10 logs generator/text-pool/dependency versions and configuration with scheduled seeds. |
-| Minor 7 | §11.4 counts Unicode scalar values before escaping, separately from serialized UTF-8 bytes. |
-| Minor 8 | §11.6 stores decoded characters; raw entity spelling is confined to parser fixtures. Text-pool version is incremented. |
-| Minor 9 | §13 requires valid attributes and unchanged translate/serialize decisions for the failing element and relevant ancestors during reduction. |
-| Minor 10 | Already resolved in team main: scope appears only in §2. Verified and retained. |
-
-Validation in the assistant's Linux environment (not Aiym's Windows laptop):
-`cargo build`, `cargo clippy -- --deny warnings`, and `cargo test` passed.
-The added `tests/fuzzer_contract_tests.rs` tests exercise the parser contract,
-block-set drift, Unicode/entity interpretation, the pinned PRNG stream,
-isolated replay, seed addition, and index overflow. The draft is imported by
-that integration test so the modified PRNG code is compiled and exercised.
-No 15,000-case campaign or worker-isolation verification was performed.
-
-Remaining team implementation work observed during this review:
-`fuzzer-implementation.rs` is still a draft. Its round-trip routine compares a
-normalized tree with its own clone and emits placeholder Markdown, rather than
-running htmd and pulldown-cmark. The malformed-input routine also simulates a
-parser outcome; worker isolation and JSON artifacts are not implemented there.
-The new parser helper is tested but still needs integration into the real
-oracle. These existing placeholders must be replaced before the team claims
-round-trip, crash-safety, or resource-limit validation. Other members' assigned
-normalization/GFM findings remain outside this contribution's completion claim.

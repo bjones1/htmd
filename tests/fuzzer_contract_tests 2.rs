@@ -87,8 +87,10 @@ fn case_replay_does_not_depend_on_previous_cases() {
     for profile in [draft::ParserProfile::Core, draft::ParserProfile::Gfm] {
         let mut sequence = draft::Fuzzer::new(42, 0, profile);
         for index in 0..100 {
-            let sequential = sequence.generate_valid_case();
-            let isolated = draft::Fuzzer::new(42, index, profile).generate_valid_case();
+            let sequential = sequence.generate_valid_case().unwrap();
+            let isolated = draft::Fuzzer::new(42, index, profile)
+                .generate_valid_case()
+                .unwrap();
             assert_eq!(sequential.case_index, index);
             assert_eq!(sequential.master_seed, 42);
             assert_eq!(sequential.input, isolated.input);
@@ -99,14 +101,15 @@ fn case_replay_does_not_depend_on_previous_cases() {
 #[test]
 fn case_seed_wraps_without_panicking() {
     let mut sequence = draft::Fuzzer::new(u64::MAX, u64::MAX, draft::ParserProfile::Core);
-    let first = sequence.generate_valid_case();
-    let second = sequence.generate_valid_case();
+    let first = sequence.generate_valid_case().unwrap();
+    let second = sequence.generate_valid_case().unwrap();
     assert_eq!(first.case_index, u64::MAX);
     assert_eq!(second.case_index, 0);
     assert_eq!(
         second.input,
         draft::Fuzzer::new(u64::MAX, 0, draft::ParserProfile::Core)
             .generate_valid_case()
+            .unwrap()
             .input
     );
 }
@@ -141,22 +144,21 @@ fn oracle_block_set_tracks_htmd_source() {
 }
 
 #[test]
-fn draft_uses_wrapping_sum_as_case_seed() {
+fn generated_case_identity_includes_master_seed_and_index() {
     let profile = draft::ParserProfile::Core;
-    assert_eq!(
-        draft::Fuzzer::new(42, 7, profile)
-            .generate_valid_case()
-            .input,
-        draft::Fuzzer::new(49, 0, profile)
-            .generate_valid_case()
-            .input
-    );
-    assert_eq!(
-        draft::Fuzzer::new(u64::MAX, 1, profile)
-            .generate_valid_case()
-            .input,
-        draft::Fuzzer::new(0, 0, profile)
-            .generate_valid_case()
-            .input
+    let first = draft::Fuzzer::new(42, 7, profile)
+        .generate_valid_case()
+        .unwrap();
+    let replay = draft::Fuzzer::new(42, 7, profile)
+        .generate_valid_case()
+        .unwrap();
+    let different_pair = draft::Fuzzer::new(49, 0, profile)
+        .generate_valid_case()
+        .unwrap();
+
+    assert_eq!(first, replay);
+    assert_ne!(
+        (first.master_seed, first.case_index),
+        (different_pair.master_seed, different_pair.case_index)
     );
 }

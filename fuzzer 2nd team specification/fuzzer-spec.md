@@ -1,4 +1,4 @@
-HTMD Round-Trip Testing and Fuzzing Specification
+﻿HTMD Round-Trip Testing and Fuzzing Specification
 =================================================
 
 1\. Purpose
@@ -45,20 +45,20 @@ Each result is assigned exactly one category:
 | Stale Allowlist Entry   | Allowlist no longer matches real cases          | Warning        |
 | Isolation Setup Failure | Resource-isolation self-test fails              | Abort          |
 
-`Out of Scope` indicates a generator defect: section 6 requires
-HTML-namespace input. This category is a guard against generator regressions;
-a conforming `core` or `gfm` generator never produces it. Count it separately
-from conversion failures.
+`Out of Scope` indicates a generator defect: section 6 requires HTML-namespace
+input. This category is a guard against generator regressions; a conforming
+`core` or `gfm` generator never produces it. Count it separately from conversion
+failures.
 
 Expected-error list: starts empty. Add a case only with a documented reason to
 expect `htmd` to return `Err` and a predefined test asserting it. Generated
 valid HTML is not expected to fail. At the reviewed revision,
 `HtmlToMarkdown::html_to_tree` parses an in-memory UTF-8 `&str` with `.one()`
 and returns `Ok`; `convert` wraps the resulting Markdown in `Ok`. No ordinary
-I/O error kind is expected from this built-in path, even for malformed HTML
-(the parser repairs it). The `io::Result` signature alone does not imply an
-expected error. Panics and worker/resource failures retain their own categories;
-reassess this list if the conversion API or implementation changes.
+I/O error kind is expected from this built-in path, even for malformed HTML (the
+parser repairs it). The `io::Result` signature alone does not imply an expected
+error. Panics and worker/resource failures retain their own categories; reassess
+this list if the conversion API or implementation changes.
 
 4\. Round-trip oracle
 ---------------------
@@ -91,18 +91,18 @@ Steps:
    converter used by this suite. The generator produces body content, but this
    does not mean the parser uses `parse_fragment`.
 2. Convert the identical, unmodified `HTML_in` with `htmd` in `Faithful` mode.
-3. Parse the generated Markdown with `pulldown-cmark` using the selected
-   profile and render it to HTML.
+3. Parse the generated Markdown with `pulldown-cmark` using the selected profile
+   and render it to HTML.
 4. Parse that HTML as a document with the exact same options as step 1.
 5. Extract the ordered children of the HTML-namespace `body` element from each
    document, then normalize and compare them. Do not compare either document
    directly with the generator's pre-serialization tree.
 
-Ignore document wrappers and `head` content when extracting body children;
-never find `body` by matching a tag in a foreign namespace. Failure to find a
-body is an oracle setup error, not an empty passing tree. A generator validation
-failure is separate from a converter mismatch. Retain the original input in
-artifacts, including whitespace and character-reference spelling.
+Ignore document wrappers and `head` content when extracting body children; never
+find `body` by matching a tag in a foreign namespace. Failure to find a body is
+an oracle setup error, not an empty passing tree. A generator validation failure
+is separate from a converter mismatch. Retain the original input in artifacts,
+including whitespace and character-reference spelling.
 
 The public `HtmlToMarkdown::html_to_tree` method may be reused for both parse
 steps to prevent parser-option drift. `tests/common/fuzzer_support.rs` supplies
@@ -122,11 +122,18 @@ in every failure.
 | `core`  | `Options::empty()`                            | Generated cases without GFM-only constructs           |
 | `gfm`   | tables, strikethrough, and task lists enabled | Generated cases with at least one GFM table construct |
 
-A `gfm` round-trip case must contain at least one pipe table that `htmd` actually translates into Markdown. The table must have no caption, no attributes that force HTML fallback, and a structure accepted by the table handler.
+A `gfm` round-trip case must contain at least one pipe table that `htmd`
+actually translates into Markdown. The table must have no caption, no attributes
+that force HTML fallback, and a structure accepted by the table handler.
 
-A captioned table does not satisfy this requirement. In `Faithful` mode, a caption forces the whole table to HTML because GFM has no caption syntax. Such cases test HTML fallback preservation only.
+A captioned table does not satisfy this requirement. In `Faithful` mode, a
+caption forces the whole table to HTML because GFM has no caption syntax. Such
+cases test HTML fallback preservation only.
 
-`htmd` does not translate task-list syntax. An HTML checkbox input in a list item is emitted as HTML and tests only fallback preservation. A checkbox does not satisfy the GFM-construct requirement. A parser-only Markdown task-list fixture verifies the pinned `pulldown-cmark` option.
+`htmd` does not translate task-list syntax. An HTML checkbox input in a list
+item is emitted as HTML and tests only fallback preservation. A checkbox does
+not satisfy the GFM-construct requirement. A parser-only Markdown task-list
+fixture verifies the pinned `pulldown-cmark` option.
 
 `del` and `s` lack handlers in `src/element_handler/`, so `Faithful` mode emits
 them as raw HTML. They are not GFM-only generated constructs: tests cover HTML
@@ -181,22 +188,22 @@ Normalization passes run in order on both trees:
    separate `p` children and other block children remain distinct and ordered.
 6. Remove empty text nodes and merge adjacent text siblings.
 
-Compare opaque elements exactly, without normalizing internal whitespace.
-`pre` and `textarea` are always opaque; `code` is opaque only when
-`preformatted_code` is enabled. Section 8 inherits `preformatted_code: false`
-from `Options::default()`, so inline `<code>` whitespace is not preserved;
-treating `code` as always opaque would report specified behavior as a mismatch.
+Compare opaque elements exactly, without normalizing internal whitespace. `pre`
+and `textarea` are always opaque; `code` is opaque only when `preformatted_code`
+is enabled. Section 8 inherits `preformatted_code: false` from
+`Options::default()`, so inline `<code>` whitespace is not preserved; treating
+`code` as always opaque would report specified behavior as a mismatch.
 
 Block vs. inline:
 
-* Use exactly `BLOCK_ELEMENTS` in `src/util/node.rs` for block membership;
-  every other HTML element is inline for this split. This is htmd's CommonMark
+* Use exactly `BLOCK_ELEMENTS` in `src/util/node.rs` for block membership; every
+  other HTML element is inline for this split. This is htmd's CommonMark
   serialization classification, not CSS display or the HTML content-model
   classification. Content-model validation remains a separate generator check.
 * The set is private to the library. An external harness must maintain a
   versioned copy with an executable equality check against that source set;
-  updating the pinned htmd revision requires rechecking it. Do not substitute
-  an open-ended tag list or infer membership from handler names. In particular,
+  updating the pinned htmd revision requires rechecking it. Do not substitute an
+  open-ended tag list or infer membership from handler names. In particular,
   `textarea` is in the block set and is also opaque under the rule above.
 * Inline runs are maximal sequences of non-block children within a block
   container
@@ -208,11 +215,24 @@ Block vs. inline:
 Remove whitespace-only runs at block boundaries; preserve semantically
 meaningful inline boundary spaces.
 
+Normalization is a document-order, depth-first walk over the parsed DOM. A
+maximal inline run is a sequence of direct non-block children within the same
+block container; text nodes, comments, and inline elements participate in the
+run, but whitespace-only text nodes at block boundaries are stripped before the
+run is formed. Raw HTML and comments are treated as inline only when they are
+non-opaque, direct children of the same block container. This traversal order is
+part of the oracle contract; implementations must not reorder siblings or merge
+across a `br` boundary while canonicalizing.
+
 ### 6.1 Inline-boundary whitespace rule
 
-For every boundary between two adjacent inline-content children, inspect the last character of the left child and the first character of the right child.
+For every boundary between two adjacent inline-content children, inspect the
+last character of the left child and the first character of the right child.
 
-If either boundary contains one or more ASCII whitespace characters, remove all trailing whitespace from the left child's last text node and all leading whitespace from the right child's first text node. Then insert exactly one ASCII space between the two children.
+If either boundary contains one or more ASCII whitespace characters, remove all
+trailing whitespace from the left child's last text node and all leading
+whitespace from the right child's first text node. Then insert exactly one ASCII
+space between the two children.
 
 If neither side contains boundary whitespace, do not insert a space.
 
@@ -244,17 +264,28 @@ Both normalize to:
 <em>a</em> <strong>b</strong>
 ```
 
-Whitespace at the beginning or end of an inline run is removed by normalization pass 4. This rule does not cross block or `br` boundaries.
+Whitespace at the beginning or end of an inline run is removed by normalization
+pass 4. This rule does not cross block or `br` boundaries.
 
 ### 6.2 Round-trip normalization rules
 
-The following differences must be handled by normalization rather than the known-loss allowlist:
+The following differences must be handled by normalization rather than the
+known-loss allowlist:
 
-* For an `ol` element, remove the `start` attribute when its value is `1`. Other values must still be compared.
-* For a `pre` element with exactly one `code` child, remove exactly one trailing newline (`\n`) from the code text during normalization. Do not remove additional trailing newlines.
-* For a `pre` element with exactly one `code` child, treat a single `language-*` class on `pre` and the same class on `code` as equivalent. Move the language class to the `code` child in the normalized representation. All other classes and attributes must still be compared.
+* For an `ol` element, remove the `start` attribute when its value is `1`. Other
+  values must still be compared.
+* For a `pre` element with exactly one `code` child, remove exactly one trailing
+  newline (`\n`) from the code text during normalization. Do not remove
+  additional trailing newlines.
+* For a `pre` element with exactly one `code` child, treat a single `language-*`
+  class on `pre` and the same class on `code` as equivalent. Move the language
+  class to the `code` child in the normalized representation. All other classes
+  and attributes must still be compared.
 
-Add predefined self-tests for every normalization pass. Tests must cover whitespace handling, `br` boundaries, inline-run edges, list paragraph wrappers, empty text nodes, adjacent text nodes, opaque elements, `ol start="1"`, code-block trailing newlines, and language classes on `pre` and `code`.
+Add predefined self-tests for every normalization pass. Tests must cover
+whitespace handling, `br` boundaries, inline-run edges, list paragraph wrappers,
+empty text nodes, adjacent text nodes, opaque elements, `ol start="1"`,
+code-block trailing newlines, and language classes on `pre` and `code`.
 
 7\. Comparison rules
 --------------------
@@ -265,6 +296,10 @@ Add predefined self-tests for every normalization pass. Tests must cover whitesp
   exception registry.
 * Core metadata must always match unless explicitly exempted: `href`, `src`,
   `alt`, `title`, `class` on `code`/`pre`, and `start` on `ol`.
+* Malformed cases are outside the round-trip oracle. A well-formed fallback
+  probe such as `section`, `q`, or `input` remains a valid `valid` case and is
+  evaluated under the normal normalization pipeline; only a single induced
+  corruption or recovery mutation qualifies as malformed.
 * Comments and script/style nodes are compared like any other node unless
   explicitly excluded.
 * Exclusions require explicit evidence and a dedicated predefined assertion.
@@ -292,16 +327,21 @@ let options = Options {
 
 The explicit heading, bullet, and code-block styles equal `Options::default()`
 at the pinned revision; only `translation_mode` overrides its default (`Pure`).
-Other fields inherit from `Options::default()` at the pinned `htmd` version.
-Log all effective options with every failure.
+Other fields inherit from `Options::default()` at the pinned `htmd` version. Log
+all effective options with every failure.
 
 Known-loss allowlist:
 
-* Starts empty. Differences handled by normalization rules in sections 6.1
-  and 6.2 must not be added to the allowlist.
-* Each entry records the HTML pattern, observed diff, source, and status
-* Matches must be narrow and programmatic
-* A mismatch is a failure unless it matches an allowlist rule
+* Starts empty. Differences handled by normalization rules in sections 6.1 and
+  6.2 must not be added to the allowlist.
+* A known-loss entry is eligible only when the mismatch is explained by
+  documented semantics, the same input reproduces under the pinned profile and
+  generator version, and the rule is narrow enough to exclude unrelated nodes.
+* Each entry records the HTML pattern, observed diff, source, and status.
+* Stale allowlist entries are warnings; they must be revalidated or removed
+  before release.
+* Matches must be narrow and programmatic.
+* A mismatch is a failure unless it matches an allowlist rule.
 
 9\. Predefined tests
 --------------------
@@ -331,8 +371,8 @@ Default CI seed plan:
 * 1,000 cases per class/profile per seed
 * 15,000 total CI cases for the default plan
 * Scheduled runs may use a fresh entropy-derived seed, logged and stored with
-  every artifact together with the generator version, text-pool version,
-  exact PRNG dependency versions, and effective generator configuration
+  every artifact together with the generator version, text-pool version, exact
+  PRNG dependency versions, and effective generator configuration
 * Parser-only math and strikethrough fixtures are additional predefined checks,
   not part of the fuzz-case total
 
@@ -347,8 +387,8 @@ Each generated case is run with:
 ---------------------
 
 Byte-level mutation does not test `htmd`: `html5ever` error recovery determines
-the tree shape from arbitrary bytes. Such a run compares two recovered trees
-and reaches element handlers only by accident.
+the tree shape from arbitrary bytes. Such a run compares two recovered trees and
+reaches element handlers only by accident.
 
 Instead, build and serialize a node tree. Every `valid` case is well formed:
 tags balance, nesting follows each element's content model, and parsing
@@ -356,14 +396,14 @@ reconstructs the intended tree.
 
 ### 11.1 Case derivation
 
-A case is identified by (generator version, configuration, class/profile,
-master seed, case index). This revision uses generator version 2 and text-pool
-version 2; seeds from previous drafts are not compatible.
+A case is identified by (generator version, configuration, class/profile, master
+seed, case index). This revision uses generator version 2 and text-pool version
+2; seeds from previous drafts are not compatible.
 
 The project adds exact development dependencies `rand = "=0.9.2"` and
-`rand_chacha = "=0.9.0"` in `Cargo.toml` and commits their resolved `Cargo.lock`.
-Use `rand::SeedableRng` and `rand_chacha::ChaCha8Rng`; they are test/harness
-dependencies, not library runtime dependencies.
+`rand_chacha = "=0.9.0"` in `Cargo.toml` and commits their resolved
+`Cargo.lock`. Use `rand::SeedableRng` and `rand_chacha::ChaCha8Rng`; they are
+test/harness dependencies, not library runtime dependencies.
 
 Case derivation:
 
@@ -372,16 +412,17 @@ Case derivation:
 * Set each case seed to `master_seed.wrapping_add(case_index as u64)` and
   initialize its PRNG with `SeedableRng::seed_from_u64`. Use this PRNG in
   sequence for all case draws, including retries. Create a fresh PRNG for each
-  requested case. For uniform bounded choices, use `rand::Rng::random_range`
-  on `u32` bounds and cast the result to `usize`; this avoids target-width
+  requested case. For uniform bounded choices, use `rand::Rng::random_range` on
+  `u32` bounds and cast the result to `usize`; this avoids target-width
   differences and modulo bias. Repeated generation increments the case index
   with wrapping arithmetic and reseeds from the resulting pair.
 * Record the generator version in every failure artifact. Increment it when
   changing the grammar, element tiers, content domains, draw order, bounded
   sampling method, or either PRNG dependency version. Such changes invalidate
   seed-only replay across versions; retain old versions for historical replay.
-  Record both `rand` and `rand_chacha` versions, even for a patch upgrade. Stored input is
-  the definitive replay path; seed replay is valid only within one version.
+  Record both `rand` and `rand_chacha` versions, even for a patch upgrade.
+  Stored input is the definitive replay path; seed replay is valid only within
+  one version.
 
 ### 11.2 Element tiers
 
@@ -400,8 +441,8 @@ The inventory groups the body-fragment tag registrations in
 `div` and `section` use the generic block fallback and serialize as HTML in
 `Faithful` mode; `q` and `input` use the inline HTML fallback (`q` has inline
 children; `input` is void). None has tag-specific registration. `tfoot` also
-lacks registration; inside a table, the handler falls back to HTML in
-`Faithful` mode because GFM cannot preserve a distinct footer.
+lacks registration; inside a table, the handler falls back to HTML in `Faithful`
+mode because GFM cannot preserve a distinct footer.
 
 Do not generate registered `html`, `head`, or `body` handlers: the generator
 builds body fragments, not document shells. Draw elements only where their
@@ -417,8 +458,8 @@ but they do not satisfy this requirement.
 
 ### 11.3 Grammar and content models
 
-Generate body fragments with 1–8 top-level block children; the synthetic root
-is exempt from section 11.4's child limit. Choose permitted elements and child
+Generate body fragments with 1–8 top-level block children; the synthetic root is
+exempt from section 11.4's child limit. Choose permitted elements and child
 counts uniformly from applicable choices, subject to per-seed coverage and the
 depth limit.
 
@@ -437,13 +478,13 @@ Apply these content-model rules:
   and may also contain nested lists or other block children.
 * `p` and `h1`–`h6` contain inline children only.
 * `pre` has a dedicated generation rule. At least 80% of generated `pre` nodes
-  must contain exactly one `code` child. This `code` child contains one or
-  more text children only. This structure exercises the normal code-block
-  translation path.
-* The remaining `pre` nodes are fallback probes. They may contain direct
-  text or a different inline-child structure, such as a `span` child or
-  multiple children. These structures exercise the HTML fallback path and
-  must not count as translated code-block coverage.
+  must contain exactly one `code` child. This `code` child contains one or more
+  text children only. This structure exercises the normal code-block translation
+  path.
+* The remaining `pre` nodes are fallback probes. They may contain direct text or
+  a different inline-child structure, such as a `span` child or multiple
+  children. These structures exercise the HTML fallback path and must not count
+  as translated code-block coverage.
 * A `code` child is never nested.
 * `a`, `strong`, `b`, `i`, `em`, `span`, and `q` contain inline children.
   Anchors are not nested.
@@ -464,10 +505,11 @@ Every run fixes and logs:
 
 * maximum tree depth, default 6; root elements have depth 1
 * maximum children per node, default 4
-* maximum text length per node, default 64 Unicode scalar values (`text.chars().count()`
-  in Rust), counted before HTML escaping; combining marks count separately and
-  a non-BMP scalar counts once. This is neither a grapheme count nor a byte
-  count. The serialized fragment has a separate 4096-byte UTF-8 limit
+* maximum text length per node, default 64 Unicode scalar values
+  (`text.chars().count()` in Rust), counted before HTML escaping; combining
+  marks count separately and a non-BMP scalar counts once. This is neither a
+  grapheme count nor a byte count. The serialized fragment has a separate
+  4096-byte UTF-8 limit
 
 The depth bound is required because blockquote and list nesting is unbounded and
 list translation depends on depth.
@@ -497,9 +539,9 @@ valid hyperlink or image coverage.
 ### 11.6 Text domain
 
 Text pool version 2 has equally likely classes. For each text node, choose one
-complete, untrimmed value from a class. Both profiles use this pool; GFM coverage
-comes from that profile's generated structures. Classes and representative
-values:
+complete, untrimmed value from a class. Both profiles use this pool; GFM
+coverage comes from that profile's generated structures. Classes and
+representative values:
 
 * Plain words and mixed words: `Hello`, `abc123`, and
   `abcdefghijklmnopqrstuvwxyz012345`.
@@ -510,9 +552,9 @@ values:
 * Apparent inline constructs: `[label](https://example.test/)`,
   `![alt](image.png)`, `<span>raw</span>`, and `~~deleted~~`.
 * GFM and extension markers: `| cell |`, `- [ ] task`, `$x^2$`, and `$$x^2$$`.
-* Decoded character-reference values: `&` (U+0026), newline (U+000A),
-  and non-breaking space (U+00A0). Store the decoded scalars in text nodes,
-  not the strings `&amp;`, `&#10;`, or `&nbsp;`.
+* Decoded character-reference values: `&` (U+0026), newline (U+000A), and
+  non-breaking space (U+00A0). Store the decoded scalars in text nodes, not the
+  strings `&amp;`, `&#10;`, or `&nbsp;`.
 * Whitespace: empty text, a single space, multiple spaces, tabs, newlines,
   leading and trailing spaces, and mixed runs such as `two  spaces`.
 * Unicode: `Привет`, punctuation adjacent to emphasis delimiters, combining
@@ -522,13 +564,13 @@ values:
 
 These are text values, not markup. Escape literal `&`, `<`, and `>` exactly once
 as `&amp;`, `&lt;`, and `&gt;`, but do not escape serializer markup delimiters.
-Thus U+0026 serializes as `&amp;`, U+000A as a literal newline, and U+00A0
-as a literal UTF-8 non-breaking space. Raw reference spellings are covered by
-separate parser fixtures, outside the random text pool. If a fixture deliberately
-stores the literal text `&#10;`, it must serialize as `&amp;#10;` and parse back
-to those five literal characters, not a newline.
-Do not minify HTML, which could change tested whitespace. Emit deterministic
-markup without separator whitespace between adjacent nodes.
+Thus U+0026 serializes as `&amp;`, U+000A as a literal newline, and U+00A0 as a
+literal UTF-8 non-breaking space. Raw reference spellings are covered by
+separate parser fixtures, outside the random text pool. If a fixture
+deliberately stores the literal text `&#10;`, it must serialize as `&amp;#10;`
+and parse back to those five literal characters, not a newline. Do not minify
+HTML, which could change tested whitespace. Emit deterministic markup without
+separator whitespace between adjacent nodes.
 
 Reject and retry fragments exceeding 4096 UTF-8 bytes; never truncate them.
 Allow at most 100 candidates per requested case. If none fits, abort generation
@@ -602,6 +644,11 @@ Memory enforcement depends on platform:
 * Windows: Job Object memory limit
 * macOS/other: resident-size polling only (soft limit)
 
+A soft-limit platform counts as `Resource Limit` only when the worker is
+terminated by the platform enforcement policy and the parent records that
+enforcement mode. A normal exit or an unbounded process is not a valid resource
+limit result.
+
 Before fuzzing, self-test both worker-kill modes with test-only commands on the
 same worker executable:
 
@@ -610,10 +657,10 @@ same worker executable:
   timeout, terminates the worker, and records timeout rather than normal exit.
 * `allocate N` retains an `N`-MiB buffer and writes to at least one byte per
   page to commit memory. Use a self-test memory limit below `N` and a generous
-  timeout. Pass only if enforcement terminates the worker before normal exit.
-  If an address-space limit makes allocation fail inside the worker, it must
-  exit with a reserved non-success status that the parent recognizes as an
-  expected resource-limit termination, not a successful run.
+  timeout. Pass only if enforcement terminates the worker before normal exit. If
+  an address-space limit makes allocation fail inside the worker, it must exit
+  with a reserved non-success status that the parent recognizes as an expected
+  resource-limit termination, not a successful run.
 
 Choose limits so baseline memory fits below the limit and allocation exceeds it
 substantially. Disable test-only commands during ordinary fuzzing. Abort with
@@ -647,12 +694,12 @@ Reduce failures as follows:
    class/profile, content-model validity (for valid inputs), and the failing
    element's translate-or-serialize decision in the pinned `Faithful` handlers.
    Track the failing element and its relevant ancestors through each edit;
-   reject candidates that remove that element or change its path selection.
-   For example, removing an extra attribute can turn a serialized anchor into
-   translated Markdown, while shortening `href`, `src`, `start`, `colspan`, or
-   a language class can leave its valid domain. Such reductions are rejected
-   even when they still produce `Round-Trip Mismatch`. Revalidate attributes
-   and recompute decisions using the actual handler predicates, including
+   reject candidates that remove that element or change its path selection. For
+   example, removing an extra attribute can turn a serialized anchor into
+   translated Markdown, while shortening `href`, `src`, `start`, `colspan`, or a
+   language class can leave its valid domain. Such reductions are rejected even
+   when they still produce `Round-Trip Mismatch`. Revalidate attributes and
+   recompute decisions using the actual handler predicates, including
    ancestor-sensitive table/pre fallback. If the harness cannot establish
    unchanged decisions, conservatively reject that reduction. Preserve both
    original and reduced inputs with their recorded decisions in the artifact.
