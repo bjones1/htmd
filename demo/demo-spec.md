@@ -1,0 +1,319 @@
+# htmd / pulldown-cmark live demo — specification
+
+## Key decisions
+
+- Diff pipeline: HTML mode only, `Faithful` translation mode only, canonicalized fragments, `similar::TextDiff::from_words`, automatic (rounds 2–4).
+- Storage: single JSON object, `version: 1`, flush-before-write controller (rounds 2–4).
+- Canonicalization: `html5ever` fragment parsing, raw-text exemption, foreign-content case preservation (round 4).
+- Performance: 100 ms compute-only budget via `performance.mark`/`measure`; size budget = gzipped `.wasm` artifact, checked in CI (round 5).
+- Cross-browser: `wasm-bindgen-test` on Chromium; Playwright matrix for Chromium/Firefox/WebKit; Safari manual checklist (round 5).
+- Build layout: `demo/` is a standalone crate with a `path` dependency on the root `htmd` crate (round 5).
+- Round trip: fixed `ENABLE_TABLES | ENABLE_MATH`; synchronous main-thread conversion; compute budget measured on a benchmark corpus (round 8).
+- Output state: per-mode outputs with a validity rule; one synchronous commit step; nesting depth measured on the parsed tree via `html_to_tree`; preview stripping on a parsed DOM (round 9).
+- Output bounds: a 2 MB display cap on every generated string; a padded-table estimate before `htmd` runs; the 512-level nesting limit for both modes, enforced by a chunked `html5ever` parse that stops early (replacing the one-shot `html_to_tree`), plus an early `pulldown-cmark` event check in Markdown → HTML; inline whitespace at the fragment root kept as a word boundary (round 16).
+- Recovery and emphasis: a recovery hold that blocks all conversion until the user picks a crash-recovery action; emphasis edge whitespace moved outside the element during canonicalization, matching `htmd` (round 17).
+- Implementation fixes: `<template>` contents count toward the 512-level nesting limit; emphasis-edge whitespace is Unicode `White_Space`, the set `htmd` trims (implementation review IR5); limit banners belong to their buffer, show only for the active mode, and clear as soon as the buffer's text resolves them (implementation review IR6).
+
+## 1. Purpose & Target Audience
+
+An interactive, client-side web tool to convert CommonMark (plus selected extensions) Markdown to HTML (via `pulldown-cmark`) and back (via `htmd`). It enables Rust developers and library maintainers to test edge cases, tweak crate options, and inspect translation fidelity in real time within the browser.
+
+## 2. Goals
+
+*   **Convert input automatically** as the user types, enforcing a strict 100 kB ceiling.
+*   **Support strict one-way conversion** per mode (Markdown → HTML or HTML → Markdown).
+*   **Expose core configuration flags** with a global "Reset Options to Demo Preset" action.
+*   **Persist the active workspace** state in localStorage to prevent data loss.
+*   **Provide a clear pipeline diff** (HTML → Markdown → HTML) with intermediate views.
+*   **Surface conversion failures** (permissive-parse limits, panics, WASM traps) gracefully in the UI without crashing the runtime.
+
+## 3. Non-goals
+
+- User accounts, cloud storage, databases, or shareable link generation.
+- Server-side rendering (SSR) or remote backend conversion.
+- Advanced rich-text WYSIWYG editor features.
+- Dark theme: a single light theme ships; theming is out of scope.
+
+## 4. Functional requirements
+
+### FR-1 — Conversion Modes
+- **Markdown → HTML:** Uses `pulldown-cmark` with all 15 `Options::ENABLE_*` flags listed in FR-4 according to their current sidebar state.
+- **HTML → Markdown:** Uses `htmd`. Malformed HTML is handled permissively via `html5ever` without crashing.
+- **Preview isolation:** Every rendered preview lives in an `<iframe>` with all of the following:
+    * `srcdoc` assigned through the DOM property, never string-interpolated into surrounding HTML;
+    * `sandbox=""` — no tokens: no scripts, no same-origin, no forms, no popups, no top navigation;
+    * a CSP delivered inside the `srcdoc` document via `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';">` (`srcdoc` documents cannot receive response headers);
+    * a `title` attribute (accessible name) and `referrerpolicy="no-referrer"`;
+    * `img-src data:` deliberately blocks all remote images as a privacy choice; inline data-URI images still render;
+    * before injection, preview content is parsed with `html5ever` (fragment parsing, `<body>` context, `RcDom`), walked iteratively with an explicit stack, and serialized per FR-5's serialization rule; string or regex matching is not permitted. In Markdown → HTML mode this parse is FR-7's depth-limited parse; in HTML → Markdown mode it parses the re-rendered Markdown, whose depth the input's limit already bounds. The walk stays iterative regardless, like every tree walk in the demo;
+    * the walk removes every `<base>`, `<meta>`, `<link>`, `<noscript>`, and `<template>` element (including their contents) and every `target` attribute as defense in depth. Removing whole element types, rather than listing `rel` and `http-equiv` values, also covers `refresh`, `x-dns-prefetch-control` (which re-enables anchor DNS prefetching), and `dns-prefetch`/`preconnect`/`prefetch`/`prerender` links, prevents raw `<noscript>` text from being re-parsed as live markup inside the scriptless sandbox, and strips `<template>` shells (whose template_contents are already dropped by the RcDom serializer). The Source tab still shows the unstripped output;
+    * the demo injects its own `<base target="_blank">` after its CSP `<meta>`: `sandbox` does not stop the iframe navigating itself to a page the `srcdoc` CSP no longer covers, but it does block the resulting popup;
+    * consequently, in-page anchors (footnote references and back-links, links to heading ids) do not navigate in the preview. This is accepted: relative URLs in an `about:srcdoc` document resolve against the embedding page's URL, so even without the injected `<base>`, `#fn-1` would load the demo page itself into the iframe.
+
+### FR-2 — Live Adaptive Debounce
+Conversion triggers automatically on input changes:
+- **Inputs ≤ 2 kB** (2,000 UTF-8 bytes): no debounce; conversion is scheduled on the next animation frame after the keystroke.
+- **Inputs > 2 kB and ≤ 100 kB** (2,001–100,000 bytes): debounced with a 250 ms delay after typing stops.
+- **Typing Lock Protection:** for pending edits in the debounced range, schedule conversion at the earlier of 250 ms after the latest edit or 900 ms after the first edit not yet included in a dispatched run. Further edits update the pending input and reset only the 250 ms timer; they never extend the 900 ms deadline. Dispatch clears both timers for that batch; the next edit starts a new batch. If a conversion is already in flight at the deadline, queue the latest input and dispatch it as soon as that run finishes. The forced deadline does not apply to the ≤ 2 kB immediate path. Every edit re-evaluates the size class of the pending batch. An edit that brings a debounced batch to ≤ 2 kB cancels both of its timers and converts on the next animation frame. An edit that takes an immediate batch above 2 kB arms the 250 ms timer and a forced deadline measured from that batch's first edit.
+- **Execution model:** conversion runs synchronously on the main thread (no Web Worker), so FR-7's panic hook and `window` listeners see every failure. A run's `commit` is one synchronous step: it checks the run's sequence number, then writes the preview `srcdoc`, the Source text, and the fidelity panel together, or writes nothing if the run is stale. Clearing the preview assigns "" to iframe.srcdoc (without waiting for a load event). A run is *in flight* from dispatch until the preview iframe fires `load` for that commit (or while a test-only async delay hook suspends the run before commit, during which incoming edits advance the sequence number, release the stale in-flight slot per the sequence rule below, and allow the queued run to execute and commit). Any iframe load event whose sequence number does not match the current commit is ignored. The iframe stays in the DOM and loads while its tabpanel is hidden, and input events are processed during the load. Both modes share this one iframe: a mode switch assigns the target mode's stored preview to it. No timeout guards the `load`. A run whose `load` never arrives keeps the slot only until the next sequence advance (any later input), which releases it under the sequence rule below.
+
+- **Sequence numbers:** the sequence number advances on every buffer change (typing, sample load, Reload Sample, Undo, "Use Output as Input"), every option change including Reset (with `skip_tags` text edits debounced under the same adaptive rules as input text rather than triggering on every keystroke, the size class being the active mode's buffer size), every mode switch, and entering an FR-7 limit. In-flight and queued runs with older numbers are discarded, and discarding an in-flight run immediately releases the in-flight slot so queued or newly triggered runs can dispatch without waiting for an obsolete `load` event. A mode switch also cancels both timers of the pending batch, so that batch never commits into the other mode's pane.
+- **Concurrency:** latest-input-wins. At most one conversion runs at a time and at most one is queued; each run carries a sequence number and stale results are discarded. A forced tick that arrives while a conversion is in flight coalesces into the single queued run.
+- **Input Isolation:** a separate text buffer and a separate output (preview and Source text, plus the fidelity panel in HTML → Markdown mode) per conversion mode. A mode switch never reads, converts, or overwrites the other mode's buffer; only the explicit "Use Output as Input" and sample-loading actions may overwrite a buffer.
+- **Output validity:** a mode's output is *valid* while its buffer and the options are unchanged since the commit that produced it. Option changes reconvert only the active mode, so they invalidate the inactive mode's output. Switching to a mode shows its valid output unchanged; if that output is invalid (options changed, or its pending batch was cancelled by the switch), the switch clears it and immediately converts that mode's own buffer (during FR-8's recovery hold it only clears it). After a workspace is restored at startup, the active mode's buffer is converted once unless a crash marker is present (see FR-7 and FR-8). An output that no commit has produced (the inactive mode's after startup) is invalid, so the first switch to that mode converts its buffer. "Use Output as Input" is disabled while the active mode's output is empty or invalid.
+- **State Preservation:** sidebar options, active tabs, and scroll positions remain unaffected by mode switches.
+- **Explicit Action:** "Use Output as Input" copies the active mode's generated Source output string (regardless of whether the `Rendered` or `Source` tab is currently selected) into the opposite mode's buffer, switches to that mode, and immediately converts. Outputs up to the 2,000,000-byte display cap (§6) can be copied, so the copied text may exceed the 100,000-byte input ceiling; the target buffer then shows the FR-7 size banner and does not convert. If the target buffer was non-empty, an "Undo" toast (`aria-live="polite"`) restores that buffer only, not the mode. It stays until the next buffer edit, mode switch, sample load, "Use Output as Input", or its close button; focus moves, scrolling, and keyboard navigation do not dismiss it.
+
+
+### FR-3 — Output Views
+The output pane features two tabs (`Rendered` and `Source`) implementing the ARIA tabs pattern (see accessibility):
+
+| Conversion Mode | **Source** Tab | **Rendered** Tab |
+| :--- | :--- | :--- |
+| **Markdown → HTML** | The raw, generated HTML string as plain text. | The generated HTML rendered inside a sandboxed `<iframe>` per FR-1. |
+| **HTML → Markdown** | The raw, generated Markdown markup text. | The Markdown re-rendered back into HTML via `pulldown-cmark` with the sidebar's FR-4 flags, inside a sandboxed `<iframe>` per FR-1. |
+
+All user-derived text — the Source tab, the FR-5 fidelity columns (diff tokens as `<ins>`/`<del>`/`<span>` elements), banners, and toasts — renders via `textContent`, never `innerHTML`. Only the sandboxed preview receives markup.
+
+### FR-4 — Configuration & Reset
+- **`pulldown-cmark` options** (all 15 flags in 0.13.x (locked at 0.13.6) are exposed as sidebar checkboxes):
+    * `ENABLE_TABLES` — Tables
+    * `ENABLE_FOOTNOTES` — Footnotes
+    * `ENABLE_STRIKETHROUGH` — Strikethrough
+    * `ENABLE_TASKLISTS` — Task lists
+    * `ENABLE_SMART_PUNCTUATION` — Smart punctuation
+    * `ENABLE_HEADING_ATTRIBUTES` — Heading attributes
+    * `ENABLE_MATH` — Math
+    * `ENABLE_YAML_STYLE_METADATA_BLOCKS` — YAML-style metadata blocks
+	* `ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS` — Pluses-delimited metadata blocks
+	* `ENABLE_OLD_FOOTNOTES` — Old footnotes
+	* `ENABLE_GFM` — GitHub Flavored Markdown (GFM)
+	* `ENABLE_DEFINITION_LIST` — Definition lists
+	* `ENABLE_SUPERSCRIPT` — Superscript
+	* `ENABLE_SUBSCRIPT` — Subscript
+	* `ENABLE_WIKILINKS` — Wikilinks
+
+- **`htmd` core options** (verified against `htmd` 0.5.5; defaults are the crate defaults):
+    *   `heading_style`: `Atx` (Default), `Setex`
+    *   `hr_style`: `Asterisks` (Default), `Dashes`, `Underscores`
+    *   `br_style`: `TwoSpaces` (Default), `Backslash`
+    *   `link_style`: `Inlined` (Default), `InlinedPreferAutolinks`, `Referenced`
+    *   `link_reference_style`: `Full` (Default), `Collapsed`, `Shortcut`
+    *   `code_block_style`: `Fenced` (Default), `Indented`
+    *   `code_block_fence`: `Backticks` (Default), `Tildes`
+    *   `bullet_list_marker`: `Asterisk` (Default), `Dash`
+    *   `ul_bullet_spacing`: 1–4 (Default: 3)
+    *   `ol_number_spacing`: 1–4 (Default: 2)
+    *   `preformatted_code`: `bool` (Default: `false`)
+    *   `translation_mode`: `Pure` (Default), `Faithful`
+
+    The crate options are independent; no combination is invalid. Note: the crate ignores `br_style` in `Faithful` mode (it emits a literal `<br>` there), so the demo disables the `br_style` control while Faithful is active.
+- **`htmd` tag skipping:** a dedicated comma-separated text field maps to `HtmlToMarkdownBuilder::skip_tags`. Edits to this field are debounced using the same adaptive schedule as text input (FR-2) and the same 500 ms save timer (FR-8). The field is parsed by splitting on commas, trimming whitespace, lowercasing, then dropping empty parts, duplicates, and entries not matching `[a-z][a-z0-9-]*`; the field is capped at 200 characters. If the parsed list is empty, omit the `skip_tags` call (passing an empty slice panics in `htmd`). Mixed-case input such as `IMG` is accepted and lowercased, because `html5ever` supplies lowercase tag names for HTML elements. Consequently SVG elements whose `html5ever` names are camelCase (`foreignObject`, `clipPath`, `linearGradient`, ...) cannot be skipped; this is an accepted limitation.
+- **Reset action:** the button is labeled "Reset Options to Demo Preset" and restores only the sidebar configuration:
+    * `pulldown-cmark`: the 7 common flags (`ENABLE_TABLES`, `ENABLE_FOOTNOTES`, `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS`, `ENABLE_SMART_PUNCTUATION`, `ENABLE_HEADING_ATTRIBUTES`, `ENABLE_MATH`) enabled and the remaining 8 flags disabled — the demo preset deliberately differs from the crate default `Options::empty()`;
+    * `htmd`: `translation_mode` set to `Pure`, every other option to its crate default listed above;
+    * `skip_tags` cleared;
+    followed by immediate reconversion. It does not change input text, active mode, active tabs, scroll positions, or loaded samples, and it does not dismiss banners itself. Its reconversion and its storage write follow the normal banner lifecycles (FR-7, FR-8), so a successful reconversion or write still clears a banner that it resolves.
+
+### FR-5 — Pipeline Fidelity Check (HTML Mode Only)
+The pipeline diff (HTML → Markdown → HTML) runs automatically on input changes exclusively when `translation_mode` is set to `Faithful`. In `Pure` mode the fidelity panel is hidden with an explanatory note, because intentional attribute loss would reduce the diff to noise. The panel is hidden under the Pure preset by design — the preset's `htmd` options mirror the crate defaults — and switching the mode radiogroup to Faithful reveals it. To prevent false-positive changes during validation, the engine must execute a word-level text diff strictly on canonicalized HTML strings:
+
+*   **Forward conversion options:** The HTML → Markdown step uses the active sidebar htmd options (including `skip_tags`) with `translation_mode` set to `Faithful`.
+
+*   **Round-trip rendering:** `htmd`'s Markdown is rendered back with exactly `Options::ENABLE_TABLES | Options::ENABLE_MATH`, ignoring the sidebar. These are the only extensions htmd targets, and enabling others (such as smart punctuation or strikethrough) would rewrite unescaped ordinary text (e.g., don't → don’t) into false diffs.
+
+*   **Fragment Parsing:** Parse both the original HTML input and the round-tripped HTML output as fragments via `html5ever::parse_fragment` with a `<body>` context using `markup5ever_rcdom::RcDom`. Fragment parsing places a synthetic `<html>` element under the `RcDom` document; the fragment's top-level nodes are that element's children. Automatic `<html>` or `<head>` wrappers are strictly prohibited in the canonical output. Every canonicalization walk is iterative (explicit stack). *Accepted limitation:* `htmd` parses input with `parse_document`, whereas the fidelity panel parses both sides with `parse_fragment` (`<body>` context) so original and round-tripped HTML undergo identical normalization; for full-page inputs containing `<!DOCTYPE>`, `<head>`, or `<html>/<body>` attributes, the canonical original view reflects fragment parsing rather than the document tree passed to htmd.
+
+*   **DOM Normalization:**
+    *   **Case Folding:** Convert tag names and attribute keys to lowercase for standard HTML elements only. Foreign content namespaces (SVG and MathML) must preserve their native case-sensitivity (e.g., `viewBox`).
+    *   **Attribute Standardization:** Sort all element attributes by `namespace` URL, then `local_name`. For `class` attributes, collapse duplicate whitespace and sort class tokens. All canonicalization sorting compares by Unicode code point (Rust `str` ordering), never locale collation, so every browser produces identical output.
+    *   **Preserved subtrees:** `<pre>`, `<code>`, `<textarea>`, `<script>`, and `<style>` elements, and any element whose `style` attribute declares `white-space` with a value other than `normal`, are preserved with all their descendants: neither the whitespace rules nor the U+00A0 rule below applies inside them, except that a single trailing newline (U+000A) is removed from the last text node inside each `<pre>` element on both sides (a single trailing newline does not render visually, so trimming it prevents false diffs from CommonMark's trailing line ending in code blocks).  CSS `white-space` set by a stylesheet selector is not detected; whitespace preserved that way is outside what the diff verifies.
+    *   **Emphasis edges:** Outside preserved subtrees, and before whitespace collapsing, move the whitespace (Unicode `White_Space`, the set Rust's `str::trim` uses, which includes U+00A0 and the ideographic space U+3000) at the start of each `<em>`, `<i>`, `<strong>`, and `<b>` element's first child, when that child is a text node, to just before the element. Likewise, move the whitespace at the end of its last child, when that is a text node, to just after it. Moved whitespace joins an adjacent text sibling, and inner elements are processed before outer ones. `htmd` makes the same move when it writes emphasis, because CommonMark emphasis cannot begin or end with whitespace. So `<strong>bold </strong>text` and `<strong>bold</strong> text` canonicalize identically, while a space the conversion loses (`<em>a </em>b` → `<em>a</em>b`) still shows in the diff.
+    *   **Whitespace Collapsing:** Outside preserved subtrees, collapse consecutive whitespace and line breaks into a single space. Drop a whitespace-only text node when its previous or next sibling is a block-level element. Whitespace between two inline siblings is a word boundary and survives as one space, at the fragment root too, so `<span>a</span> <span>b</span>` and `<span>a</span><span>b</span>` stay distinct. Then trim leading whitespace from the first child, and trailing whitespace from the last child, of the fragment root and of every block-level element when that child is a text node, and drop text nodes left empty — so `<p>a</p>` and `<p>a</p>\n` (`pulldown-cmark`'s trailing newline) canonicalize identically, and an all-whitespace fragment canonicalizes to the empty string. Block-level elements are `address`, `article`, `aside`, `blockquote`, `caption`, `dd`, `details`, `dialog`, `div`, `dl`, `dt`, `fieldset`, `figcaption`, `figure`, `footer`, `form`, `h1`–`h6`, `header`, `hgroup`, `hr`, `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `summary`, `table`, `tbody`, `td`, `tfoot`, `th`, `thead`, `tr`, and `ul`.
+    *   **Nodes & Entities:** Discard all `Comment` and `Doctype` nodes, and `<template>` elements with their contents. CDATA sections are not DOM nodes: in HTML content `html5ever` parses `<![CDATA[…]]>` as a bogus comment, which the comment rule discards; in SVG and MathML content it parses the contents as ordinary text, which is kept. Outside preserved subtrees, replace non-breaking spaces (`&nbsp;` / U+00A0) with standard spaces (U+0020) before whitespace collapsing. No Unicode normalization (NFC/NFKC) is applied: entities decode to the same code points on both sides and neither `htmd` nor `pulldown-cmark` normalizes text, so a normalization difference is a real change the diff must show.
+*   **Deterministic Serialization:** Serialize each top-level node (each child of the synthetic `<html>` element) in document order with `html5ever::serialize` and `TraversalScope::IncludeNode`, concatenating the results; equivalently, serialize the synthetic `<html>` element with `TraversalScope::ChildrenOnly(None)`. Never serialize the `RcDom` document node itself: `markup5ever_rcdom` panics on it, which `panic = "abort"` turns into the crash overlay. Output all void elements in lowercase without any trailing self-closing slashes (e.g., `<br>`).
+*   **Word-Level Diff:** Run the `similar::TextDiff::from_words` engine (version 2.x) automatically on the canonicalized strings to generate the visual UI diff. `from_words` splits text into alternating runs of whitespace and non-whitespace characters, needs no optional `similar` feature, and compares tokens by exact code points. Both sides use the same tokenizer, so tokenization alone cannot produce a change; text without spaces (e.g., CJK) yields coarse tokens, not false ones. The diff is diagnostic — it reports textual divergence, not proof of semantic equivalence.
+
+### FR-6 — Sample Documents
+Three samples with fixed content shipped in the binary. A sample has one variant per mode it supports: a Markdown variant for Markdown → HTML and an HTML variant for HTML → Markdown.
+- **CommonMark basics** (both modes): headings, emphasis, lists, links, and fenced code — expected to round-trip losslessly in both modes.
+- **Inline HTML** (HTML → Markdown only): inline spans with attributes and raw HTML blocks — validates block preservation; in `Pure` mode attribute loss is expected and visible; in `Faithful` mode attributes are preserved.
+- **Math** (both modes): `$` and `$$` formulas — round-trip when `ENABLE_MATH` is on; render as literal `$` text without warnings when it is off.
+
+Sample actions:
+- Clicking a sample loads its variant for the current mode into the current buffer. If the sample has no variant for the current mode (Inline HTML clicked in Markdown → HTML mode), the click switches to the sample's mode and loads it into that mode's buffer; the other buffer is untouched. The load converts immediately, offers the same "Undo" affordance as "Use Output as Input" (restoring only the replaced buffer, not the mode), and becomes that mode's selected sample.
+- The selected sample is tracked per mode and persisted (FR-8); clicking Undo after loading a sample restores only the replaced text buffer and intentionally leaves the newly selected sample unchanged (so a subsequent Reload Sample loads that selected sample). Each mode's default sample is CommonMark basics.
+- **Reload Sample** loads the current mode's selected sample (or that mode's default if none is selected) into the current buffer, converts immediately, and offers the same "Undo" affordance. It never changes options, mode, or tabs, and is independent of "Reset Options to Demo Preset".
+
+### FR-7 — Error Boundaries & Limits
+- **Size limit:** the ceiling is **100,000 UTF-8 bytes** of the input string (measured via `TextEncoder`). Inputs **strictly larger** than the ceiling halt conversion, clear the output and diff, and show the `aria-live="assertive"` banner exactly once per transition into the limit: *"Input exceeds the 100,000-byte maximum for client-side processing."* The oversized text stays in the editor and is persisted; processing resumes automatically once the input is at or below the ceiling.
+- **Nesting limit:** input whose element nesting exceeds **512 levels** is rejected before conversion (HTML → Markdown) or before preview (Markdown → HTML) exactly like the size limit: conversion halts, the output and diff are cleared, the banner *"Input exceeds the supported nesting depth."* is shown once per transition into the limit, and processing resumes automatically once the input is back within it. *Parse cost:* `html5ever` parses iteratively without deep recursion, but its tree builder scans the stack of open elements on every block start tag, so a full parse takes time quadratic in nesting depth (about 16 s in a native release build for 50,000 nested `<blockquote>` elements). Every parse the limit applies to is therefore depth-limited. The input is fed to `html5ever` in 4,096-byte chunks (at UTF-8 boundaries), and after each chunk the partial tree's maximum element depth is measured with an iterative walk. The parse stops as soon as that depth exceeds 512, so a 100,000-byte input of 25,000 nested `<ul>` elements costs at most one chunk's worth of levels past the limit. In HTML → Markdown mode, the demo parses the input once this way with `parse_document`, using the same options as `HtmlToMarkdown::html_to_tree` (`scripting_enabled: true`; `html_to_tree` itself only parses in one shot). Children of `<head>` and `<body>` are depth 1. A `<template>`'s contents count at the depth of its children: `RcDom` keeps them outside the element's `children` and the converter skips them, but the tree builder still holds them on its stack of open elements, so `<template>` followed by 25,000 nested `<ul>` costs the same quadratic parse as the bare nesting. The demo passes the same tree to `tree_to_markdown` only when its depth is ≤ 512. Measuring the parsed tree rather than scanning raw tags counts what the converter will walk (plus template contents), so void elements, optional end tags, misnested tags, and `<` inside attributes, comments, or raw text need no special rules. The limit protects `htmd`'s recursive conversion traversal within the default 1 MiB WebAssembly call stack (verified in release wasm builds against stack-heavy constructs such as nested lists, blockquotes, and tables in both Pure and Faithful modes; if headroom is insufficient, the ceiling is lowered or the linker stack size is increased explicitly). In Markdown → HTML mode, `pulldown-cmark` and FR-1's preview walk are iterative, so the limit exists for parse cost, not stack depth. It applies to the rendered HTML: the preview's fragment parse is depth-limited as above, with top-level elements at depth 1, which counts raw HTML embedded in the Markdown too. A cheaper check runs first, during rendering. Each `Start` event of a tag that renders as an element opens a level (`HtmlBlock` and metadata blocks do not), and each `End` closes one. Rendering stops at the first event past 512, so 50,000 `>` characters never become 50,000 nested `<blockquote>` elements. Either check rejecting means nothing is previewed. A top-level paragraph is depth 1, so 511 `>` followed by text is depth 512.
+- **Malformed HTML:** input with syntax errors (e.g., unclosed tags) is not a runtime failure. The engine leverages `html5ever`'s permissive parsing to build a best-effort DOM tree without throwing exceptions; `<script>`/`<style>` contents are treated as raw text.
+- **Rust panics:** a single custom panic hook is installed once at startup. It first delegates to `console_error_panic_hook` (only one global hook exists, so it must chain rather than install a second), is null-safe and idempotent (guards element lookups; runs its body once), then halts all further workspace storage writes (canceling pending save timers and ignoring `pagehide`/`visibilitychange` flushes), writes a crash-marker key (htmd_cmark_live_crashed) to `localStorage` inside a `try/catch`, un-hides the static fallback overlay element in `index.html` (*"Critical Application Error. Please reload the page."*), permanently disables **all** interactive controls (mode switch, tabs, samples, options, reset, "Use Output as Input") by setting `inert` on the application root, moves focus to the overlay (`role="alertdialog"`), and logs the trace to the console. The overlay lives outside the application root that receives `inert`, so it remains operable and receives the moved focus. The hook uses only raw `web-sys` DOM calls, never Leptos signals or other reactive state: that state may be borrowed at the panic site, and re-entering it would panic again and abort before the overlay shows. The release profile uses `panic = "abort"`; the hook runs before the abort trap and is verified with deliberate panics in debug and release builds. Deliberate-panic verification uses an opt-in `demo-panic-test` cargo feature that adds a toolbar panic button; the feature is compiled out of shipped builds. The release pipeline's `wasm-opt` pass does not preserve a name section; the hook logs the panic message — symbolized traces are not guaranteed.
+- **WASM traps & OOM:** low-level traps and out-of-memory errors bypass the Rust panic hook and are intercepted via global `window` `error` and `unhandledrejection` listeners in `index.html`, which set the `htmd_cmark_live_crashed` marker in localStorage (inside `try/catch`) and show the same static crash overlay, with the workspace-write halt remaining on the Rust-panic path — the marker alone prevents crash loops, because post-trap persisted state is exactly what FR-8:160's recovery restores. Recovery requires a manual page reload.
+- **Future-proof wrapper:** the internal converter wraps execution in a `Result` for forward compatibility with fallible future `htmd` APIs; an `Err` clears the active output and diff (which disables "Use Output as Input" per FR-2) and displays a non-fatal `aria-live="assertive"` banner once per transition into the error state, clearing the banner on the next successful conversion or when the input is cleared.
+- **Banner scope:** the size, nesting, output-cap, and conversion-error banners each belong to the buffer that entered them. The banner region shows only the active mode's, so a mode switch hides the other mode's banners and shows them again, announced again, on the switch back. A commit, edit, or overwrite of one mode's buffer never clears the other mode's banners. A banner clears without waiting for a conversion when the buffer's text alone resolves it: the size banner once the buffer is at or below the ceiling, and every limit banner once the buffer is empty, because empty input clears the output without converting.
+
+### FR-8 — Storage & Persistence
+- **Storage key:** use `htmd_cmark_live_workspace` for the workspace JSON and `htmd_cmark_live_crashed` for the crash-recovery marker.
+- **Initial workspace:** Without a saved workspace, start in Markdown → HTML mode on the Rendered tab, with empty inputs and output, zero input scroll offsets, the Demo Preset applied, and no sample selected or preloaded.
+- **Safe reads (validation):**
+    * Wrap `localStorage.getItem` and `JSON.parse` in `try/catch`.
+    * Fall back to in-memory state without crashing if storage is blocked (Incognito).
+    * Validate `version == 1`, data types, and enum variants for all fields.
+    * Remove the workspace key and the crash marker, and reset to Demo Preset with empty inputs, if the version is not 1, the JSON is corrupt, fields are invalid, skip_tags exceeds 200 characters, or spacing is outside the 1–4 range. Only these two keys are removed, never `localStorage.clear()`: a GitHub Pages project site shares its origin, and therefore its storage, with every other project site of the same user or organization.
+    * Missing fields: an absent `scroll_*` reads as `0` and an absent `sample_*` as `null`; any other absent field is invalid.
+    * Crash-loop recovery: if `htmd_cmark_live_crashed` is present at startup, keep the marker in `localStorage`, restore the validated workspace buffers and options without running the initial conversion (leaving outputs and diff empty), and show a non-fatal banner offering actions to either `Convert restored input` (which clears the banner, runs conversion, and removes the marker once conversion succeeds) or `Clear buffers` (which empties both input buffers, keeps outputs and diff cleared, removes the marker, saves the workspace, and clears the banner).
+    * Recovery hold: the marker does not record which mode's buffer crashed, so while the recovery banner is shown nothing converts. Edits, option changes, Reset, sample loads, Reload Sample, Undo, and mode switches still update buffers, options, and storage as usual. Outputs and diff stay empty, which keeps "Use Output as Input" disabled under FR-2's empty-output rule. Choosing either banner action ends the hold. `Convert restored input` converts only the active mode's buffer; the other mode's buffer converts on the first switch to it, because its output is invalid. If that buffer then crashes, the marker is written again and the next startup returns to recovery, not to a crash loop.
+
+- **Persisted-state schema:** the stored JSON object contains exactly these fields (unknown fields are ignored on read):
+    * `version`: `1` (global)
+    * `mode`: `"md-to-html"` or `"html-to-md"` (global)
+    * `input_md_to_html`: string (per-mode buffer)
+    * `input_html_to_md`: string (per-mode buffer)
+    * `active_tab`: `"rendered"` or `"source"` (global)
+    * `scroll_md_to_html`, `scroll_html_to_md`: input scroll offset per mode, number ≥ 0, persisted across reloads on the same 500 ms debounced save timer as text, default `0`
+    * `cmark`: object of the 15 FR-4 booleans (`tables`, `footnotes`, `strikethrough`, `task_lists`, `smart_punctuation`, `heading_attributes`, `math`, `yaml_style_metadata_blocks`, `pluses_delimited_metadata_blocks`, `old_footnotes`, `gfm`, `definition_list`, `superscript`, `subscript`, `wikilinks`)
+    * `htmd`: object with the FR-4 enum options (`heading_style`, `hr_style`, `br_style`, `link_style`, `link_reference_style`, `code_block_style`, `code_block_fence`, `bullet_list_marker`, `translation_mode`), the integers `ul_bullet_spacing` and `ol_number_spacing` (1–4), and `preformatted_code` (bool)
+    * `skip_tags`: string (raw field text, ≤ 200 characters)
+    * `sample_md_to_html`: `"basics"`, `"math"`, or `null`; `sample_html_to_md`: `"basics"`, `"inline_html"`, `"math"`, or `null` — the per-mode selected sample (FR-6), default `null`
+- **Unified writes (controller):**
+    * **State serialization:** save the persisted-state schema above into a single atomic JSON object.
+    * **Debounced text save:** queue a 500 ms debounced write upon text entry.
+    * **Atomic flush-before-write:** any UI interaction (mode toggle, option switch, tab change) must immediately flush the latest text buffers into the state object, cancel the pending text timer, and execute a synchronous write.
+    * **Guaranteed flush:** force-flush all unsaved buffers on `pagehide` and `visibilitychange` events.
+    * **Quota guard:** wrap all writes in `try/catch`; a failed write (e.g., `QuotaExceededError`) shows the non-fatal banner *"Workspace could not be saved; recent changes will be lost on reload."* once per transition into failure, cleared by the next successful write.
+    * **Multiple tabs:** on a `storage` event for the key, a tab keeps its own state and shows the non-fatal banner *"This workspace was changed in another tab; saving here will overwrite it."* once per transition into the externally-modified state. The other tab's debounced saves fire a `storage` event about every 500 ms while it is in use, so further external writes while the banner shows do not re-announce it. The banner clears after this tab's next successful write, which overwrites the external change; writes stay last-writer-wins. *Accepted limitation:* other project sites on the same GitHub Pages origin can read and overwrite these keys and fire `storage` events for them.
+
+## 5. UI sketch
+
+```
++---------------------------------------------------------------------+
+| htmd <-> pulldown-cmark demo              active mode: [MD -> HTML]  |
+| [Markdown -> HTML] [HTML -> Markdown]                              |
+|                [Options] [Reset Options to Demo Preset]             |
++------------------------------+--------------------------------------+
+| Input                        | Output                               |
+| (textarea, active buffer)    | [Rendered] [Source]                  |
+| Samples: [Basics][HTML][Math]|  (sandboxed iframe, or plain text)   |
+|                              |                                      |
+| [Use Output as Input]        |                                      |
+| [Reload Sample]              |                                      |
++------------------------------+--------------------------------------+
+| Pipeline Fidelity Check (Faithful mode only, automatic)             |
+| Original (canonical) | Round-tripped (canonical) | Word diff        |
++---------------------------------------------------------------------+
+| [error banner region, aria-live="assertive", collapsed when empty]  |
++---------------------------------------------------------------------+
+```
+
+- Responsive: panes stack vertically on narrow screens.
+- Keyboard accessible: mode toggle and tabs follow the ARIA patterns in section 6; all controls have labels.
+- Live regions: the banner region and the toast's `aria-live="polite"` region are always in the accessibility tree and only visually collapsed when empty, never `display: none` or `hidden`, because screen readers often skip content inserted while a region is being revealed. Concurrent banners stack in the single banner region, one child element per message, each announced once when added.
+- Single light theme; dark theme is a non-goal.
+
+## 6. Non-functional requirements
+
+### Performance & WASM
+- **Compute budget:** `demo/bench/corpus/` contains exactly four documents plus a manifest: `basics-scaled.md` and `math-scaled.md` (the Markdown samples repeated to ≈20 kB each), `inline-html.html` (the HTML sample padded to ≈20 kB), `real-page.html` (a real-world-style page, 50–100 kB: a synthetic documentation page whose markup mirrors a typical documentation site, recorded as synthetic in the manifest), and `README.md` recording each file's exact byte size. One full conversion — including canonicalization and diff generation when active — completes in under 100 ms for every document in the corpus, measured with `performance.mark`/`performance.measure` around the conversion call. Long-task jank is monitored with the Long Tasks API on Chromium; on Firefox and WebKit it is verified via Playwright tracing and manual observation; Total Blocking Time is a load-time metric and is not used for conversion latency.
+- **Adversarial bounds:** inputs ≤ 100 kB outside the corpus are exempt from the compute budget but bounded:
+    * After stripping the common token prefix and suffix, a diff whose middle exceeds 5,000 tokens on either side is skipped; the panel shows both canonical strings with *"Diff too large to display."* Do not use `similar`'s deadline: `std::time::Instant::now` panics on `wasm32-unknown-unknown`.
+    * Generated output over 2,000,000 UTF-8 bytes is cleared instead of displayed, with the non-fatal banner *"Output exceeds the 2 MB display limit."*. The cap covers Markdown → HTML's HTML and HTML → Markdown's Markdown, its re-rendered Rendered-tab HTML, and (in Faithful mode) its round-trip HTML. When the output cap trips, the entire output is cleared — both the Rendered and Source tabs — the fidelity panel is cleared, the cap banner is shown, and "Use Output as Input" is disabled by the existing empty-output rule. The banner follows the FR-7 banner lifecycle: it is shown once per transition and cleared by that mode's next successful conversion or by emptying that mode's buffer (FR-7 *Banner scope*).
+    * Markdown → HTML amplification comes from empty table cells: pulldown-cmark 0.13.x's link-reference expansion fuel (`max(len, 100_000)` bytes) caps reference-link output near the input size, so the cap is exercised with aligned empty table cells, ~34× per `|`.
+    * HTML → Markdown amplification comes from table padding. `htmd` pads every table cell to its column's widest cell and, in Pure mode, every row to the widest row, so a table's Markdown grows with rows × the sum of column widths. For example, 50 header cells of 1,000 characters over 100 rows of empty cells is ~97 kB of HTML but ~5 MB of Markdown, and over 100 MB with short rows. A check after conversion would only see that string once it was built. So before conversion, the demo estimates each table's padded size on the parsed tree as `(rows + 2) × Σ (width + 3)`, approximating each cell's width by the serialized size of its contents. If the total exceeds 2,000,000 bytes, the input is rejected with the same banner and `htmd` never runs. The estimate covers plain-text padding; escaping can make a cell's Markdown up to about twice its contents, which the cap after conversion catches.
+- **End-to-end latency** — keystroke to updated preview — stays under 400 ms for corpus-scale documents on the reference environment; adversarial inputs within the 100,000-byte limit are bounded by the 1,000 ms ceiling of §8.3.
+- **Cold start:** initialization completes within 1500 ms from navigation start to conversion-ready, on a mid-range desktop CPU (4-core laptop, 2020 or newer), without network or CPU throttling, warm cache.
+- **Size budget:** the gzipped `demo/dist/*.wasm` artifact must remain strictly under 1.5 MB (1,572,864 bytes), measured in CI by `gzip -6 -c demo/dist/*.wasm | wc -c`. `wasm-opt` runs via Trunk at level `z` (`data-wasm-opt="z"` on the `rust` link in `index.html`); CI installs a pinned Trunk version, and `Trunk.toml` `[tools]` pins the `wasm-bindgen` and `wasm-opt` versions Trunk downloads. Gzip level 6 is the CI measurement, not a build setting.
+- **Release profile (demo crate):** `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `strip = false` (rustc's `strip` drops sections `wasm-opt` requires; name-section stripping is left to the release pipeline's `wasm-opt` pass). The demo is a standalone crate, so the root profile (`debug = true`) does not apply to it.
+- **Dependency constraints:** `pulldown-cmark = { default-features = false, features = ["html"] }` prunes the CLI dependency. Direct dependencies: `htmd` (path), `leptos` (feature `csr`), `pulldown-cmark`, `html5ever` and `markup5ever_rcdom` (the same minor versions as the root `htmd` crate, currently 0.39, so only one copy is linked into the wasm), `similar`, `send_wrapper` (0.6; Leptos view closures must be `Send` even in CSR), `serde`, `serde_json`, `wasm-bindgen`, `js-sys`, `web-sys`, `console_error_panic_hook`. Versions are pinned by the committed `demo/Cargo.lock`; CI builds with `--locked`.
+
+### Accessibility & Compatibility
+- **WCAG 2.1 AA (scoped):** full keyboard operability with visible focus indicators, explicit labels on every control, contrast ≥ 4.5:1 for normal text and ≥ 3:1 for large text and UI components, and `aria-live="assertive"` error banners announced once per state transition (not per keystroke).
+- **ARIA patterns:** the mode toggle is a radiogroup; the output tabs implement the tabs pattern (`role="tablist"`/`tab`/`tabpanel`, `aria-selected`, `aria-controls`, arrow/Home/End keys, inactive panes hidden); options are grouped in a `fieldset` with `legend`; the preview iframe has an accessible name; focus moves to the crash overlay on panic; focus is restored after a non-terminal error resolves (banners); the panic overlay is terminal until a manual reload.
+- **Automated checking:** axe-core runs in CI on the built page; a manual screen-reader pass (NVDA or VoiceOver) is part of the release checklist.
+- **Compatibility floors (testable minimums):** Chrome ≥ 120, Firefox ≥ 120, Safari ≥ 17. "Latest stable" applies only to the manual smoke checklist.
+
+## 7. Deliverables
+
+1. `demo/` — a standalone crate (not a workspace member) containing the Leptos CSR application, depending on the root `htmd` crate via `path = "../"`.
+2. `demo/README.md` with development and build instructions (native and wasm targets).
+3. `.github/workflows/demo-ci.yaml` running on the demo crate: clippy for `wasm32-unknown-unknown` with `--locked -- -D warnings`; native `cargo test --locked`; the `wasm-bindgen-test` suite against headless Chromium; `trunk build --release`; the gzip size check (fails at ≥ 1,572,864 bytes); a small malformed-input fuzz corpus; the Playwright end-to-end matrix (Chromium, Firefox, WebKit); and an axe-core accessibility scan of the built page driven by Playwright, failing CI on violations. The `wasm-bindgen-test` suite runs against headless Chromium in both debug and release profiles — at minimum, the FR-7 nesting cases run with `--release`. The crash-recovery cases of §8.6 run against a build with the `demo-panic-test` feature enabled, in both debug and release profiles; the feature is never enabled in the shipped Pages build. The root-repo gates (`cargo build`, `cargo clippy -- --deny warnings`, `cargo test`) continue to cover the library and are unaffected by `demo/`.
+4. Static-host deployment of `dist/` (GitHub Pages) via the same workflow, built with `trunk build --release --public-url` set to the Pages project path (e.g., `/htmd/`): Trunk's default `/` breaks asset URLs on a project site.
+5. This specification, updated to match the implemented behavior.
+
+## 8. Acceptance criteria
+
+### 8.1. Build & Deployment
+- [ ] Root-repo gates pass unchanged: `cargo build`, `cargo clippy -- --deny warnings`, and `cargo test`.
+- [ ] `trunk build --release` produces a static `dist/` directory deployable on any static host.
+- [ ] CI runs an automatic size-check step (GitHub Action or script) that fails if the gzipped `.wasm` artifact reaches or exceeds 1.5 MB (1,572,864 bytes).
+
+### 8.2. Cross-Browser Compatibility
+- [ ] The `wasm-bindgen-test` unit suite passes in headless Chromium.
+- [ ] The Playwright end-to-end suite passes on Chromium, Firefox, and WebKit.
+- [ ] The manual smoke-test checklist passes on latest stable Chrome, Firefox, and Safari (macOS/iOS), with the section 6 floors as minimums.
+
+### 8.3. Performance Benchmarks
+- [ ] Conversion (compute-only, including canonicalization and diff) takes under 100 ms for corpus-scale documents, verified for every document in the `demo/bench/corpus/` benchmark corpus, measured via `performance.measure`.
+- [ ] **Adversarial bounds:** 100 kB of empty table-cell amplification shows the 2 MB banner (pulldown-cmark 0.13.x's link-reference expansion fuel — `max(len, 100_000)` bytes, consumed by each expansion's URL length — caps reference-link output near the input size, so the old "reference-link amplification" recipe was never executable; 50 aligned columns of empty cells amplify ~34× per `|`, e.g., 1,200 rows → 2,053,756 bytes), and a fully divergent 100 kB diff shows "Diff too large to display"; in HTML → Markdown mode, a padded table (50 header cells of 1,000 characters over 100 rows of empty cells, in both translation modes) shows the 2 MB banner before `htmd` converts it; none of these hangs or panics. When the cap trips, the entire output — both the Rendered and Source tabs — and the fidelity panel are cleared, and "Use Output as Input" is disabled by the existing empty-output rule.
+- [ ] The full conversion pipeline for any input within the 100,000-byte limit — including the fidelity diff — completes in under 1,000 ms on the reference environment (Chromium on desktop-class hardware), asserted by the Playwright performance suite. This 1,000 ms ceiling is the adversarial worst-case bound: for adversarial inputs it supersedes the 400 ms end-to-end budget (§6) and the 100 ms compute budget.
+- [ ] Inputs ≤ 2 kB: keystroke-to-render end-to-end within 100 ms.
+- [ ] No visible input lag when typing documents up to 100 kB: no long task attributable to keystroke handling (asserted on Chromium via the Long Tasks API; on Firefox/WebKit by trace inspection); scheduled conversion runs may occupy the full applicable ceiling — the 100 ms compute budget for corpus-scale documents, or the 1,000 ms adversarial ceiling for other inputs.
+- [ ] Cold start to conversion-ready within 1500 ms on the reference environment of section 6.
+
+### 8.4. Accessibility (WCAG 2.1 AA, scoped)
+- [ ] Full keyboard navigation (tab-focusable controls with visible focus indicators).
+- [ ] Accessible labeling: all inputs and option checkboxes have explicitly associated `<label>` or `aria-label` tags.
+- [ ] Color contrast meets ≥ 4.5:1 for normal text and ≥ 3:1 for large text and UI components.
+- [ ] Error and size-limit banners use `aria-live="assertive"` and are announced once per state transition.
+- [ ] Output tabs implement the ARIA tabs pattern with arrow-key navigation; axe-core passes in CI.
+- [ ] Tabbing from the editor to the "Undo" toast does not dismiss it; Undo restores only the overwritten buffer.
+
+### 8.5. Functional Happy Paths
+- [ ] Markdown → HTML and HTML → Markdown conversions update the output within the section 8.3 latency budgets: inputs ≤ 2,000 bytes end-to-end within 100 ms; corpus-scale documents, including the sample documents, within 400 ms after the last keystroke; all other inputs within the 100,000-byte limit bounded by the 1,000 ms adversarial ceiling.
+- [ ] The options panel dynamically updates the active output, and "Reset Options to Demo Preset" restores exactly the FR-4 preset — input text, mode, tabs, scroll positions, and samples untouched, and banners changed only through the normal lifecycles of its reconversion and save (e.g., after a transient storage failure, Reset's successful write clears the save-failure banner).
+- [ ] The pipeline fidelity check (Faithful mode) automatically renders the canonicalized original HTML, the canonicalized round-tripped HTML, and a word-level diff of those canonicalized strings only.
+- [ ] Sample documents load immediately into the input pane, replace the current buffer with "Undo" available, and update the output state. Clicking Inline HTML in Markdown → HTML mode switches to HTML → Markdown and replaces only the HTML buffer; Undo restores that buffer and leaves the mode unchanged.
+- [ ] "Use Output as Input" copies the active mode's generated Source output string (regardless of which output tab is active) into the other mode's buffer, switches to that mode, and converts; with a non-empty target buffer, Undo restores that buffer only. The button is disabled while the active output is empty or invalid.
+- [ ] After editing a loaded sample, Reload Sample restores the current mode's selected sample (CommonMark basics if none is selected), offers Undo, and leaves options, mode, and tabs unchanged; the selection survives a reload of the page.
+
+### 8.6. Negative & Edge Cases
+- [ ] Empty input clears the output pane, and any limit banner its buffer holds, immediately and without console errors or application panics.
+- [ ] **Banner scope:** with one mode's buffer over a limit, the other mode's buffer crossing the same limit announces its own banner, and coming back within the limit leaves the first buffer's banner in place; a mode switch shows only the active mode's banners.
+- [ ] **Permissive parsing:** malformed HTML (mismatched tags, broken attributes) converts to a best-effort Markdown representation without runtime exceptions or broken application state.
+- [ ] **Byte-accurate limit:** an input of exactly 100,000 UTF-8 bytes converts; 100,001 bytes halts conversion, clears output and diff, keeps and persists the text, shows the banner once, and resumes automatically back at the limit.
+- [ ] **Nesting depth:** input nested deeper than 512 levels is rejected with the banner before any conversion, clearing the output and diff; input at 512 levels (tested in the release `wasm32` build with stack-heavy nested lists, blockquotes, and tables in both `Pure` and `Faithful` modes) still converts without a stack overflow, and so do 600 unclosed `<p>` tags and 600 `<br>` siblings. In Markdown → HTML mode, 511 `>` followed by text (depth 512) renders, and 512 `>` followed by text (depth 513) shows the nesting banner with the output cleared. 100,000 bytes of nested `<ul>` (25,000 levels) are rejected in both modes within the §8.3 1,000 ms ceiling: as HTML → Markdown input, and as raw HTML inside Markdown, with or without a leading `<template>`.
+- [ ] **Concurrency:** when a test hook introduces a 300 ms async suspension before commit, newer input arriving during the suspension advances the sequence number, discards the suspended run, and runs the queued input to completion; when the suspended run resumes, it writes nothing — neither overwriting the newer output nor refilling output cleared by crossing the size limit during the delay. A debounced batch pending when the mode is switched never commits into the other mode's pane.
+
+- [ ] **Forced deadline:** with controlled timers, valid input above 2,000 bytes, and edits every 100 ms for three seconds, the first conversion dispatch occurs by 900 ms. Each later pending batch has the same maximum wait while the converter is idle. With an in-flight run, the latest queued input dispatches as soon as that run finishes; no additional runs accumulate.
+- [ ] **`skip_tags` parsing:** empty, whitespace-only, mixed-case (`IMG`), duplicate, and unknown entries produce a working converter — no panic on the cleared field.
+- [ ] Switching between conversion modes preserves separate text states for each mode without data loss or layout corruption. With results in both modes, a switch shows the target mode's output unchanged and converts nothing; after an option change in one mode, switching to the other reconverts only that mode's own buffer.
+- [ ] Closing or refreshing the browser tab retains typed inputs, selected mode, preview tabs, and sidebar configuration.
+- [ ] **Blocked storage:** the app runs and converts normally if `localStorage` is blocked or throws security exceptions.
+- [ ] **Malformed JSON:** a non-parseable storage string triggers a clean fallback to defaults without panics.
+- [ ] **Type & enum mismatch:** wrong field types or invalid enum variants are rejected, causing a reset to defaults.
+- [ ] **Out-of-bound values:** spacing parameters outside the 1–4 range are detected and rejected.
+- [ ] **Future version:** storage containing `"version": 2` or higher is dropped and the app boots with the Demo Preset and empty inputs (same rule as corrupt or invalid payloads).
+- [ ] **Data loss prevention:** type text, immediately toggle a sidebar option within 500 ms, and refresh — the freshly typed text is fully preserved.
+- [ ] **Quota failure:** with `localStorage.setItem` throwing `QuotaExceededError`, editing shows the "could not be saved" banner once while conversion continues; the next successful write clears it.
+- [ ] **Multiple tabs:** typing in a second tab shows the "changed in another tab" banner in the first tab once, however many writes arrive, without altering its buffers; the first tab's next successful write clears it.
+- [ ] **Escaped views:** `<img src=x onerror=alert(1)>` input appears as literal text in the Source tab and every fidelity view; nothing runs outside the preview.
+- [ ] **Preview navigation:** clicking a preview link, even with `target="_self"`, neither navigates the preview nor makes a network request.
+- [ ] **Preview stripping:** the injected srcdoc contains no user-supplied `<base>`, `<meta>` (including `x-dns-prefetch-control`), `<link>`, `<noscript>`, or `<template>` element (including `<noscript><meta http-equiv="refresh" content="0;url=https://x.example"><a href="https://x.example" target="_self">x</a></noscript>` and `<template shadowrootmode="open"><span>x</span></template>`) and no user-supplied target attribute (excluding the demo's own injected `<base target="_blank">`); 50,000 `>` characters, and 5,000 nested raw-HTML `<div>` elements inside Markdown, show the nesting banner in Markdown → HTML mode without building a preview; the preview walk itself serializes 5,000 nested `<div>` elements without a stack overflow.
+- [ ] **Crash-loop recovery:** after a deliberate panic on a persisted input, reloading the page (including reloading a second time before choosing an action) does not re-trigger the panic on startup; instead, it restores the workspace without converting, leaves outputs and diff empty, and displays the recovery banner offering to convert (which removes the crash marker on success) or clear the buffers (which removes the marker and empties inputs, outputs, and diff). Until one is chosen, editing, changing an option, and switching to the other mode convert nothing.
+
+
+### 8.7. Semantic HTML Diff Validation
+- [ ] **False-positive avoidance:** the pipeline fidelity diff engine yields zero changes when comparing structurally equivalent HTML fragments that differ *only* by:
+    * **Tag & attribute casing:** character case variations (e.g., `<DIV ID="x">` vs `<div id="x">`).
+    * **Attribute order:** lexicographical sequence of keys within elements (e.g., `<a href="#" id="x">` vs `<a id="x" href="#">`).
+    * **Attribute quoting:** single, double, or omitted quotes compliant with HTML5.
+    * **Void element syntax:** self-closing slashes vs open syntax (e.g., `<br />` vs `<br>`).
+    * **Entity representations:** equivalent named, decimal, or hexadecimal formats (e.g., `&amp;`, `&#38;`, `&#x26;`) matching their raw character counterparts.
+    * **Insignificant whitespace:** collapsible spacing and line breaks between elements, leading or trailing whitespace of the fragment and of block-level elements (e.g., `<p>a</p>` vs `<p>a</p>\n`), and a single trailing newline (U+000A) at the end of a `<pre>` block (e.g., `<pre><code>x</code></pre>` vs `<pre><code>x\n</code></pre>`), excluding whitespace inside FR-5 preserved subtrees.
+    * **CDATA in foreign content:** `<svg><text><![CDATA[a<b]]></text></svg>` vs `<svg><text>a&lt;b</text></svg>`.
+    * **Emphasis edge whitespace:** whitespace just inside an emphasis element vs just outside it (e.g., `<p><strong>bold </strong>text</p>` vs `<p><strong>bold</strong> text</p>`), per FR-5's emphasis-edge rule.
+- [ ] **Exact canonical output:** an empty fragment canonicalizes to the empty string and `<p>a</p>` to `<p>a</p>`, with no `<html>` wrapper and no panic.
+- [ ] **Diff precision:** `<p><span style="white-space: pre">a  b</span></p>` yields a nonzero diff after the round trip, `<span>a</span> <span>b</span>` and `<span>a</span><span>b</span>` canonicalize to different strings, and a CJK paragraph and a word with a combining mark (U+0301) round-trip with zero diff.
+- [ ] **Automated regression suite:** a dedicated set of automated "golden tests" (run with all `htmd` options at their FR-4 crate defaults except `translation_mode: Faithful`, empty `skip_tags`, and the fixed FR-5 round-trip options `ENABLE_TABLES | ENABLE_MATH`) executes in the test pipeline to guarantee these safe variations never trigger visual diff errors; `<pre><code>x</code></pre>` and the CommonMark-basics sample are part of the golden corpus (zero diff).
+

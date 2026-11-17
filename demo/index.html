@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>htmd demo</title>
+    <link data-trunk rel="rust" data-bin="htmd-demo" data-wasm-opt="z" />
+    <style>
+      /* Single light theme (§5); deliberately plain and readable. */
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        color: #1a1a1a;
+        background: #fff;
+        line-height: 1.45;
+      }
+      #app-root {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 12px;
+      }
+      .app-header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 8px;
+      }
+      .app-header h1 {
+        font-size: 1.2rem;
+        margin: 0;
+      }
+      .mode-group {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 6px 10px;
+        margin: 0;
+      }
+      .mode-group legend {
+        font-size: 0.85rem;
+        padding: 0 4px;
+      }
+      main.panes {
+        display: grid;
+        grid-template-columns: 280px 1fr 1fr;
+        gap: 12px;
+        margin-top: 12px;
+        align-items: start;
+      }
+      .sidebar fieldset,
+      .pane,
+      .fidelity-section {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .sidebar fieldset {
+        margin: 8px 0;
+      }
+      .sidebar fieldset legend,
+      .fidelity-section h2,
+      .pane h2 {
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+      .option-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin: 3px 0;
+      }
+      .option-row label {
+        flex: 1;
+        font-size: 0.85rem;
+      }
+      .option-row select,
+      .option-row input[type="number"],
+      #skip-tags {
+        font: inherit;
+      }
+      .hint {
+        font-size: 0.75rem;
+        color: #555;
+        margin: 4px 0 0;
+      }
+      #editor {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 320px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+      }
+      .samples-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 8px 0;
+      }
+      #preview-frame {
+        width: 100%;
+        height: 320px;
+        border: 1px solid #ddd;
+        background: #fff;
+      }
+      .source-view,
+      .canon {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+        margin: 0;
+        max-height: 320px;
+        overflow: auto;
+      }
+      [role="tablist"] {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+      }
+      [role="tab"][aria-selected="true"] {
+        border-bottom: 2px solid #0345c4;
+        font-weight: 600;
+      }
+      .fidelity-section {
+        margin-top: 12px;
+      }
+      .fidelity-panel {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+      }
+      .fidelity-col {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 6px;
+        min-width: 0;
+      }
+      .fidelity-col h3 {
+        font-size: 0.8rem;
+        margin: 0 0 6px;
+      }
+      .tok-diff {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+        max-height: 300px;
+        overflow: auto;
+      }
+      .tok-rem {
+        background: #ffd7d7;
+      }
+      .tok-ins {
+        background: #d1f8d1;
+        text-decoration: none;
+      }
+      .banner {
+        background: #fdece8;
+        border: 1px solid #b3261e;
+        color: #6c1a14;
+        padding: 6px 10px;
+        margin: 4px 0;
+        border-radius: 4px;
+      }
+      .banner button,
+      .toast button {
+        margin-left: 8px;
+      }
+      .toast {
+        background: #e8f0fe;
+        border: 1px solid #0345c4;
+        color: #10336e;
+        padding: 6px 10px;
+        margin: 4px 0;
+        border-radius: 4px;
+      }
+      #banner-region,
+      #toast-region {
+        margin-top: 8px;
+      }
+      button {
+        cursor: pointer;
+      }
+      :focus-visible {
+        outline: 2px solid #0345c4;
+        outline-offset: 1px;
+      }
+      @media (max-width: 960px) {
+        main.panes {
+          grid-template-columns: 1fr;
+        }
+        .fidelity-panel {
+          grid-template-columns: 1fr;
+        }
+      }
+      #crash-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        color: #111;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+      }
+      /* `display: flex` above would otherwise override the hidden attribute. */
+      #crash-overlay[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-root"></div>
+    <div
+      id="crash-overlay"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="crash-overlay-title"
+      aria-describedby="crash-overlay-description"
+      hidden
+    >
+      <h1 id="crash-overlay-title">Critical Application Error.</h1>
+      <p id="crash-overlay-description">Please reload the page.</p>
+    </div>
+    <script>
+      (function () {
+        "use strict";
+        /* FR-7:149 — wasm traps and OOM bypass the Rust panic hook; these
+           listeners are the last line of defense. The marker write matches
+           storage.rs's CRASH_MARKER_KEY and the panic hook's "1" value (the
+           FR-8 load path checks presence only) and must land before the
+           overlay is revealed. These handlers do run after a trap (a wasm
+           trap is a per-call RuntimeError, not a dead runtime), but they
+           cannot halt the Rust storage controller: its halted flag is
+           Rust-side state only the panic hook sets, unreachable from
+           JavaScript. The marker alone drives FR-8's recovery on reload,
+           which is sufficient. */
+        function trapCaught() {
+          try {
+            localStorage.setItem("htmd_cmark_live_crashed", "1");
+          } catch (e) {}
+          var overlay = document.getElementById("crash-overlay");
+          if (overlay) overlay.hidden = false;
+        }
+        window.addEventListener("error", function (event) {
+          console.error("Uncaught error:", event.error || event.message);
+          trapCaught();
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          console.error("Unhandled promise rejection:", event.reason);
+          trapCaught();
+        });
+      })();
+    </script>
+  </body>
+</html>
