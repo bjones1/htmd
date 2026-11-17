@@ -86,6 +86,8 @@ Two HTML strings are equivalent when they parse to the same DOM after the normal
 
 The comparison helper parses both strings with html5ever, as htmd does, and compares the two DOMs after the normalization below. Parsing already makes these equivalent: `\r\n`, `\r` and `\n` (the parser normalizes line endings), a character reference and the character it stands for (`&#10;` and a line feed), and the spelling of tags and attributes. A character reference is decoded after line endings are normalized, so `&#13;` stays a carriage return and is not equivalent to a line feed. Attributes are compared as a set, ignoring their order.
 
+The helper is in `tests/common/html_compare.rs`. `html_equivalent(a, b)` tells whether two strings are equivalent, `normalize_html(html)` gives the normalized tree as text, one node per line, and `assert_html_equivalent(actual, expected)` panics with the diff of the two trees. Its own tests are in `tests/html_compare_tests.rs`.
+
 In text rendered with `white-space: normal`, which is everything outside the elements listed under "Where whitespace matters":
 
 1. A run of whitespace is equivalent to one space, which stays where the run starts ([CSS Text §4.1.1](https://www.w3.org/TR/css-text-3/#white-space-phase-1)). This holds across the boundaries of inline elements: `a <em> b</em>` is equivalent to `a <em>b</em>`, and `<em>a </em> b` to `<em>a </em>b`, not to `<em>a</em> b`.
