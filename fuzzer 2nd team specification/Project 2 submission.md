@@ -26,7 +26,7 @@ The following statements summarize LLM output on each team member's computer,
 based on the prompt "Verify that you can compile and run the project in the
 current git repo."
 
-#### Altynay
+#### Altynay's LLM Review (Copilot / GPT-Luna-6 balanced)
 
 The project compiled and passed `cargo clippy -- --deny warnings` and `cargo
 test` (36 unit tests passed, 1 ignored; integration/doc tests passed). The
@@ -77,6 +77,10 @@ writes are git-ignored.
 | 5     | 5                 | Restored the generator contract (tiers, attribute and text domains, bounds, malformed class, seed derivation); named the three class/profile combinations behind the 15,000 total; fixed the list snapshot, `code` opacity vs `preformatted_code`, and `Out of Scope` classification. One finding rejected as incorrect. |
 
 ### Last LLM review
+
+#### Altynay's LLM Review (Copilot / GPT-Luna-6 balanced)
+
+<div><br></div>
 
 ```
 prompt: Review the updated specification in specification, point out what has improved and what are issues. Write your feedback in LLM review.md appending from the last text line (do not overwrite old review).
@@ -199,17 +203,72 @@ Final submission
 
 ### Spec review rounds
 
-| Round | Findings (issues)     | Summary and round status                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | 5                     | The document is substantially improved and close to executable, but the remaining issues are stricter normalization rules, clearer unsupported-feature boundaries, and exact generator/replay behavior.                                                                                                                                                                                                                                                                                           |
+| Round | Findings (issues) | Summary and round status                                                                                                                                                                                      |
+| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | 5                 | The document is substantially improved and close to executable, but the remaining issues are stricter normalization rules, clearer unsupported-feature boundaries, and exact generator/replay behavior.       |
+| 2     | 4                 | The generator contract and normalization rules are much clearer, but replay determinism, unsupported-feature boundaries, and exact CI coverage requirements still need tighter wording before final sign-off. |
 
 ### Implementation review rounds
 
-| Round | Findings (issues) | Summary and round status                                                                                                                                    |
-| ----- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | 3                 | Implementation is feasible and realistic, but the oracle still needs stricter normalization rules and tighter handling of unsupported/parser-only features. |
-
+| Round | Findings (issues) | Summary and round status                                                                                                                                                                                                                    |
+| ----- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | 3                 | Implementation is feasible and realistic, but the oracle still needs stricter normalization rules and tighter handling of unsupported/parser-only features.                                                                                 |
 | 2     | 5                 | Implemented seeded generation, Faithful conversion, DOM normalization, malformed inputs, artifacts, and contract tests. Worker isolation, the full CI campaign, minimization, allowlist automation, and several spec clarifications remain. |
+
 ### Last LLM spec review
 
+#### Altynay's LLM Review (Copilot / GPT-Luna-6 balanced)
+
+```
+prompt: Review fuzzer-spec.md after the major and minor updates in pull request #17. List the specification's pros and cons concisely.
+```
+
+**Pros**
+
+* The guarantee and failure categories are clearly bounded, separating valid
+  round-trip cases from malformed-input recovery and parser-only features.
+* The normalized-DOM oracle, pinned PRNG/replay rules, failure artifacts, and
+  generator contract make results substantially more reproducible.
+* Coverage requirements, self-tests, and platform-specific worker isolation
+  provide concrete implementation and validation targets.
+
+**Cons**
+
+* The harness remains costly to implement and maintain, especially
+  normalization, failure minimization, and cross-platform worker/resource
+  enforcement.
+* Some details still need deterministic algorithms: how forced per-seed coverage
+  interacts with uniform generation, how whitespace boundaries behave around
+  comments or empty/void inline elements, and what polling overshoot is
+  acceptable for soft memory limits.
+
 ### Last LLM implementation review
+
+#### Altynay's LLM Review (Copilot / GPT-Luna-6 balanced)
+
+```
+prompt: Review fuzzer-spec.md and fuzzer-implementation 2.rs after the major and minor updates in pull request #17. List the specification's pros and cons in terms of implementation. Be concise.
+```
+
+**Pros**
+
+* The guarantee, parser profiles, malformed-input boundary, and DOM-based oracle
+  are explicit enough to guide implementation and avoid treating unsupported
+  cases as successes.
+* Pinned replay rules, bounded structural generation, per-seed coverage,
+  self-tests, and failure-artifact requirements make results reproducible and
+  actionable.
+* The updates clarify normalization, fallback behavior, and validation
+  expectations, turning much of the spec into testable contracts.
+
+**Cons**
+
+* Some contracts remain underspecified: attribute-exception matching, the exact
+  grammar for a translatable table, and whitespace boundaries involving comments
+  or empty inline nodes can yield different implementations.
+* The full spec requires worker-based timeout/memory enforcement, a 15,000-case
+  CI campaign, minimization, and allowlist/staleness handling; the current
+  source harness is in-process and does not implement these pieces.
+* Soft memory polling is permitted, while the limitations say memory claims
+  require real enforcement. Define whether such platforms skip, report
+  best-effort, or fail before relying on those results.
