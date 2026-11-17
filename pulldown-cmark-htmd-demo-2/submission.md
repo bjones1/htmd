@@ -396,27 +396,158 @@ GitHub userid: Akhanayeva
 
 Checked the rewritten spec against every instructor comment and made the
 remaining fixes to the spec and this file (round 7); added behavior tests to
-the implementation (`playground/engine/tests/behavior.rs`).
+the implementation (`playground/engine/tests/behavior.rs`); ran
+implementation review round 4 and specification review round 12.
 
 #### Specification review rounds
 
 | Round | Findings | Main changes made |
 | --- | --- | --- |
 | 7 | 13 (instructor comments and review findings still open after round 6: 3 in submission.md, 1 inline spec comment, 7 review findings, 2 repetitions) | Removed editor detail the instructor called too detailed; made Clear confirm like Examples; gave Copy and Share a manual-copy fallback; specified when the address changes, that Back to an address with no state shows the default example, and that loading an address wins over a pending update; named deep nesting as a crash the page must survive; required titles on rendered tabs; removed two repeated statements; fixed this file's draft/final placement. |
+| 12 | 11 spec findings (2 low, 9 trivial; 5 new, 6 still open from round 11) | No spec changes: every Expected results row and the Round trip pass as tests in `playground/engine/tests/spec.rs`; round 11's two low findings (the "published package" wording, and what Share copies after an invalid link) are still open; the new trivial points are the header links against "no network requests", "no server" against "the server", which presets the confirmation compares against, Copy input's missing manual-copy fallback, and Leptos 0.8 as the only implementation choice the spec names. |
 
 #### Last specification review
 
-Round 7. Its full LLM output was not saved in the repository; the findings
-are summarized in the table above, and the resulting changes are in commit
-`d6f83f7`.
+Prompting Claude Opus 5.5, High effort, in Claude Code, with:
+
+> Perform a specification review round on my behalf. Review
+> pulldown-cmark-htmd-demo-2/htmddemo2-spec.md: check that it states what the
+> program does, not how; check for contradictions, gaps and repetition; check
+> every Expected results row against the implementation's tests in
+> playground/engine/tests/. Rate each finding low or trivial, and say whether
+> the findings from round 11 are still open. Don't change the spec.
+>
+> Then, in pulldown-cmark-htmd-demo-2/submission.md, only in my section "###
+> Aruzhan Akhanayeva": add a row for round 12 to my "Specification review
+> rounds" table in the same format, and replace "Last specification review"
+> with "Prompting Claude Opus 5.5, High effort, in Claude Code, with:", this
+> prompt as a blockquote, and your output shortened as a blockquote, in the
+> same style as the other members' sections. Also add "ran implementation
+> review round 4 and specification review round 12" to my Contributions
+> sentence. Don't change anything else.
+
+produced the following output, shortened here. No finding was judged
+incorrect, so nothing is struck through:
+
+> **Spec unchanged since round 9.** It states behavior, not implementation,
+> except for item 7. No repetition was found beyond cross-references. All 32
+> HTML → Markdown rows, all 9 Markdown → HTML rows, the Round trip and both
+> acceptance criteria pass as tests in `playground/engine/tests/spec.rs`
+> (`cargo test --locked`); the two descriptive rows, the table and the task
+> list, are checked by substring.
+>
+> **Low, still open from rounds 10 and 11:**
+>
+> 1. "Does not change … its published package" (Constraints, line 333) is
+>    false: `cargo package --list` still lists
+>    `.github/workflows/playground.yaml` and every file in
+>    `pulldown-cmark-htmd-demo-2/`.
+> 2. What Share copies after an invalid link (Permalinks, lines 278 and 282)
+>    is still unspecified; the implementation records the shown state first.
+>
+> **Trivial, new:**
+>
+> 3. "After the site loads, the page makes no network requests" (line 313)
+>    makes no exception for the header links (line 27), which navigate away.
+> 4. "There is no server" (line 19) conflicts with "None of it is sent to the
+>    server" (line 262); the site is served by GitHub Pages, so what is meant
+>    is that nothing is processed on a server.
+> 5. Examples and Clear confirm when the input "differs from every preset"
+>    (line 53), without saying whether that means the current direction's
+>    presets or both directions'; the implementation compares both.
+> 6. Copy input (line 305) has no stated manual-copy fallback, unlike Copy
+>    and Share; the implementation selects the input.
+> 7. Leptos 0.8 (Constraints: Build, line 329) is the only implementation
+>    choice the spec names; it is a project constraint, so it can stay.
+>
+> **Trivial, still open from round 11:** Start over is a navigation although
+> nothing may add a history entry (the implementation replaces the entry);
+> the Expected results name pulldown-cmark 0.13.4, but 0.13.6 is used; "every
+> tab keeps its last content" (line 71) against the empty output after a
+> large switch or address (line 299); and the earlier points: "valid tag
+> name", the 10 ms target's hardware, the address after a crash, the fork's
+> Pages address, a long Skip tags text exceeding the address limit, and
+> Reference style needing a referenced link.
+>
+> **submission.md, round 11's points:** the wrong size figure is struck
+> through, so that one is fixed. Still open: Ademi's section links to the
+> deleted `implementation-review.md`; the draft's strikethrough is inverted;
+> Daniil's final spec table includes round 4; and the outputs of rounds 2, 3
+> and 7 are not saved.
+>
+> **Verdict:** with round 11's two one-line fixes, only trivial findings
+> remain.
 
 #### Implementation review rounds
 
-None; the implementation review rounds are listed under Ademi Bakhytova.
+| Round | Findings | Main changes made |
+| --- | --- | --- |
+| 4 (at `04ae3b9`) | 5 (1 low, 4 trivial); none fixed | No code changes: recorded that the field and editor borders fall short of WCAG AA's 3:1 non-text contrast, and left four trivial points (Skip tags cannot skip camel-cased SVG elements, Home does nothing in the Examples menu, Share is silent when the input is too large to share, and a dangling `aria-controls`). |
 
 #### Last implementation review
 
-See Ademi Bakhytova.
+Prompting Claude Opus 5.5, High effort, in Claude Code, with:
+
+> Perform an implementation review round on my behalf (I am Aruzhan
+> Akhanayeva). Review the implementation in playground/ against
+> pulldown-cmark-htmd-demo-2/htmddemo2-spec.md. Run cargo test --locked and
+> cargo clippy --all-targets -- --deny warnings in playground/. Check every
+> spec section, cite file:line for each finding, and rate it low or trivial.
+> Don't change any code.
+>
+> Then, in pulldown-cmark-htmd-demo-2/submission.md, only in my section "###
+> Aruzhan Akhanayeva": replace the "Implementation review rounds" content
+> with a table row for round 4 (findings count by severity, a one-sentence
+> summary), and replace "Last implementation review" with "Prompting Claude
+> Opus 5.5, High effort, in Claude Code, with:", this prompt as a blockquote,
+> and your review output shortened as a blockquote, in the same style as the
+> other members' sections. Strike through any finding you yourself judge
+> incorrect. Don't change anything else.
+
+produced the round 4 review, shortened here. No finding was judged
+incorrect, so nothing is struck through:
+
+> **Checks run.** In `playground/`, `cargo test --locked` passes 32 tests
+> (18 in core, 7 behavior, 7 spec), including every Expected results row, the
+> Round trip and both acceptance criteria; `cargo clippy --all-targets --
+> --deny warnings` gives no warnings. htmd's library code is unchanged. Every
+> spec section was checked against the code, and all match it except for the
+> points below. Paths are under `playground/` unless they start with `src/`.
+>
+> **Low:**
+>
+> 1. The field and editor borders (`--border`, `static/style.css:10` and
+>    `:31`) have 1.6:1 contrast in the light theme and 1.5:1 in the dark
+>    theme. WCAG AA requires 3:1 for non-text contrast, and the borders are
+>    the only outline of the editors and text fields (`static/style.css:113`,
+>    `:353`) (Constraints: Accessibility).
+>
+> **Trivial:**
+>
+> 2. Skip tags cannot skip SVG elements whose names html5ever camel-cases,
+>    such as `foreignObject`: `parse_skip_tags` lowercases every name
+>    (`core/src/settings.rs:232`), while htmd matches the parser's local
+>    name (`src/util/node.rs:10`). Running it confirmed this (Options: Skip
+>    tags).
+> 3. Home does nothing in the Examples menu: `focus_item(-1000 * len)`
+>    (`app/src/app.rs:262`) wraps back to the focused item (`:234`), or to
+>    the last item when none is focused (`:235`); the arrow keys and End
+>    work.
+> 4. When the input is too large to share, Share returns without a message
+>    (`app/src/app.rs:73`), so clicking it announces nothing new; the notice
+>    is already on the status line (Permalinks).
+> 5. The Examples button's `aria-controls="examples-list"`
+>    (`app/src/app.rs:294`) names a list that exists only while the menu is
+>    open (`:302`).
+>
+> **Still open from earlier rounds, not counted:** the editor (0.88rem,
+> `static/style.css:361`) and the option fields (0.92rem, `:110`) still make
+> iOS Safari zoom (round 3). The Pages deploy (round 3) was not rechecked,
+> because `gh` is not installed. pulldown-cmark resolves to 0.13.6, not
+> 0.13.4 (round 11).
+>
+> **Verdict:** the implementation meets the spec except for one low
+> accessibility finding and four trivial ones.
 
 ### Alisher Akim
 
