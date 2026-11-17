@@ -71,17 +71,23 @@ test('adversarial 100 kB table amplification: < 1000 ms and clears output', asyn
   await expect(page.locator('#banner-cap')).toHaveCount(0);
 });
 
+// §8.6: also behind a leading <template>, whose contents RcDom keeps
+// outside `children` but which still cost the quadratic parse.
 for (const translation of [null, 'Pure'] as const) {
-  test(`adversarial 100 kB of nested <ul> (${translation ?? 'Markdown'}): < 1000 ms and rejected`, async ({ demo: page }, testInfo) => {
-    if (translation) await configureHtml(page, translation);
-    await measureInput(page, translation ? '<p>Previous output</p>' : '# Previous output');
-    const input = '<ul>'.repeat(25_000);
-    expect(Buffer.byteLength(input)).toBe(100_000);
-    await measureConversion(page, testInfo, input, 1_000);
-    await expect(page.locator('#banner-nesting')).toHaveText('Input exceeds the supported nesting depth.');
-    await expect.poll(() => sourceText(page)).toBe('');
-    await expect(page.getByRole('button', { name: 'Use Output as Input' })).toBeDisabled();
-  });
+  for (const prefix of ['', '<template>']) {
+    const shape = prefix ? 'nested <ul> behind <template>' : 'nested <ul>';
+    test(`adversarial 100 kB of ${shape} (${translation ?? 'Markdown'}): < 1000 ms and rejected`, async ({ demo: page }, testInfo) => {
+      if (translation) await configureHtml(page, translation);
+      await measureInput(page, translation ? '<p>Previous output</p>' : '# Previous output');
+      const input = prefix + '<ul>'.repeat(Math.floor((100_000 - prefix.length) / 4));
+      expect(Buffer.byteLength(input)).toBeLessThanOrEqual(100_000);
+      expect(Buffer.byteLength(input)).toBeGreaterThan(99_990);
+      await measureConversion(page, testInfo, input, 1_000);
+      await expect(page.locator('#banner-nesting')).toHaveText('Input exceeds the supported nesting depth.');
+      await expect.poll(() => sourceText(page)).toBe('');
+      await expect(page.getByRole('button', { name: 'Use Output as Input' })).toBeDisabled();
+    });
+  }
 }
 
 test('adversarial padded HTML table: < 1000 ms and rejected before htmd converts', async ({ demo: page }, testInfo) => {

@@ -60,6 +60,11 @@ jobs:
       - name: Clippy (wasm32)
         run: cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
 
+      # The step above lints only the shipped code. This one adds the
+      # `#[cfg(test)]` modules and the wasm-bindgen-test suite.
+      - name: Clippy (wasm32, tests)
+        run: cargo clippy --locked --target wasm32-unknown-unknown --all-targets -- -D warnings
+
       - name: Native unit tests
         env:
           RUST_MIN_STACK: "16777216"

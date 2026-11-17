@@ -62,7 +62,11 @@ struct ModeOutput {
 /// The FR-5 word diff, as rendered by the fidelity panel.
 #[derive(Debug, Clone, PartialEq, Default)]
 enum FidelityDiff {
+    /// No comparison ran: the output was cleared (FR-7) or never
+    /// produced. The panel shows no verdict, since "No differences."
+    /// would claim a lossless round trip that was never checked.
     #[default]
+    NotRun,
     Inclusive,
     TooLarge,
     Changes(Vec<DiffToken>),
@@ -110,6 +114,11 @@ struct Ui {
     active_tab: RwSignal<ActiveTab>,
     out_md: RwSignal<ModeOutput>,
     out_html: RwSignal<ModeOutput>,
+    /// The engine's FR-2 validity of the active output, mirrored after
+    /// every engine input. [`ModeOutput::valid`] only changes on commit
+    /// and clear, so on its own it would leave "Use Output as Input"
+    /// enabled while an edit is still pending.
+    active_output_valid: RwSignal<bool>,
     fidelity: RwSignal<FidelityPanel>,
     undo_visible: RwSignal<bool>,
     size_banner: RwSignal<bool>,
@@ -139,6 +148,7 @@ impl Ui {
             active_tab: RwSignal::new(ActiveTab::Rendered),
             out_md: RwSignal::new(ModeOutput::default()),
             out_html: RwSignal::new(ModeOutput::default()),
+            active_output_valid: RwSignal::new(false),
             fidelity: RwSignal::new(FidelityPanel::default()),
             undo_visible: RwSignal::new(false),
             size_banner: RwSignal::new(false),
@@ -185,7 +195,10 @@ impl Ui {
 /// "Use Output as Input" undo slot and the raw `skip_tags` text).
 struct Core {
     engine: Engine,
-    banners: Banners,
+    /// FR-7 limit banners per mode, indexed by [`mode_slot`]. Each banner
+    /// belongs to the buffer that entered it, and the region shows only
+    /// the active mode's (FR-7 *Banner scope*).
+    limit_banners: [Banners; 2],
     samples: SampleState,
     storage: StorageController<Box<dyn Store>>,
     /// FR-2:62 undo for "Use Output as Input" (sample-load undo lives in
@@ -197,13 +210,6 @@ struct Core {
     /// Set while the FR-8 recovery banner's "Convert restored input"
     /// run is in flight; its success removes the crash marker.
     recovery_converting: bool,
-    /// Which mode's buffer each FR-7 banner was entered for: a
-    /// commit or an in-range edit of one mode's buffer says nothing
-    /// about the other mode's, so banner exits are scoped to it.
-    size_banner_mode: Option<ConversionMode>,
-    nesting_banner_mode: Option<ConversionMode>,
-    conversion_banner_mode: Option<ConversionMode>,
-    cap_banner_mode: Option<ConversionMode>,
 }
 
 /// The shared core. `SendWrapper` because Leptos views (including their
@@ -239,6 +245,13 @@ struct LateCore(RefCell<Option<CoreRef>>);
 impl LateCore {
     fn core(&self) -> Option<CoreRef> {
         self.0.borrow().clone()
+    }
+}
+
+fn mode_slot(mode: ConversionMode) -> usize {
+    match mode {
+        ConversionMode::MarkdownToHtml => 0,
+        ConversionMode::HtmlToMarkdown => 1,
     }
 }
 
@@ -304,7 +317,9 @@ fn perf_measure(name: &str, start: &str, end: &str) {
 
 /// Execute the actions an engine input returned. Dispatches convert
 /// synchronously on the main thread (FR-2's execution model) and
-/// commits in one step.
+/// commits in one step. Every engine input ends here, including each one
+/// that changes the active mode, so this is where the output validity
+/// and the active mode's limit banners are mirrored into the UI.
 fn run_actions(core: &CoreRef, ui: &Ui, actions: Vec<Action>) {
     let mut queue = actions;
     while !queue.is_empty() {
@@ -316,6 +331,17 @@ fn run_actions(core: &CoreRef, ui: &Ui, actions: Vec<Action>) {
             }
             Action::ClearOutput => clear_output(&mut c, ui),
         }
+    }
+    let mut c = core.borrow_mut();
+    set_flag(ui.active_output_valid, c.engine.active_output_valid());
+    sync_banners(&mut c, ui);
+}
+
+/// Set a flag signal only when its value changes, so the syncs that run
+/// after every engine input do not re-render the controls that read it.
+fn set_flag(signal: RwSignal<bool>, value: bool) {
+    if signal.get_untracked() != value {
+        signal.set(value);
     }
 }
 
@@ -434,8 +460,8 @@ fn halt_conversion(
 }
 
 /// Shared tail of every successful commit: the limit and output-cap
-/// banners entered for `mode`'s own buffer clear (FR-7 scoping — the
-/// other mode's banners are not this commit's business), and a pending
+/// banners entered for `mode`'s own buffer clear (FR-7 *Banner scope*:
+/// the other mode's banners are not this commit's business), and a pending
 /// recovery conversion removes the crash marker (FR-8:160).
 fn conversion_succeeded(c: &mut Core, ui: &Ui, mode: ConversionMode) {
     exit_limit_banner(c, ui, BannerKind::SizeLimit, mode);
@@ -461,48 +487,62 @@ fn clear_output(c: &mut Core, ui: &Ui) {
     }
 }
 
-/// Enter a limit banner on behalf of `mode`'s buffer; the banner state
-/// itself is shared, the association with the buffer is not.
+/// Enter a limit banner for `mode`'s buffer (FR-7 *Banner scope*).
 fn enter_limit_banner(c: &mut Core, ui: &Ui, kind: BannerKind, mode: ConversionMode) {
-    c.banners.enter(kind);
-    *banner_mode_slot(c, kind) = Some(mode);
+    c.limit_banners[mode_slot(mode)].enter(kind);
     sync_banners(c, ui);
 }
 
-/// Exit a limit banner only when it was entered for `mode`'s buffer: a
-/// successful commit or an in-range edit of one mode's buffer says
-/// nothing about the other mode's (FR-7 scoping).
+/// Exit `mode`'s own limit banner. A commit or edit of one mode's buffer
+/// says nothing about the other mode's (FR-7 *Banner scope*).
 fn exit_limit_banner(c: &mut Core, ui: &Ui, kind: BannerKind, mode: ConversionMode) {
-    if banner_mode_slot(c, kind) == &Some(mode) {
-        c.banners.exit(kind);
-        *banner_mode_slot(c, kind) = None;
-        sync_banners(c, ui);
+    c.limit_banners[mode_slot(mode)].exit(kind);
+    sync_banners(c, ui);
+}
+
+/// Whether `mode`'s buffer holds the `kind` banner, shown or not.
+fn holds_limit_banner(c: &Core, kind: BannerKind, mode: ConversionMode) -> bool {
+    c.limit_banners[mode_slot(mode)]
+        .active()
+        .any(|held| held == kind)
+}
+
+/// FR-7 *Banner scope*: clear the banners that `mode`'s new text resolves
+/// on its own. Within the ceiling, the size limit is gone. An empty buffer
+/// leaves every limit, and it needs this path: empty input clears the
+/// output without converting, so no commit would ever clear them.
+fn exit_limits_resolved_by_text(c: &mut Core, ui: &Ui, mode: ConversionMode, text: &str) {
+    if text.len() <= MAX_INPUT_BYTES {
+        exit_limit_banner(c, ui, BannerKind::SizeLimit, mode);
+    }
+    if text.is_empty() {
+        for kind in [
+            BannerKind::NestingLimit,
+            BannerKind::ConversionError,
+            BannerKind::OutputCap,
+        ] {
+            exit_limit_banner(c, ui, kind, mode);
+        }
     }
 }
 
-fn banner_mode_slot(c: &mut Core, kind: BannerKind) -> &mut Option<ConversionMode> {
-    match kind {
-        BannerKind::SizeLimit => &mut c.size_banner_mode,
-        BannerKind::NestingLimit => &mut c.nesting_banner_mode,
-        BannerKind::ConversionError => &mut c.conversion_banner_mode,
-        BannerKind::OutputCap => &mut c.cap_banner_mode,
-    }
-}
-
-/// Mirror the banner state machine into the region's signals; the
-/// aria-live region announces each message when its element is added,
-/// which is exactly the "once per transition" the drained announcement
-/// bookkeeping tracks.
+/// Mirror the active mode's limit banners into the region's signals. The
+/// aria-live region announces each message when its element is added, so
+/// a banner is announced on entry and again when a mode switch brings it
+/// back into view.
 fn sync_banners(c: &mut Core, ui: &Ui) {
-    ui.size_banner
-        .set(c.banners.active().any(|k| k == BannerKind::SizeLimit));
-    ui.nesting_banner
-        .set(c.banners.active().any(|k| k == BannerKind::NestingLimit));
-    ui.conversion_banner
-        .set(c.banners.active().any(|k| k == BannerKind::ConversionError));
-    ui.cap_banner
-        .set(c.banners.active().any(|k| k == BannerKind::OutputCap));
-    let _ = c.banners.take_announced().count();
+    let active = mode_slot(c.engine.mode());
+    let banners = &mut c.limit_banners[active];
+    let shown: Vec<BannerKind> = banners.active().collect();
+    for (signal, kind) in [
+        (ui.size_banner, BannerKind::SizeLimit),
+        (ui.nesting_banner, BannerKind::NestingLimit),
+        (ui.conversion_banner, BannerKind::ConversionError),
+        (ui.cap_banner, BannerKind::OutputCap),
+    ] {
+        set_flag(signal, shown.contains(&kind));
+    }
+    let _ = banners.take_announced().count();
 }
 
 /// Mirror the storage controller's banner states after any interaction
@@ -528,12 +568,14 @@ fn apply_buffer_write(ui: &Ui, mode: ConversionMode, text: &str) {
     ui.editor_text.set(text.to_owned());
 }
 
-/// The engine tail of every non-sample buffer overwrite ("Use Output
-/// as Input", Undo, the recovery conversion): the overwrite input
-/// first, then FR-7's ceiling check the engine's immediate path cannot
-/// announce — an oversized buffer halts conversion with the banner
-/// shown once and the target mode's output cleared, instead of silent
-/// no-conversion over stale output.
+/// The engine tail of every buffer overwrite (sample loads, Reload
+/// Sample, "Use Output as Input", Undo, and both recovery actions): the
+/// overwrite input first, then FR-7's ceiling check the engine's
+/// immediate path cannot announce. An oversized buffer halts conversion
+/// with the banner shown once and the target mode's output cleared,
+/// instead of silent no-conversion over stale output. Any other buffer
+/// clears the banners its text resolves now, since a commit may never
+/// come: the recovery hold blocks it, and empty input never converts.
 fn overwrite_with_ceiling_check(
     c: &mut Core,
     ui: &Ui,
@@ -544,6 +586,8 @@ fn overwrite_with_ceiling_check(
     if text.len() > MAX_INPUT_BYTES {
         enter_limit_banner(c, ui, BannerKind::SizeLimit, mode);
         actions.extend(c.engine.on_limit_entered());
+    } else {
+        exit_limits_resolved_by_text(c, ui, mode, text);
     }
     actions
 }
@@ -568,19 +612,31 @@ fn on_editor_input(core: &CoreRef, ui: &Ui, ev: web_sys::Event) {
     perf_mark("htmd:input:start");
     let textarea = event_target::<web_sys::HtmlTextAreaElement>(&ev);
     let value = textarea.value();
-    let mut c = core.borrow_mut();
-    let mode = c.engine.mode();
+    let mode = core.borrow().engine.mode();
     if let (Ok(Some(start)), Ok(Some(end))) = (textarea.selection_start(), textarea.selection_end())
     {
         ui.selection(mode).set((start, end));
     }
+    apply_editor_value(core, ui, value);
+    perf_mark("htmd:input:end");
+    perf_measure("htmd:input", "htmd:input:start", "htmd:input:end");
+}
+
+/// The DOM-free part of [`on_editor_input`]: apply the active buffer's new
+/// text. The transition test reads this buffer's own size banner (FR-7
+/// *Banner scope*), so a banner the other buffer holds cannot mask this
+/// buffer's crossing.
+fn apply_editor_value(core: &CoreRef, ui: &Ui, value: String) {
+    let mut c = core.borrow_mut();
+    let mode = c.engine.mode();
     ui.buffer(mode).set(value.clone());
     dismiss_undo(&mut c, ui);
     if !panic_hook::storage_halted() {
         c.storage.on_text_edit(storage_mode(mode), &value);
     }
     let oversized = value.len() > MAX_INPUT_BYTES;
-    let actions = match (oversized, ui.size_banner.get_untracked()) {
+    let already_over = holds_limit_banner(&c, BannerKind::SizeLimit, mode);
+    let actions = match (oversized, already_over) {
         (true, false) => {
             enter_limit_banner(&mut c, ui, BannerKind::SizeLimit, mode);
             c.engine.on_limit_entered()
@@ -589,14 +645,12 @@ fn on_editor_input(core: &CoreRef, ui: &Ui, ev: web_sys::Event) {
         // the buffer mirror must follow the edit.
         (true, true) => c.engine.on_edit(&value),
         (false, _) => {
-            exit_limit_banner(&mut c, ui, BannerKind::SizeLimit, mode);
+            exit_limits_resolved_by_text(&mut c, ui, mode, &value);
             c.engine.on_edit(&value)
         }
     };
     drop(c);
     run_actions(core, ui, actions);
-    perf_mark("htmd:input:end");
-    perf_measure("htmd:input", "htmd:input:start", "htmd:input:end");
 }
 
 /// FR-8: scroll offsets ride the same 500 ms save debounce as text.
@@ -692,17 +746,24 @@ fn on_options_changed(core: &CoreRef, ui: &Ui) {
     run_actions(core, ui, actions);
 }
 
-/// FR-4:108 — `skip_tags` edits ride the 500 ms save timer and the
-/// FR-2 adaptive conversion schedule (the engine's option-change input).
 fn on_skip_tags_input(core: &CoreRef, ui: &Ui, ev: web_sys::Event) {
     let value = event_target::<web_sys::HtmlInputElement>(&ev).value();
+    apply_skip_tags(core, ui, value);
+}
+
+/// FR-4 — `skip_tags` edits ride the 500 ms save timer and the FR-2
+/// adaptive conversion schedule (the engine's option-change input). They
+/// skip [`on_options_changed`], whose flush-before-write would save the
+/// whole workspace synchronously on every keystroke.
+fn apply_skip_tags(core: &CoreRef, ui: &Ui, value: String) {
     let mut c = core.borrow_mut();
-    c.skip_tags_raw = value.clone();
     if !panic_hook::storage_halted() {
         c.storage.on_skip_tags_edit(&value);
     }
+    c.skip_tags_raw = value;
+    let actions = c.engine.on_options_change();
     drop(c);
-    on_options_changed(core, ui);
+    run_actions(core, ui, actions);
 }
 
 /// FR-4 Reset: restore exactly the preset, then reconvert immediately
@@ -797,7 +858,7 @@ fn on_sample_click(core: &CoreRef, ui: &Ui, id: SampleId) {
     }
     apply_buffer_write(ui, action.target, action.text);
     let text = action.text.to_owned();
-    let actions = c.engine.on_buffer_overwrite(action.target, &text);
+    let actions = overwrite_with_ceiling_check(&mut c, ui, action.target, &text);
     drop(c);
     ui.undo_visible.set(undo);
     run_actions(core, ui, actions);
@@ -819,7 +880,7 @@ fn on_reload_sample(core: &CoreRef, ui: &Ui) {
     }
     apply_buffer_write(ui, mode, action.text);
     let text = action.text.to_owned();
-    let actions = c.engine.on_buffer_overwrite(mode, &text);
+    let actions = overwrite_with_ceiling_check(&mut c, ui, mode, &text);
     drop(c);
     ui.undo_visible.set(undo);
     run_actions(core, ui, actions);
@@ -831,7 +892,7 @@ fn on_use_output(core: &CoreRef, ui: &Ui) {
     let mut c = core.borrow_mut();
     let mode = c.engine.mode();
     let output = ui.output(mode).get_untracked();
-    if !output.valid || output.source.is_empty() {
+    if !c.engine.active_output_valid() || !output.valid || output.source.is_empty() {
         return;
     }
     let target = other_mode(mode);
@@ -891,6 +952,7 @@ fn on_recovery_convert(core: &CoreRef, ui: &Ui) {
             .storage
             .on_recovery_choice(RecoveryChoice::ConvertRestoredInput);
     }
+    c.engine.end_recovery_hold();
     let mode = c.engine.mode();
     let text = ui.buffer(mode).get_untracked();
     let actions = overwrite_with_ceiling_check(&mut c, ui, mode, &text);
@@ -908,11 +970,12 @@ fn on_recovery_clear(core: &CoreRef, ui: &Ui) {
         let _ = c.storage.on_recovery_choice(RecoveryChoice::ClearBuffers);
         sync_storage_banners(&c, ui);
     }
+    c.engine.end_recovery_hold();
     let active = c.engine.mode();
     apply_buffer_write(ui, other_mode(active), "");
-    let mut actions = c.engine.on_buffer_overwrite(other_mode(active), "");
+    let mut actions = overwrite_with_ceiling_check(&mut c, ui, other_mode(active), "");
     apply_buffer_write(ui, active, "");
-    let more = c.engine.on_buffer_overwrite(active, "");
+    let more = overwrite_with_ceiling_check(&mut c, ui, active, "");
     actions.extend(more);
     drop(c);
     run_actions(core, ui, actions);
@@ -990,16 +1053,12 @@ pub fn App() -> impl IntoView {
 
     let mut bootstrap = Core {
         engine: Engine::new(engine_clock),
-        banners: Banners::new(),
+        limit_banners: [Banners::new(), Banners::new()],
         samples: SampleState::new(),
         storage: StorageController::new(store, storage_clock),
         use_output_undo: None,
         skip_tags_raw: String::new(),
         recovery_converting: false,
-        size_banner_mode: None,
-        nesting_banner_mode: None,
-        conversion_banner_mode: None,
-        cap_banner_mode: None,
     };
     let outcome = bootstrap.storage.load();
     let core_ref: CoreRef = SendWrapper::new(Rc::new(RefCell::new(bootstrap)));
@@ -1069,7 +1128,7 @@ pub fn App() -> impl IntoView {
             ConversionMode::MarkdownToHtml => ui.out_md.get(),
             ConversionMode::HtmlToMarkdown => ui.out_html.get(),
         };
-        !output.valid || output.source.is_empty()
+        !ui.active_output_valid.get() || !output.valid || output.source.is_empty()
     };
     let fidelity_state = Memo::new(move |_| match ui.mode.get() {
         ConversionMode::MarkdownToHtml => FidelityView::Hidden,
@@ -1293,6 +1352,7 @@ pub fn App() -> impl IntoView {
                             <h3>"Word diff"</h3>
                             <div class="tok-diff">
                                 {move || match ui.fidelity.get().diff {
+                                    FidelityDiff::NotRun => ().into_any(),
                                     FidelityDiff::Inclusive => view! {
                                         <p class="diff-ok">"No differences."</p>
                                     }.into_any(),
@@ -1798,16 +1858,12 @@ mod tests {
             Rc::new(WebClock::new(|_: StorageEvent| {}));
         let core: CoreRef = SendWrapper::new(Rc::new(RefCell::new(Core {
             engine: Engine::new(engine_clock),
-            banners: Banners::new(),
+            limit_banners: [Banners::new(), Banners::new()],
             samples: SampleState::new(),
             storage: StorageController::new(Box::new(MemoryStore::new()), storage_clock),
             use_output_undo: None,
             skip_tags_raw: String::new(),
             recovery_converting: false,
-            size_banner_mode: None,
-            nesting_banner_mode: None,
-            conversion_banner_mode: None,
-            cap_banner_mode: None,
         })));
         Harness { ui, core }
     }
@@ -2006,13 +2062,27 @@ mod tests {
             h.run_pending_batch();
             assert!(h.ui.out_html.get().valid, "the HTML run committed");
 
-            // The MD banner survives the other mode's commit...
+            // FR-7 *Banner scope*: the MD banner survives the other mode's
+            // commit, hidden while the HTML mode is active...
             assert!(
-                h.ui.size_banner.get(),
+                holds_limit_banner(
+                    &h.core.borrow(),
+                    BannerKind::SizeLimit,
+                    ConversionMode::MarkdownToHtml
+                ),
                 "an HTML commit says nothing about the MD buffer"
             );
-            // ...and is not re-announced by surviving it.
-            assert_eq!(h.core.borrow_mut().banners.take_announced().count(), 0);
+            assert!(
+                !h.ui.size_banner.get(),
+                "the region shows only the active mode's banners"
+            );
+            // ...and records no new transition by surviving it.
+            assert_eq!(
+                h.core.borrow_mut().limit_banners[mode_slot(ConversionMode::MarkdownToHtml)]
+                    .take_announced()
+                    .count(),
+                0
+            );
 
             // Positive control: back in MD mode, a successful commit of
             // an in-range MD buffer clears the MD banner.
@@ -2093,6 +2163,40 @@ mod tests {
         });
     }
 
+    /// FR-8 *Crash-loop recovery*: while the banner shows, a switch onto
+    /// the other restored buffer converts nothing; "Convert restored
+    /// input" lifts the hold, converts, and removes the marker.
+    #[test]
+    fn recovery_hold_blocks_conversion_until_convert_restored_input() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            h.ui.buf_md.set("# md".to_owned());
+            h.ui.buf_html.set("<p>x</p>".to_owned());
+            {
+                let mut c = h.core.borrow_mut();
+                let actions = c.engine.on_restore(
+                    ConversionMode::MarkdownToHtml,
+                    "# md",
+                    "<p>x</p>",
+                    false,
+                );
+                assert!(actions.is_empty());
+            }
+            h.ui.recovery.set(true);
+
+            switch_mode(&h.core, &h.ui, ConversionMode::HtmlToMarkdown);
+            h.run_pending_batch();
+            assert!(!h.ui.out_html.get().valid, "the hold converts nothing");
+            assert!(h.ui.recovery.get());
+
+            on_recovery_convert(&h.core, &h.ui);
+            h.run_pending_batch();
+            assert!(h.ui.out_html.get().valid);
+            assert!(!h.core.borrow().recovery_converting);
+        });
+    }
+
     #[test]
     fn undo_restoring_an_oversized_buffer_halts_with_banner() {
         let owner = Owner::new();
@@ -2120,9 +2224,9 @@ mod tests {
     }
 
     /// FR-7 (final-review fix): switching onto a still-oversized buffer
-    /// enters its size banner on the switch itself, announced exactly
-    /// once — further switches while the limit persists re-announce
-    /// nothing.
+    /// enters its size banner on the switch itself. Under FR-7 *Banner
+    /// scope* the banner hides while the other mode is active, and further
+    /// switches while the limit persists record no new transition.
     #[test]
     fn switch_to_oversized_buffer_enters_size_banner_once() {
         let owner = Owner::new();
@@ -2148,13 +2252,221 @@ mod tests {
             assert!(h.ui.size_banner.get());
             assert!(!h.ui.out_md.get().valid);
 
-            // The entry announced exactly once (its own sync drained
-            // it): further switches while it persists re-announce
-            // nothing and the banner stays up.
+            // The entry's own sync drained its transition. The banner hides
+            // with its mode and shows again on the way back, with no new
+            // transition while the limit persists.
             switch_mode(&h.core, &h.ui, ConversionMode::HtmlToMarkdown);
+            assert!(!h.ui.size_banner.get(), "the HTML buffer holds none");
             switch_mode(&h.core, &h.ui, ConversionMode::MarkdownToHtml);
             assert!(h.ui.size_banner.get());
-            assert_eq!(h.core.borrow_mut().banners.take_announced().count(), 0);
+            assert_eq!(
+                h.core.borrow_mut().limit_banners[mode_slot(ConversionMode::MarkdownToHtml)]
+                    .take_announced()
+                    .count(),
+                0
+            );
+        });
+    }
+
+    /// FR-2 output validity: an edit invalidates the active output at
+    /// once, so "Use Output as Input" refuses the stale output while the
+    /// edit is pending, and the next commit re-enables it.
+    #[test]
+    fn pending_edit_disables_use_output_until_its_commit() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            apply_editor_value(&h.core, &h.ui, "# a".to_owned());
+            h.run_pending_batch();
+            assert!(h.ui.out_md.get().valid);
+            assert!(h.ui.active_output_valid.get());
+
+            apply_editor_value(&h.core, &h.ui, "# ab".to_owned());
+            assert!(
+                !h.ui.active_output_valid.get(),
+                "the pending edit invalidates"
+            );
+            on_use_output(&h.core, &h.ui);
+            assert_eq!(
+                h.core.borrow().engine.mode(),
+                ConversionMode::MarkdownToHtml
+            );
+            assert!(h.ui.buf_html.get().is_empty(), "nothing stale was copied");
+
+            h.run_pending_batch();
+            assert!(h.ui.active_output_valid.get());
+        });
+    }
+
+    /// FR-7 *Banner scope*: with the HTML buffer holding the size banner,
+    /// the MD buffer crossing the ceiling still halts, clears its output,
+    /// and enters a banner of its own. Coming back under clears only the MD
+    /// banner; the HTML buffer's stays held.
+    #[test]
+    fn crossing_the_ceiling_halts_while_the_other_buffers_banner_shows() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            apply_editor_value(&h.core, &h.ui, "# a".to_owned());
+            h.run_pending_batch();
+            assert!(!h.ui.out_md.get().source.is_empty());
+            {
+                let mut c = h.core.borrow_mut();
+                enter_limit_banner(
+                    &mut c,
+                    &h.ui,
+                    BannerKind::SizeLimit,
+                    ConversionMode::HtmlToMarkdown,
+                );
+            }
+
+            apply_editor_value(&h.core, &h.ui, "x".repeat(100_001));
+            let out = h.ui.out_md.get();
+            assert!(out.source.is_empty() && out.preview.is_empty());
+            assert!(!h.ui.active_output_valid.get());
+            assert!(h.ui.size_banner.get());
+            let holds = |mode| holds_limit_banner(&h.core.borrow(), BannerKind::SizeLimit, mode);
+            assert!(holds(ConversionMode::MarkdownToHtml));
+            assert!(holds(ConversionMode::HtmlToMarkdown));
+
+            apply_editor_value(&h.core, &h.ui, "# back under".to_owned());
+            assert!(!h.ui.size_banner.get());
+            assert!(!holds(ConversionMode::MarkdownToHtml));
+            assert!(
+                holds(ConversionMode::HtmlToMarkdown),
+                "the MD buffer's edit says nothing about the HTML buffer"
+            );
+        });
+    }
+
+    /// FR-7 *Banner scope*: emptying the buffer clears its nesting banner
+    /// at once. Empty input never converts, so no commit would clear it,
+    /// and the next deep input is a fresh transition into the limit.
+    #[test]
+    fn emptying_the_buffer_clears_its_nesting_banner() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            switch_mode(&h.core, &h.ui, ConversionMode::HtmlToMarkdown);
+            let deep = "<div>".repeat(600);
+            apply_editor_value(&h.core, &h.ui, deep.clone());
+            h.run_pending_batch();
+            assert!(h.ui.nesting_banner.get());
+
+            apply_editor_value(&h.core, &h.ui, String::new());
+            assert!(!h.ui.nesting_banner.get(), "nothing is left to exceed it");
+            assert!(!holds_limit_banner(
+                &h.core.borrow(),
+                BannerKind::NestingLimit,
+                ConversionMode::HtmlToMarkdown
+            ));
+
+            apply_editor_value(&h.core, &h.ui, deep);
+            h.run_pending_batch();
+            assert!(h.ui.nesting_banner.get());
+        });
+    }
+
+    /// FR-8 *Recovery hold*: option changes, Reset, sample loads, Reload
+    /// Sample, and Undo still write buffers, options, and storage, but none
+    /// converts until a recovery action is chosen.
+    #[test]
+    fn recovery_hold_blocks_every_conversion_trigger() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            h.ui.buf_md.set("# md".to_owned());
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c
+                    .engine
+                    .on_restore(ConversionMode::MarkdownToHtml, "# md", "", false);
+            }
+            h.ui.recovery.set(true);
+
+            h.ui.cmark.update(|flags| flags.tables = !flags.tables);
+            on_options_changed(&h.core, &h.ui);
+            h.run_pending_batch();
+            on_reset(&h.core, &h.ui);
+            h.run_pending_batch();
+            on_sample_click(&h.core, &h.ui, SampleId::Basics);
+            h.run_pending_batch();
+            assert_ne!(h.ui.buf_md.get(), "# md", "the sample still loads");
+            on_reload_sample(&h.core, &h.ui);
+            h.run_pending_batch();
+            on_undo(&h.core, &h.ui);
+            h.run_pending_batch();
+
+            let out = h.ui.out_md.get();
+            assert!(!out.valid && out.source.is_empty(), "nothing converted");
+            assert!(h.ui.recovery.get());
+
+            on_recovery_convert(&h.core, &h.ui);
+            h.run_pending_batch();
+            assert!(h.ui.out_md.get().valid, "the recovery action lifts the hold");
+        });
+    }
+
+    /// FR-7 *Banner scope*: during the recovery hold no commit can clear the
+    /// size banner, so a sample load within the ceiling clears it itself.
+    #[test]
+    fn sample_load_clears_the_size_banner_during_the_recovery_hold() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            {
+                let mut c = h.core.borrow_mut();
+                let _ = c
+                    .engine
+                    .on_restore(ConversionMode::MarkdownToHtml, "", "", false);
+            }
+            h.ui.recovery.set(true);
+            apply_editor_value(&h.core, &h.ui, "x".repeat(100_001));
+            assert!(h.ui.size_banner.get());
+
+            on_sample_click(&h.core, &h.ui, SampleId::Basics);
+            assert!(!h.ui.size_banner.get());
+            h.run_pending_batch();
+            assert!(!h.ui.out_md.get().valid, "the hold still converts nothing");
+        });
+    }
+
+    /// FR-4: a `skip_tags` edit leaves its save on the 500 ms timer instead
+    /// of flushing, and still reconverts as an FR-2 option change.
+    #[test]
+    fn skip_tags_edit_debounces_its_save() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            let seq = h.core.borrow().engine.seq();
+            apply_skip_tags(&h.core, &h.ui, "img".to_owned());
+            let c = h.core.borrow();
+            assert!(
+                c.storage.save_pending(),
+                "no flush: the save is still pending"
+            );
+            assert_eq!(c.storage.workspace().skip_tags, "img");
+            assert_eq!(c.skip_tags_raw, "img");
+            assert!(c.engine.seq() > seq, "the edit is an FR-2 option change");
+        });
+    }
+
+    /// FR-5/FR-7: a cleared fidelity panel carries no verdict. "No
+    /// differences." needs a comparison that actually ran.
+    #[test]
+    fn cleared_fidelity_panel_carries_no_verdict() {
+        let owner = Owner::new();
+        owner.with(|| {
+            let h = harness();
+            h.ui.htmd
+                .update(|opts| opts.translation_mode = TranslationMode::Faithful);
+            switch_mode(&h.core, &h.ui, ConversionMode::HtmlToMarkdown);
+            apply_editor_value(&h.core, &h.ui, "<p>a</p>".to_owned());
+            h.run_pending_batch();
+            assert_eq!(h.ui.fidelity.get().diff, FidelityDiff::Inclusive);
+
+            apply_editor_value(&h.core, &h.ui, String::new());
+            assert_eq!(h.ui.fidelity.get().diff, FidelityDiff::NotRun);
         });
     }
 }

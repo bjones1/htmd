@@ -138,6 +138,11 @@ pub struct Engine {
     queued: Option<u64>,
     /// Sequence number of the current commit; anchors iframe load matching.
     committed: Option<u64>,
+    /// FR-8 crash-loop recovery: while the recovery banner shows, batch
+    /// timers that come due dispatch nothing, so no trigger (an edit, an
+    /// option change, a mode switch) can convert a restored buffer that
+    /// may be the one that crashed.
+    recovery_hold: bool,
 }
 
 impl Engine {
@@ -154,6 +159,7 @@ impl Engine {
             in_flight: None,
             queued: None,
             committed: None,
+            recovery_hold: false,
         }
     }
 
@@ -165,6 +171,13 @@ impl Engine {
     /// The mode whose buffer edits and options currently apply to.
     pub fn mode(&self) -> ConversionMode {
         self.mode
+    }
+
+    /// FR-2 output validity of the active mode: its buffer and the options
+    /// are unchanged since the commit that produced its output. False from
+    /// the first edit or option change until the next commit.
+    pub fn active_output_valid(&self) -> bool {
+        self.modes[self.active_index()].output_valid
     }
 
     /// FR-2 "every buffer change (typing, ...)": advance the sequence and
@@ -194,9 +207,11 @@ impl Engine {
     /// both per-mode buffer mirrors from storage, invalidating both
     /// outputs and cancelling any pending batch. `convert` arms the
     /// active buffer's FR-2 "converted once at startup" run (immediate
-    /// path, whatever its size class); the crash-marker flow (FR-8:160)
-    /// passes `false` to restore without converting. No existing input
-    /// can write the inactive mode's buffer, which startup needs.
+    /// path, whatever its size class); the crash-marker flow (FR-8
+    /// *Crash-loop recovery*) passes `false` to restore without converting,
+    /// which also places the recovery hold that
+    /// [`Engine::end_recovery_hold`] lifts. No existing input can write the
+    /// inactive mode's buffer, which startup needs.
     pub fn on_restore(
         &mut self,
         mode: ConversionMode,
@@ -213,10 +228,17 @@ impl Engine {
             self.modes[index].output_valid = false;
         }
         self.cancel_batch();
+        self.recovery_hold = !convert;
         if !convert {
             return Vec::new();
         }
         self.immediate_trigger()
+    }
+
+    /// FR-8 *Crash-loop recovery*: the user chose a recovery action, so
+    /// triggers convert normally again.
+    pub fn end_recovery_hold(&mut self) {
+        self.recovery_hold = false;
     }
 
     /// FR-2 "every option change" (ordinary sidebar toggles and
@@ -282,6 +304,10 @@ impl Engine {
             (None, _) => false,
         };
         if !role_live {
+            return Vec::new();
+        }
+        if self.recovery_hold {
+            self.cancel_batch();
             return Vec::new();
         }
         if self.in_flight == Some(self.seq) {
@@ -868,17 +894,27 @@ mod tests {
     }
 
     #[test]
-    fn restore_without_convert_seeds_mirrors_but_never_dispatches() {
+    fn restore_without_convert_holds_conversion_until_recovery_choice() {
         let mut h = Harness::new();
         h.engine
             .on_restore(ConversionMode::HtmlToMarkdown, "# md", "<p>x</p>", false);
         assert!(h.advance(5_000).is_empty(), "no startup conversion");
         assert_eq!(h.clock.live_timers(), 0);
-        // The buffers are seeded, so switching converts the target.
-        let actions = h.engine.on_mode_switch();
+        // FR-8 recovery hold: a switch onto the other restored buffer
+        // clears its pane but converts nothing, and neither does an edit.
+        let actions = h.engine.on_mode_switch(); // seq 1
         assert_eq!(actions, vec![Action::ClearOutput]);
-        assert_eq!(Harness::dispatch_seqs(&h.advance(0)), vec![1]);
-        assert_eq!(h.engine.on_conversion_ready(1), CommitOutcome::Commit);
+        assert!(h.advance(0).is_empty());
+        assert!(h.engine.on_edit("# edited").is_empty()); // seq 2
+        assert!(h.advance(5_000).is_empty());
+        assert_eq!(h.clock.live_timers(), 0);
+        // A recovery choice lifts the hold; the next trigger converts.
+        h.engine.end_recovery_hold();
+        let _ = h
+            .engine
+            .on_buffer_overwrite(ConversionMode::MarkdownToHtml, "# edited"); // seq 3
+        assert_eq!(Harness::dispatch_seqs(&h.advance(0)), vec![3]);
+        assert_eq!(h.engine.on_conversion_ready(3), CommitOutcome::Commit);
     }
 
     #[test]

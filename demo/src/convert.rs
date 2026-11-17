@@ -280,18 +280,31 @@ fn is_element(node: &Node, tag: &str) -> bool {
 /// depth 1; the document node and the `<html>` scaffold do not deepen.
 /// Iterative (explicit stack) so 50,000-deep trees cannot overflow the
 /// wasm call stack.
+///
+/// A `<template>`'s contents count at the depth of its children. `RcDom`
+/// keeps them in `template_contents`, outside `children`, but the tree
+/// builder still holds them on its stack of open elements, so they cost
+/// the same quadratic parse as any other nesting.
 fn max_element_depth(root: &Rc<Node>) -> usize {
     let mut max_depth = 0;
     let mut stack: Vec<(Rc<Node>, usize)> = vec![(root.clone(), 0)];
     while let Some((node, depth)) = stack.pop() {
         let child_depth = match &node.data {
-            NodeData::Element { name, .. } => {
-                if name.local.as_ref() == "html" {
+            NodeData::Element {
+                name,
+                template_contents,
+                ..
+            } => {
+                let child_depth = if name.local.as_ref() == "html" {
                     depth
                 } else {
                     max_depth = max_depth.max(depth);
                     depth + 1
+                };
+                if let Some(contents) = template_contents.borrow().as_ref() {
+                    stack.push((contents.clone(), child_depth));
                 }
+                child_depth
             }
             _ => depth,
         };
@@ -601,6 +614,28 @@ mod tests {
         assert_eq!(input.len(), MAX_INPUT_BYTES);
         assert_eq!(
             convert_html_to_md(&input, &defaults(), &[]),
+            Err(Blocked::TooDeep)
+        );
+    }
+
+    /// FR-7 — nesting inside a `<template>` counts. Its contents live
+    /// outside `children` in `RcDom`, but they still cost the quadratic
+    /// parse, so 100 kB of nested `<ul>` behind a `<template>` is rejected
+    /// during the parse like the bare case. The template (a `<head>` child)
+    /// is depth 1, so 511 levels inside it reach exactly 512.
+    #[test]
+    fn nesting_inside_a_template_counts() {
+        let input = format!("<template>{}", "<ul>".repeat(24_997));
+        assert!(input.len() <= MAX_INPUT_BYTES);
+        assert_eq!(
+            convert_html_to_md(&input, &defaults(), &[]),
+            Err(Blocked::TooDeep)
+        );
+        let at_limit = format!("<template>{}", "<div>".repeat(511));
+        assert!(convert_html_to_md(&at_limit, &defaults(), &[]).is_ok());
+        let over_limit = format!("<template>{}", "<div>".repeat(512));
+        assert_eq!(
+            convert_html_to_md(&over_limit, &defaults(), &[]),
             Err(Blocked::TooDeep)
         );
     }

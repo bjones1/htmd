@@ -314,4 +314,15 @@ mod tests {
             Err(Blocked::TooDeep)
         );
     }
+
+    /// FR-7: the same nesting behind a `<template>` is rejected too, even
+    /// though the preview strips the template afterwards.
+    #[test]
+    fn depth_limited_preview_counts_template_contents() {
+        let input = format!("<template>{}", "<ul>".repeat(24_997));
+        assert_eq!(
+            build_srcdoc_within_depth_limit(&input),
+            Err(Blocked::TooDeep)
+        );
+    }
 }

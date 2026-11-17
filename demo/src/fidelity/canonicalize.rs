@@ -5,14 +5,16 @@
 //! canonicalize to byte-identical strings, which is what makes the
 //! word-level diff free of false positives.
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 use html5ever::driver::ParseOpts;
 use html5ever::parse_fragment;
 use html5ever::serialize::{SerializeOpts, TraversalScope, serialize};
 use html5ever::tendril::{StrTendril, TendrilSink};
 use html5ever::{Attribute, LocalName, QualName, local_name, ns};
-use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
 
 /// Canonicalize an HTML fragment per FR-5 so the structurally equivalent
 /// variations listed in spec §8.7 yield byte-identical strings for the
@@ -29,6 +31,7 @@ pub fn canonicalize(html: &str) -> String {
     .one(html);
 
     let root = fragment_root(&dom);
+    hoist_emphasis_edge_whitespace(&root);
     normalize_fragment(&root);
 
     let mut out = Vec::new();
@@ -67,6 +70,122 @@ fn fragment_root(dom: &RcDom) -> Handle {
         // unconditionally); keeps the walk sound if that ever changes.
         _ => dom.document.clone(),
     }
+}
+
+/// FR-5 *Emphasis edges*: `htmd` writes emphasis with its edge whitespace
+/// outside the markers, because CommonMark emphasis cannot begin or end
+/// with whitespace (`src/element_handler/emphasis.rs`), so both sides get
+/// the same move before whitespace collapsing. Preserved subtrees are not
+/// entered.
+fn hoist_emphasis_edge_whitespace(root: &Handle) {
+    let mut emphasis: Vec<(Handle, Handle)> = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(node) = stack.pop() {
+        for child in node.children.borrow().iter() {
+            if !matches!(child.data, NodeData::Element { .. }) || is_preserved_element(child) {
+                continue;
+            }
+            if is_emphasis_element(child) {
+                emphasis.push((node.clone(), child.clone()));
+            }
+            stack.push(child.clone());
+        }
+    }
+    // Every element is recorded before its descendants, so the reversed
+    // list hoists inner elements first and their whitespace can continue
+    // out through the outer ones.
+    for (parent, element) in emphasis.into_iter().rev() {
+        hoist_edge(&parent, &element, Edge::Leading);
+        hoist_edge(&parent, &element, Edge::Trailing);
+    }
+}
+
+/// Move the whitespace run at one inside edge of `element` to the same
+/// side outside it, joining an adjacent text sibling when there is one.
+fn hoist_edge(parent: &Handle, element: &Handle, edge: Edge) {
+    let moved = {
+        let children = element.children.borrow();
+        let edge_child = match edge {
+            Edge::Leading => children.first(),
+            Edge::Trailing => children.last(),
+        };
+        let Some(NodeData::Text { contents }) = edge_child.map(|child| &child.data) else {
+            return;
+        };
+        let text = String::from(&**contents.borrow());
+        let (kept, moved) = match edge {
+            Edge::Leading => {
+                let kept = text.trim_start_matches(is_hoisted_whitespace);
+                (kept, &text[..text.len() - kept.len()])
+            }
+            Edge::Trailing => {
+                let kept = text.trim_end_matches(is_hoisted_whitespace);
+                (kept, &text[kept.len()..])
+            }
+        };
+        if moved.is_empty() {
+            return;
+        }
+        *contents.borrow_mut() = StrTendril::from(kept);
+        moved.to_string()
+    };
+    element
+        .children
+        .borrow_mut()
+        .retain(|child| !matches!(&child.data, NodeData::Text { contents } if contents.borrow().is_empty()));
+
+    let mut siblings = parent.children.borrow_mut();
+    let Some(index) = siblings.iter().position(|child| Rc::ptr_eq(child, element)) else {
+        return;
+    };
+    let neighbor_index = match edge {
+        Edge::Leading => index.checked_sub(1),
+        Edge::Trailing => Some(index + 1),
+    };
+    let neighbor = neighbor_index
+        .and_then(|i| siblings.get(i))
+        .filter(|node| matches!(node.data, NodeData::Text { .. }))
+        .cloned();
+    if let Some(neighbor) = neighbor {
+        if let NodeData::Text { contents } = &neighbor.data {
+            let joined = match edge {
+                Edge::Leading => format!("{}{moved}", &**contents.borrow()),
+                Edge::Trailing => format!("{moved}{}", &**contents.borrow()),
+            };
+            *contents.borrow_mut() = StrTendril::from(joined);
+        }
+    } else {
+        let text = Node::new(NodeData::Text {
+            contents: RefCell::new(StrTendril::from(moved)),
+        });
+        text.parent.set(Some(Rc::downgrade(parent)));
+        let at = match edge {
+            Edge::Leading => index,
+            Edge::Trailing => index + 1,
+        };
+        siblings.insert(at, text);
+    }
+}
+
+/// The elements `htmd` writes as CommonMark emphasis.
+fn is_emphasis_element(node: &Handle) -> bool {
+    matches!(
+        &node.data,
+        NodeData::Element { name, .. }
+            if name.ns == ns!(html)
+                && matches!(
+                    name.local,
+                    local_name!("em") | local_name!("i") | local_name!("strong") | local_name!("b")
+                )
+    )
+}
+
+/// Exactly the set `htmd` moves: it trims emphasis content with
+/// `str::trim_start`/`trim_end`, which use Unicode `White_Space`. That set
+/// includes U+00A0 and U+3000 (the ideographic space), so a narrower one
+/// would report a false diff for CJK text.
+fn is_hoisted_whitespace(c: char) -> bool {
+    c.is_whitespace()
 }
 
 /// Which node's children a normalization frame applies to.
@@ -219,6 +338,7 @@ fn normalize_children(parent: &Handle, kind: ParentKind, preserved: bool) {
     *parent.children.borrow_mut() = children;
 }
 
+#[derive(Clone, Copy)]
 enum Edge {
     Leading,
     Trailing,
@@ -745,6 +865,63 @@ mod tests {
     #[test]
     fn inline_spacing_kept_inside_blocks() {
         assert_eq!(canonicalize("<p>a  <b>x</b>  b</p>"), "<p>a <b>x</b> b</p>");
+    }
+
+    /// FR-5 *Emphasis edges* — edge whitespace moves outside `<em>`, `<i>`,
+    /// `<strong>`, and `<b>`, inner elements first, and merges with the
+    /// neighboring text before collapsing.
+    #[test]
+    fn emphasis_edge_whitespace_hoisted() {
+        assert_eq!(
+            canonicalize("<p><strong>bold </strong>text</p>"),
+            "<p><strong>bold</strong> text</p>"
+        );
+        assert_eq!(canonicalize("<p><em> a</em></p>"), "<p><em>a</em></p>");
+        assert_eq!(canonicalize("<p>a <i> b </i> c</p>"), "<p>a <i>b</i> c</p>");
+        assert_eq!(
+            canonicalize("<p>x<strong><em>a </em></strong>b</p>"),
+            "<p>x<strong><em>a</em></strong> b</p>"
+        );
+        assert_eq!(
+            canonicalize("<p><em>a\u{3000}</em>b</p>"),
+            "<p><em>a</em>\u{3000}b</p>"
+        );
+    }
+
+    /// FR-5 *Emphasis edges* — a space the conversion loses still shows,
+    /// and preserved subtrees keep their emphasis edges.
+    #[test]
+    fn emphasis_edge_hoist_keeps_real_changes() {
+        assert_ne!(canonicalize("<p><em>a </em>b</p>"), canonicalize("<p><em>a</em>b</p>"));
+        assert_eq!(canonicalize("<pre><em>a </em>b</pre>"), "<pre><em>a </em>b</pre>");
+    }
+
+    /// §8.7 *Emphasis edge whitespace* through the real pipeline: htmd
+    /// moves the space outside the markers, and the diff shows nothing.
+    #[test]
+    fn emphasis_edge_whitespace_pipeline_zero_diff() {
+        use crate::convert::{convert_html_to_md, convert_md_to_html};
+        use crate::fidelity::{WordDiff, word_diff};
+        use crate::options_model::{CmarkFlags, HtmdOptions};
+        use htmd::options::TranslationMode;
+
+        let opts = HtmdOptions {
+            translation_mode: TranslationMode::Faithful,
+            ..Default::default()
+        };
+        for html in [
+            "<p><strong>bold </strong>text</p>",
+            "<p>a <em> b</em> c</p>",
+            "<p><em>a\u{3000}</em>b</p>",
+        ] {
+            let md = convert_html_to_md(html, &opts, &[]).unwrap();
+            let round_tripped = convert_md_to_html(&md, &CmarkFlags::tables_math());
+            assert_eq!(
+                word_diff(&canonicalize(html), &canonicalize(&round_tripped)),
+                WordDiff::Inclusive,
+                "{html} → {md:?} → {round_tripped:?}"
+            );
+        }
     }
 
     /// FR-5:127 — exactly one trailing U+000A leaves the last text node of

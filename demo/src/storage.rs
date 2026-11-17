@@ -512,6 +512,12 @@ impl<S: Store> StorageController<S> {
         }
     }
 
+    /// Whether a debounced save is still pending; any flush clears it.
+    #[cfg(test)]
+    pub(crate) fn save_pending(&self) -> bool {
+        self.save_timer.is_some()
+    }
+
     /// (Re)start the 500 ms save window, cancelling any pending one.
     fn arm_save_timer(&mut self) {
         if let Some(token) = self.save_timer.take() {

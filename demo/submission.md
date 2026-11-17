@@ -1325,188 +1325,192 @@ GitHub userid: JustinG1133
 Added the `wasm-bindgen-test` browser suite (FR-7 nesting cases in release
 wasm and the panic hook's crash steps) and the §8.6 crash-recovery
 Playwright spec against `demo-panic-test` builds, wired both into CI in
-debug and release, and confirmed they pass there.
+debug and release, and confirmed they pass there. 
 
 #### Specification review rounds
 
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
 | **16** | **19** (2 high, 9 medium, 8 low) | Fixed both high and all 9 medium findings. The 2 MB display cap now covers HTML → Markdown output, with a padded-table estimate that rejects amplifying tables before `htmd` runs (R16-H1). The 512-level nesting limit now covers Markdown → HTML, and every limited `html5ever` parse is fed in chunks and stops once past 512 levels, so neither mode pays the quadratic full parse of deep input (R16-H2). The spec now records behavior the code already had: startup validity, in-flight release, key-scoped wipe and the shared Pages origin, missing-field defaults, the `skip_tags` size class, 2 kB crossings, Reset's banner lifecycle, oversized "Use Output as Input", and the scroll save timer (R16-M1–M9). Also fixed Round 15's open R15-M1 (inline whitespace at the fragment root) and R15-L1 (the same conflict as R16-M7). The 8 low findings remain open. |
+| **17** | **6** (2 medium, 4 low) | Fixed both medium findings. FR-5 now moves whitespace at the inside edges of `<em>`, `<i>`, `<strong>`, and `<b>` outside the element on both sides, as `htmd` does when it writes emphasis, so `<strong>bold </strong>text` no longer shows a false diff (R17-M1). FR-8 now defines a recovery hold: while the crash-recovery banner shows, no edit, option change, or mode switch converts a restored buffer that may be the one that crashed (R17-M2). Both fixes are in the spec and the code, with new tests. The 4 low findings remain open; R17-L3 extends the open R16-L5. |
 
 #### Last specification review
 
-**LLM and prompt used:** **Claude Opus 5.5** (Claude Code), with the exact prompt quoted in the Round 16 review below.
+**LLM and prompt used:** **Claude Opus 5.5** (Claude Code), with the exact prompt quoted in the Round 17 review below.
 
-## Round 16
+## Round 17
 
 ```text
 review @demo/demo-spec.md
 ```
 
 Reviewed by **Claude Opus 5.5** for **Justin Gray** with the exact prompt
-quoted above. Scope: the complete `demo/demo-spec.md`, checked for internal
-consistency and against `src/options.rs`, `src/element_handler/`,
-`src/lib.rs`, `demo/Cargo.toml`, and `demo/Cargo.lock`.
+quoted above. Scope: the complete post-round-16 `demo/demo-spec.md`,
+checked for internal consistency and against `src/options.rs`,
+`src/element_handler/emphasis.rs`, `src/dom_walker.rs`,
+`demo/Cargo.lock`, and the demo sources that implement the rules in
+question (`demo/src/app.rs`, `demo/src/engine.rs`, `demo/src/convert.rs`,
+`demo/src/preview.rs`, `demo/src/fidelity/`). Earlier findings in
+`demo/review.md` and this file were read first.
 
 #### What checks out
 
-* The 15 `ENABLE_*` flags match pulldown-cmark 0.13.6 (pinned in
-  `demo/Cargo.lock`); the 12 `htmd` options and their variants match
-  `src/options.rs`.
-* The empty-`skip_tags` panic is real (`src/element_handler/mod.rs:400`,
-  `assert!(!tags.is_empty())`). The Faithful-mode `br_style` exception
-  matches `src/element_handler/br.rs:13`.
-* The `html5ever`/`markup5ever_rcdom` 0.39 versions match the root crate.
-  The release profile and the `demo-panic-test` feature match §6 and
-  Deliverable 3.
+* FR-4's 12 `htmd` options, their variants, and their defaults match
+  `src/options.rs`. The empty-`skip_tags` panic is real
+  (`src/element_handler/mod.rs:400`).
+* `demo/Cargo.lock` pins `pulldown-cmark` 0.13.6, `html5ever` and
+  `markup5ever_rcdom` 0.39, and `similar` 2.7.0. The constants in
+  `convert.rs` (4,096-byte chunks, 100,000 bytes, 512 levels, 2,000,000
+  bytes) and `diff.rs` (5,000 tokens) match the spec.
+* The 15-flag count was not checked again: this machine has no Rust
+  toolchain, so the `pulldown-cmark` source was not opened.
 
-#### High-severity issues
+#### Blocking issues
 
-* ~~**R16-H1 — HTML → Markdown output has no size cap, and `htmd`'s table
-  padding amplifies it (§6:214; §8.3:249).**~~ The 2 MB cap covers Markdown →
-  HTML only. `htmd` pads every cell to its column's widest cell
-  (`src/element_handler/table.rs:412-452`), and in Pure mode pads short rows
-  to the full column count. A 50-column header of 1,000-character cells
-  followed by rows of empty `<td></td>` turns each 9-byte cell into about
-  1,003 bytes (~110×), so a 100 kB input can produce megabytes of Markdown.
-  That output is then re-rendered, stripped, and canonicalized, which can blow
-  the 1,000 ms ceiling or run out of memory, showing the crash overlay.
-  **Suggested fix:** apply the 2 MB cap to every generated string (htmd's
-  Markdown, the re-rendered HTML, the round-trip HTML), plus an estimate on
-  the parsed tree (rows × Σ column widths per table) computed with the depth
-  walk, so the huge allocation never happens.
-  **Status:** fixed (`convert.rs`: `estimated_table_output_bytes` runs after
-  the depth check and rejects with `Blocked::OutputTooLarge` above 2,000,000
-  bytes; `within_display_cap` caps htmd's Markdown. `app.rs` caps the
-  re-rendered and round-trip HTML before commit; `limits.rs` moves the cap
-  banner into the shared, mode-scoped banner state. §6 and §8.3 updated. New
-  tests: `padded_table_amplification_is_rejected_in_both_modes`,
-  `padded_short_rows_are_rejected`, `table_estimate_covers_actual_padded_output`,
-  `ordinary_table_converts`, `html_table_amplification_shows_cap_banner`).
-* ~~**R16-H2 — The 50,000-`>` preview case is quadratic and has no timing
-  check (FR-1:45; §8.6:292; §8.3:250).**~~ The preview re-parses the output
-  with `html5ever`. Each `<blockquote>` start tag checks for an open `<p>` in
-  button scope, which scans the whole open-element stack, because nothing in
-  a stack of blockquotes stops the scan. About 1.25 billion steps for 50,000
-  levels; `preview.rs` already records ~16 s at native release. §8.6 only
-  checks for the absence of a stack overflow. **Suggested fix:** time the
-  case in the Playwright performance suite; if slow, cap the preview's
-  nesting or skip the preview for very deep output.
-  **Status:** fixed (design decisions: the FR-7 nesting limit now covers
-  Markdown → HTML, and every limited parse stops early. The quadratic cost
-  also hit HTML → Markdown input, which `html_to_tree` parsed in full before
-  its depth was measured: 100 kB of `<ul>` is 25,000 levels, about 4 s at
-  native release. `convert.rs`'s `parse_within_depth_limit` feeds `html5ever`
-  4,096-byte chunks and stops once the partial tree passes 512 levels. HTML →
-  Markdown uses it with `parse_document` and htmd's parse options in place of
-  `html_to_tree`; Markdown → HTML uses it for the preview's fragment parse
-  (`build_srcdoc_within_depth_limit`), which also counts raw HTML. In
-  addition, `convert_md_to_html_gated` counts element-producing
-  `Start`/`End` events as it renders and stops at the first past 512, so
-  50,000 `>` never render. FR-1, FR-7, §8.6 and the README updated;
-  `browser_tests.rs` asserts both rejections and keeps a 5,000-level
-  preview-walk stack case. New tests: `markdown_nesting_limit_boundary`,
-  `fifty_thousand_blockquotes_are_rejected`,
-  `deep_html_input_is_rejected_during_the_parse`,
-  `chunked_parse_matches_htmd_one_shot_parse`,
-  `depth_limited_preview_boundary`,
-  `depth_limited_preview_rejects_deep_raw_html`,
-  `deep_markdown_shows_nesting_banner`, and Playwright timing cases for
-  100 kB of nested `<ul>` in both modes and for the padded HTML table).
+None.
 
-#### Medium-severity issues
-
-* ~~**R16-M1 — The inactive mode's output at startup is undefined
-  (FR-2:60; §8.6:280).**~~ Only the active buffer converts at startup, and the
-  validity rule is stated relative to "the commit that produced it".
-  **Suggested fix:** state that a never-committed output is invalid, so the
-  first switch converts.
-  **Status:** fixed (spec only; `Engine::on_restore` already invalidates both
-  outputs).
-* ~~**R16-M2 — The in-flight lifecycle is incomplete (FR-2:55).**~~ No
-  release rule for non-loading commits, no timeout if `load` never fires,
-  and no statement of whether there is one iframe or one per mode.
-  **Suggested fix:** define these. Partly overlaps R10-M1, which settled the
-  clearing commits.
-  **Status:** fixed (spec only: one shared iframe; no timeout, because a run
-  whose `load` never arrives is released by the next sequence advance, as
-  `Engine::advance_seq` does).
-* ~~**R16-M3 — GitHub Pages project sites share one origin (FR-8:159;
-  Deliverable 4).**~~ "Wipe storage" must not mean `localStorage.clear()`,
-  which would wipe other sites' data and the crash marker. Other project
-  sites can read the workspace and send `storage` events. **Suggested fix:**
-  scope the wipe to the demo's keys and record the shared-origin limitation.
-  **Status:** fixed (spec only; `StorageController::load` already removes only
-  the two keys; the limitation is recorded under *Multiple tabs*).
-* ~~**R16-M4 — Missing persisted fields are ambiguous (FR-8:158–168).**~~
-  "default `0`" conflicts with "wipe if fields are invalid". **Suggested
-  fix:** say which absent fields default.
-  **Status:** fixed (spec only; matches `storage.rs` validation: `scroll_*` →
-  0, `sample_*` → `null`, anything else invalid).
-* ~~**R16-M5 — The `skip_tags` debounce size class is unspecified
-  (FR-2:57; FR-4:108).**~~ The field itself is ≤ 200 characters, so it would
-  always take the immediate path. **Suggested fix:** classify by the active
-  buffer's size.
-  **Status:** fixed (spec only; matches `Engine::on_options_change`).
-* ~~**R16-M6 — Crossing 2 kB mid-batch is unspecified (FR-2:52–54).**~~
-  **Suggested fix:** define both directions.
-  **Status:** fixed (spec only; matches `Engine::schedule_batch`. Shrinking to
-  ≤ 2 kB cancels both timers and converts on the next frame; growing past
-  2 kB arms the debounce and a deadline from the batch's first edit).
-* ~~**R16-M7 — Reset's "does not change banners" conflicts with banner
-  lifecycles (FR-4:113; FR-7:150; §8.5:265).**~~ The same conflict as R15-L1,
-  extended to the `Err` banner. **Suggested fix:** Reset does not dismiss
-  banners itself; its reconversion and save follow their normal lifecycles.
-  **Status:** fixed (spec only; FR-4 and §8.5 reworded; also resolves R15-L1).
-* ~~**R16-M8 — "Use Output as Input" can put up to 2 MB into a buffer
-  (FR-2:62).**~~ That immediately trips the input ceiling and may hit the
-  storage quota. **Suggested fix:** disable the button above 100,000 bytes, or
-  document the behavior.
-  **Status:** fixed (design decision: documented; the existing
-  `use_output_into_oversized_target_halts_with_banner` test covers the size
-  banner).
-* ~~**R16-M9 — Scroll offsets have no save trigger (FR-8:168, 173–177).**~~
-  **Suggested fix:** name the trigger.
-  **Status:** fixed (spec only; matches `on_editor_scroll`, which rides the
-  500 ms save timer).
 
 #### Low-severity / editorial
 
-* **R16-L1 — Context-menu "Open link in new tab" bypasses `sandbox` (§8.6
-  *Preview navigation*).** It makes a network request. Scope the criterion
-  to clicks, or document the gap.
-* **R16-L2 — The FR-5 element lists are incomplete.** The block-level list
-  omits `menu`, `search`, `legend`, and `center`; the preserved-subtree list
-  omits `listing`, `xmp`, and `plaintext`.
-* **R16-L3 — FR-5 case folding is a no-op.** `html5ever` already lowercases
-  HTML names and corrects SVG/MathML case; saying so prevents lowercasing
-  attribute values.
-* **R16-L4 — The `strip = false` rationale (§6:218)** likely concerns
-  wasm-bindgen's custom sections rather than `wasm-opt` (unverified).
-* **R16-L5 — Line-number references will go stale.** "FR-8:160" in FR-7 and
-  "FR-7:148" in `demo/Cargo.toml`; cite sections and bullets instead.
-* **R16-L6 — History in the spec.** The "(round N)" notes in *Key decisions*
-  and the "old reference-link amplification recipe" aside in §8.3 belong in
-  `review.md`, given Deliverable 5.
-* **R16-L7 — The crash marker is shared across tabs.** One tab's crash shows
-  the recovery banner on the next reload of any tab; state this.
-* **R16-L8 — The §5 UI sketch is incomplete.** It lacks the `skip_tags`
-  field, the options sidebar, and the Undo toast, and the banner region sits
-  below the fidelity panel.
+* **R17-L1 — FR-1's depth claim for the HTML → Markdown preview is
+  unsupported (FR-1 *Preview isolation*).** FR-1 says the input's limit
+  already bounds the re-rendered Markdown's depth. But the Rendered tab
+  renders with the sidebar flags, and `htmd` does not escape `~` or `^` in
+  mid-text (`src/dom_walker.rs`, `escape_if_needed`). With strikethrough,
+  subscript, or superscript enabled, plain text could become nested inline
+  elements (not run). `app.rs` builds this preview with the unbounded
+  `build_srcdoc`. The cost grows linearly, because the nesting is inline.
+  **Suggested fix:** use `build_srcdoc_within_depth_limit` in both modes and
+  drop the claim.
+* **R17-L2 — The 1,000 ms ceiling is not tested at its most expensive case
+  (§6 *Adversarial bounds*; §8.3).** The only diff case in the adversarial
+  suite is the fully divergent 100 kB input, which skips the diff. The
+  costliest case is two completely different 5,000-token middles. That is
+  just under the cap, so the diff runs with no deadline. **Suggested fix:**
+  add a timed release-wasm case at exactly 5,000 tokens per side.
+* **R17-L3 — Line-number cross-references have drifted further.** This
+  extends the open R16-L5. FR-7's "FR-8:160" now points at the
+  invalid-data reset rule. Code comments cite stale lines too, such as
+  `diff.rs`'s §6:213 for the 5,000-token rule and FR-5:131 for the diff.
+  **Suggested fix:** cite section and bullet names.
+* **R17-L4 — The compute budget does not say which mode and options each
+  corpus file runs under (§6 *Compute budget*).** Faithful mode adds
+  canonicalization and the diff, so the budget is ambiguous for the two
+  `.html` files. **Suggested fix:** state that each `.md` file runs in
+  Markdown → HTML with the Demo Preset, and each `.html` file runs in
+  HTML → Markdown in both Pure and Faithful.
 
-**Total new findings: 19 (high 2, medium 9, low 8).**
+**Total new findings: 6 (blocking 0, medium 2, low 4).** R17-L3 extends
+the open R16-L5 rather than counting as a separate issue.
 
-Validation: specification and source inspection only during the review. The
-fixes were written without a local Rust toolchain, so `cargo build`, `cargo
-clippy -- --deny warnings`, and `cargo test` (root and demo) had not been run
-when this entry was written.
+Validation: specification and source inspection only. This machine has
+neither a Rust toolchain nor Node.js, so `cargo build`, `cargo clippy --
+--deny warnings`, and `cargo test` (root and demo) and the Playwright suite
+had not been run when this entry was written. The fixes and their tests
+rely on CI for verification.
 
 #### Implementation review rounds
 
-(Table showing implementation review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| **IR5** | **13 new** (1 high, 5 medium, 7 low) | Fixed the high and all 5 medium findings. Nesting inside a `<template>` now counts toward the 512-level limit, so a leading `<template>` no longer skips the early parse stop (IR5-H1). A cleared fidelity panel no longer reports "No differences." (IR5-M1). "Use Output as Input" now follows the engine's output validity, so it is disabled while an edit is pending (IR5-M2). The size-limit check is scoped to the edited buffer (IR5-M3). `skip_tags` edits stay on the 500 ms save timer instead of flushing on every keystroke (IR5-M4). Emphasis-edge whitespace matches `htmd`'s full Unicode set (IR5-M5). The 7 low findings remain open. |
+| **IR6** | **3 new** (1 medium, 2 low) | Fixed all three. Emptying a buffer now clears its nesting, output-cap, and conversion-error banners, which had waited for a conversion that empty input never runs (IR6-M1). Limit banners are kept per mode and the region shows only the active mode's, so one buffer's crossing is announced even while the other buffer holds a banner (IR6-L1). CI now lints test code, and a new test covers every recovery-hold trigger (IR6-L2). |
 
 #### Last implementation review
 
-(LLM and prompt used)
+**LLM and prompt used:** **Claude Opus 5.5** (Claude Code), with the exact prompt quoted in the Implementation review round 6 below.
 
-(LLM output, possibly with strikethrough)
+## Implementation review round 6
+
+```text
+review the implementation of @demo-spec.md. Make sure you review the most up to date version of each file since there are some as staged changes currently.
+```
+
+Reviewed by **Claude Opus 5.5** for **Justin Gray** with the exact prompt
+quoted above. Scope: the whole implementation under `demo/` with the staged
+IR5 fixes applied (the working tree matched the index): `src/`,
+`index.html`, Cargo and Trunk configuration, and the Playwright suite, plus
+`.github/workflows/demo-ci.yaml`. It was checked against
+`demo/demo-spec.md` FR-1–FR-8 and §5–§8, and against `htmd`'s
+`src/element_handler/emphasis.rs`, `src/util/text.rs`, and
+`src/dom_walker.rs`. The IR5 entry was read first; its open low findings are
+not counted again.
+
+#### What checks out
+
+* IR5-H1: `max_element_depth` descends into `template_contents` at the
+  depth of the template's children. Both the chunked HTML → Markdown parse
+  and the depth-limited preview parse go through it.
+* IR5-M1: every clear resets the fidelity panel to `FidelityDiff::NotRun`,
+  which renders no verdict.
+* IR5-M2: the "Use Output as Input" button's disabled state and
+  `on_use_output` both read the engine's output validity, which turns false
+  on the first edit.
+* IR5-M3: the size-limit transition reads the edited buffer's own banner,
+  so crossing 100 kB in one mode halts and clears that mode's output.
+* IR5-M4: `skip_tags` edits stay on the 500 ms save timer and still
+  reconvert as an FR-2 option change.
+* IR5-M5: `is_hoisted_whitespace` is `char::is_whitespace`, the set that
+  `str::trim_start` and `trim_end` remove in `htmd`'s
+  `strip_leading_whitespace`. A comment at an emphasis edge does not break
+  the hoist: Faithful mode keeps comments, so `htmd` does not trim past them
+  either.
+* The recovery hold gates the engine's only dispatch point, and only the
+  two recovery actions lift it.
+* Every staged file keeps CRLF line endings.
+
+#### High-severity issues
+
+None.
+
+#### Medium-severity issues
+
+* ~~**IR6-M1 — The nesting, output-cap, and conversion-error banners
+  outlive an emptied buffer (FR-7).**~~ These banners cleared only in
+  `conversion_succeeded`, and empty input clears the output without
+  converting. After pasting 600 nested `<div>` elements and deleting
+  everything, the editor was empty but "Input exceeds the supported nesting
+  depth." still showed. The next deep paste was not announced, because
+  `Banners::enter` does nothing while a banner is active. The same cause
+  kept a size banner up after a sample load, Reload Sample, or Undo during
+  the recovery hold, which blocks the commit that would clear it.
+  **Status:** fixed. `exit_limits_resolved_by_text` clears the size banner
+  once a buffer is within the ceiling and every limit banner once it is
+  empty. Typing calls it, and so does every buffer overwrite, all of which
+  now go through `overwrite_with_ceiling_check`. New tests:
+  `emptying_the_buffer_clears_its_nesting_banner` and
+  `sample_load_clears_the_size_banner_during_the_recovery_hold`.
+
+#### Low-severity / editorial
+
+* ~~**IR6-L1 — One size banner served both modes (FR-7).**~~ The IR5-M3
+  fix moved the banner's single owner to whichever buffer crossed last.
+  With the banner up for the HTML buffer, the Markdown buffer's crossing
+  was never announced. Markdown coming back under cleared the banner
+  although the HTML buffer was still oversized, and the banner showed over
+  a small Markdown input. **Status:** fixed. `Core` keeps one `Banners` per
+  mode, and the region shows only the active mode's. `run_actions`
+  re-syncs after every engine input, so a mode switch hides the other
+  mode's banners and shows them again on the way back. FR-7 gains a
+  *Banner scope* rule, and §6 and §8.6 match it. Three existing tests now
+  assert the per-mode behaviour.
+* ~~**IR6-L2 — Verification gaps (§7 Deliverable 3; FR-8 *Recovery
+  hold*).**~~ CI ran clippy for wasm32 without `--all-targets`, so no
+  `#[cfg(test)]` code was ever linted. The recovery-hold tests covered only
+  an edit and a mode switch. **Status:** fixed. A new "Clippy (wasm32,
+  tests)" CI step lints with `--all-targets`; it may surface lint warnings
+  in older test code. New test: `recovery_hold_blocks_every_conversion_trigger`
+  (an option change, Reset, a sample load, Reload Sample, and Undo convert
+  nothing until "Convert restored input").
+
+Still open from earlier rounds and not counted again: IR5-L1–L7, R17-L1
+(the HTML → Markdown preview uses the unbounded `build_srcdoc`), and R17-L2
+(no timed case at exactly 5,000 tokens per side).
+
+**Total new findings: 3 (high 0, medium 1, low 2).**
+
+Validation: source inspection only. This machine has no Rust toolchain, so
+`cargo build`, `cargo clippy -- --deny warnings`, and `cargo test` (root
+and demo), both wasm clippy steps, and the Playwright suite had not been
+run when this entry was written. The fixes and their tests rely on CI for
+verification.
