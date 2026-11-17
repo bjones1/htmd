@@ -271,12 +271,13 @@ indicates LLM output that I deemed incorrect or irrelevant.
 | Round | Findings | Main changes made |
 | ----- | -------- | ----------------- |
 | 1 | 0 | No changes. The reviewer ran `cargo test`, `cargo clippy -- --deny warnings` and a CRLF check, and found no contradiction with the spec or pulldown-cmark 0.13.4. |
+| 2 | 0 | No changes. Re-reviewed the code after the fix for Pavel's round 1 finding (`cd0860b`); `cargo build`, `cargo clippy -- --deny warnings`, `cargo test` and `cargo fmt -- --check` passed. |
 
 #### Last implementation review
 
-Prompting Copilot Fusion, Standard (Fusion selected GPT-6 Luna), with
-`Review round 1 of the <sub> implementation on branch subscript-spec (commit
-c3539c3). Check src/element_handler/sub.rs, the ~ escaping in
+Prompting Copilot Fusion, Standard, with
+`Review round 2 of the <sub> implementation on branch subscript-spec (commit
+cd0860b). Check src/element_handler/sub.rs, the ~ escaping in
 src/dom_walker.rs and src/util/escape.rs, and tests/subscript_tests.rs against
 the "Subscript" section of translation_approach.md (TranslationMode::Pure and
 TranslationMode::Faithful, Approach steps 1-4) and against pulldown-cmark
@@ -287,14 +288,15 @@ give the input HTML, the actual output, and the expected output. Do not edit
 any files. List serious problems as numbered findings. If there are none, say
 so and whether another review round seems necessary.` produced:
 
-> No findings. I found no behavior contradicting the documented Pure/Faithful
-> approach or pulldown-cmark 0.13.4, and no material test gaps. The requested
-> files retain CRLF line endings; I found no comment or clippy violations.
+> **Findings:** None. The reviewed implementation in `sub.rs`, `dom_walker.rs`,
+> `escape.rs` and `subscript_tests.rs` is consistent with the documented
+> Pure/Faithful behavior and the tested `ENABLE_SUBSCRIPT` round trips. The
+> documented Pure-mode loss for in-word subscripts is intentional.
 >
-> Validation passed: `cargo test` (including the subscript tests) and
-> `cargo clippy -- --deny warnings`.
->
-> Another review round does not seem necessary.
+> No comment, clippy, or CRLF issues found. `cargo build`,
+> `cargo clippy -- --deny warnings`, `cargo test`, and `cargo fmt -- --check`
+> passed. No files were edited. **Another review round does not seem
+> necessary.**
 
 ### Pavel Shegay
 
