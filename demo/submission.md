@@ -1336,7 +1336,7 @@ debug and release, and confirmed they pass there.
 
 #### Last specification review
 
-**LLM and prompt used:** **Claude Opus 5.5** (Claude Code), with the exact prompt quoted in the Round 17 review below.
+**LLM and prompt used:** **Claude Opus 5.5 Medium** (Claude Code), with the exact prompt quoted in the Round 17 review below.
 
 ## Round 17
 
@@ -1415,49 +1415,48 @@ rely on CI for verification.
 | ----- | -------- | ----------------- |
 | **IR5** | **13 new** (1 high, 5 medium, 7 low) | Fixed the high and all 5 medium findings. Nesting inside a `<template>` now counts toward the 512-level limit, so a leading `<template>` no longer skips the early parse stop (IR5-H1). A cleared fidelity panel no longer reports "No differences." (IR5-M1). "Use Output as Input" now follows the engine's output validity, so it is disabled while an edit is pending (IR5-M2). The size-limit check is scoped to the edited buffer (IR5-M3). `skip_tags` edits stay on the 500 ms save timer instead of flushing on every keystroke (IR5-M4). Emphasis-edge whitespace matches `htmd`'s full Unicode set (IR5-M5). The 7 low findings remain open. |
 | **IR6** | **3 new** (1 medium, 2 low) | Fixed all three. Emptying a buffer now clears its nesting, output-cap, and conversion-error banners, which had waited for a conversion that empty input never runs (IR6-M1). Limit banners are kept per mode and the region shows only the active mode's, so one buffer's crossing is announced even while the other buffer holds a banner (IR6-L1). CI now lints test code, and a new test covers every recovery-hold trigger (IR6-L2). |
+| **IR7** | **8** (8 low) |  a panic sets `inert` on the empty `#app-root` while the app is mounted to `<body>`, so the controls stay operable (IR7-M1); Undo after a cross-mode sample load restores the wrong buffer, losing the HTML text (IR7-M2). The 8 low findings are an image-alt over-count in the early Markdown nesting check, the iframe `load` handler sending the current sequence number, two crash-recovery edge cases, a stale engine copy of the buffer, no run-once guard in the panic hook, class-token de-duplication, and the missing async delay test hook (IR7-L1–L8). |
 
 #### Last implementation review
 
-**LLM and prompt used:** **Claude Opus 5.5** (Claude Code), with the exact prompt quoted in the Implementation review round 6 below.
+**LLM and prompt used:** **Claude Opus 5.5 Medium** (Claude Code), with the exact prompt quoted in the Implementation review round 7 below.
 
-## Implementation review round 6
+## Implementation review round 7
 
 ```text
-review the implementation of @demo-spec.md. Make sure you review the most up to date version of each file since there are some as staged changes currently.
+review the implementation of @demo/demo-spec.md
 ```
 
 Reviewed by **Claude Opus 5.5** for **Justin Gray** with the exact prompt
-quoted above. Scope: the whole implementation under `demo/` with the staged
-IR5 fixes applied (the working tree matched the index): `src/`,
-`index.html`, Cargo and Trunk configuration, and the Playwright suite, plus
+quoted above. Scope: the whole implementation under `demo/` at commit
+`5efa6a9`: `src/`, `index.html`, Cargo and Trunk configuration, the
+Playwright and `wasm-bindgen-test` suites, and
 `.github/workflows/demo-ci.yaml`. It was checked against
 `demo/demo-spec.md` FR-1–FR-8 and §5–§8, and against `htmd`'s
-`src/element_handler/emphasis.rs`, `src/util/text.rs`, and
-`src/dom_walker.rs`. The IR5 entry was read first; its open low findings are
-not counted again.
+`src/dom_walker.rs`. The IR4 entry in `demo/review.md` and the IR6 entry
+were read first.
 
 #### What checks out
 
-* IR5-H1: `max_element_depth` descends into `template_contents` at the
-  depth of the template's children. Both the chunked HTML → Markdown parse
-  and the depth-limited preview parse go through it.
-* IR5-M1: every clear resets the fidelity panel to `FidelityDiff::NotRun`,
-  which renders no verdict.
-* IR5-M2: the "Use Output as Input" button's disabled state and
-  `on_use_output` both read the engine's output validity, which turns false
-  on the first edit.
-* IR5-M3: the size-limit transition reads the edited buffer's own banner,
-  so crossing 100 kB in one mode halts and clears that mode's output.
-* IR5-M4: `skip_tags` edits stay on the 500 ms save timer and still
-  reconvert as an FR-2 option change.
-* IR5-M5: `is_hoisted_whitespace` is `char::is_whitespace`, the set that
-  `str::trim_start` and `trim_end` remove in `htmd`'s
-  `strip_leading_whitespace`. A comment at an emphasis edge does not break
-  the hoist: Faithful mode keeps comments, so `htmd` does not trim past them
-  either.
-* The recovery hold gates the engine's only dispatch point, and only the
-  two recovery actions lift it.
-* Every staged file keeps CRLF line endings.
+* Limits run in the order FR-7 and §6 give: the size check, then the
+  chunked depth-limited parse, then the padded-table estimate before
+  `htmd`, then the 2 MB cap on every generated string. Both converters
+  check the size again when a run starts, which closes IR4-M2.
+* Preview isolation (FR-1): `srcdoc` is set as a DOM property, `sandbox=""`,
+  the CSP `<meta>` then the demo's `<base target="_blank">`, and an
+  iterative strip of `<base>`, `<meta>`, `<link>`, `<noscript>`,
+  `<template>`, and every `target` attribute.
+* Canonicalization covers every §8.7 variation and is iterative
+  throughout. Comments next to text and at emphasis edges do not produce
+  false diffs: Faithful mode keeps comments (`src/dom_walker.rs:51-56`),
+  so both sides keep the same nodes.
+* The FR-2 engine: the forced deadline, size-class changes, discarding
+  stale runs, and the recovery hold all match the spec.
+* FR-8 storage: validation, removal of only the two keys, the
+  flush-before-write and debounce rules, and the quota and multi-tab
+  banners.
+* IR4-M3 and IR4-L1 are fixed (the engine's output validity, and
+  `apply_skip_tags`).
 
 #### High-severity issues
 
@@ -1465,52 +1464,63 @@ None.
 
 #### Medium-severity issues
 
-* ~~**IR6-M1 — The nesting, output-cap, and conversion-error banners
-  outlive an emptied buffer (FR-7).**~~ These banners cleared only in
-  `conversion_succeeded`, and empty input clears the output without
-  converting. After pasting 600 nested `<div>` elements and deleting
-  everything, the editor was empty but "Input exceeds the supported nesting
-  depth." still showed. The next deep paste was not announced, because
-  `Banners::enter` does nothing while a banner is active. The same cause
-  kept a size banner up after a sample load, Reload Sample, or Undo during
-  the recovery hold, which blocks the commit that would clear it.
-  **Status:** fixed. `exit_limits_resolved_by_text` clears the size banner
-  once a buffer is within the ceiling and every limit banner once it is
-  empty. Typing calls it, and so does every buffer overwrite, all of which
-  now go through `overwrite_with_ceiling_check`. New tests:
-  `emptying_the_buffer_clears_its_nesting_banner` and
-  `sample_load_clears_the_size_banner_during_the_recovery_hold`.
+None.
 
 #### Low-severity / editorial
 
-* ~~**IR6-L1 — One size banner served both modes (FR-7).**~~ The IR5-M3
-  fix moved the banner's single owner to whichever buffer crossed last.
-  With the banner up for the HTML buffer, the Markdown buffer's crossing
-  was never announced. Markdown coming back under cleared the banner
-  although the HTML buffer was still oversized, and the banner showed over
-  a small Markdown input. **Status:** fixed. `Core` keeps one `Banners` per
-  mode, and the region shows only the active mode's. `run_actions`
-  re-syncs after every engine input, so a mode switch hides the other
-  mode's banners and shows them again on the way back. FR-7 gains a
-  *Banner scope* rule, and §6 and §8.6 match it. Three existing tests now
-  assert the per-mode behaviour.
-* ~~**IR6-L2 — Verification gaps (§7 Deliverable 3; FR-8 *Recovery
-  hold*).**~~ CI ran clippy for wasm32 without `--all-targets`, so no
-  `#[cfg(test)]` code was ever linted. The recovery-hold tests covered only
-  an edit and a mode switch. **Status:** fixed. A new "Clippy (wasm32,
-  tests)" CI step lints with `--all-targets`; it may surface lint warnings
-  in older test code. New test: `recovery_hold_blocks_every_conversion_trigger`
-  (an option change, Reset, a sample load, Reload Sample, and Undo convert
-  nothing until "Convert restored input").
+* **IR7-L1 — The early Markdown nesting check can reject valid input
+  (FR-7 *Nesting limit*).** `convert.rs:52-63` counts every `Start` event,
+  but `pulldown-cmark` renders emphasis or links inside an image as plain
+  alt text. `"> "` × 510 followed by `![*a*](x)` reaches event depth 513,
+  while the rendered HTML is only 512 deep. The comment above it, saying
+  the check "never exceeds the rendered tree's depth", is wrong for this
+  case. **Suggested fix:** stop counting while inside an `Image`.
+* **IR7-L2 — The iframe `load` handler sends the current sequence number
+  (FR-2 *Execution model*).** `app.rs:1307-1314` passes
+  `engine.seq()`, not the number of the commit that set `srcdoc`, so
+  stale-load matching does not happen. It is harmless today only because
+  every trigger moves the sequence forward and the queued-run path is
+  never reached (`engine.rs:940-944`). **Suggested fix:** keep the
+  committed sequence number next to the preview and pass that.
+* **IR7-L3 — "Convert restored input" with an empty or oversized active
+  buffer keeps the crash marker (FR-8 *Crash-loop recovery*).**
+  `app.rs:944-961` removes the marker only on a commit, and neither buffer
+  ever converts. **Suggested fix:** remove the marker when the chosen
+  buffer cannot convert, or say in the spec that it stays.
+* **IR7-L4 — No size banner for an oversized buffer during crash
+  recovery (FR-7).** `app.rs:1080` enters the size banner only when
+  `convert` is true. **Suggested fix:** enter it in both startup
+  outcomes.
+* **IR7-L5 — The engine's copy of the buffer goes stale on the first
+  edit past 100 kB.** The `(true, false)` branch at `app.rs:640-643` calls
+  `on_limit_entered` but never `on_edit`. Results are correct only because
+  of the size checks when a run starts; switching back to that buffer
+  still starts one wasted run. **Suggested fix:** call `on_edit` before
+  `on_limit_entered`.
+* **IR7-L6 — The panic hook body is not guarded to run once (FR-7 *Rust
+  panics*).** `panic_hook.rs:67-72` runs `enter_crashed_state` on every
+  call. `panic = "abort"` makes a second call unlikely. **Suggested fix:**
+  return early once `STORAGE_HALTED` is set.
+* **IR7-L7 — Class tokens are de-duplicated as well as sorted (FR-5
+  *Attribute Standardization*).** `canonicalize.rs:281` collects tokens
+  into a `BTreeSet`, so `class="a a"` and `class="a"` canonicalize the
+  same. FR-5 asks only for collapsing whitespace and sorting. **Suggested
+  fix:** sort a `Vec` instead, or record de-duplication in FR-5.
+* **IR7-L8 — The app has no test-only async delay hook (FR-2; §8.6
+  *Concurrency*).** The 300 ms suspension before commit exists only in
+  the engine's unit-test harness (`engine.rs:595-604`), so the commit gate
+  is never tested through the real UI. **Suggested fix:** add a
+  feature-gated delay before `on_conversion_ready` and a Playwright case.
 
-Still open from earlier rounds and not counted again: IR5-L1–L7, R17-L1
-(the HTML → Markdown preview uses the unbounded `build_srcdoc`), and R17-L2
-(no timed case at exactly 5,000 tokens per side).
+Still open from earlier rounds and not counted again: IR3-M1's fuzz
+corpus (Deliverable 3), R17-L1, R17-L2 (no timed case at 5,000 tokens per
+side), and IR5-L1–L7. The IR5 low findings are not written down anywhere
+in the repository, so some IR7 low findings may repeat them.
 
-**Total new findings: 3 (high 0, medium 1, low 2).**
+**Total findings: 8 (high 0, medium 0, low 8 new).**
 
-Validation: source inspection only. This machine has no Rust toolchain, so
-`cargo build`, `cargo clippy -- --deny warnings`, and `cargo test` (root
-and demo), both wasm clippy steps, and the Playwright suite had not been
-run when this entry was written. The fixes and their tests rely on CI for
-verification.
+Validation: source inspection only. This machine has neither a Rust
+toolchain nor Node.js, so `cargo build`, `cargo clippy -- --deny
+warnings`, and `cargo test` (root and demo), the wasm clippy steps, and
+the Playwright suite were not run for this entry. No fixes have been made
+yet.
