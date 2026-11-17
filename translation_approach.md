@@ -747,6 +747,16 @@ preserves `<sub>` as HTML. Enabling
 `Options::ENABLE_SUBSCRIPT` does not enable strikethrough; a double tilde,
 `~~a~~`, is strikethrough only when `Options::ENABLE_STRIKETHROUGH` is enabled.
 
+The translation assumes its reader enables `Options::ENABLE_SUBSCRIPT`, and, as
+for math, no option disables it. Faithful mode keeps every `<sub>` as HTML, so
+its output reads the same under any reader. Pure mode writes `~b~`, which a
+reader with strikethrough but not subscript, such as GitHub's GFM, renders as
+strikethrough; Pure mode accepts this loss, as it accepts the loss of in-word
+subscripts. `\~` is a CommonMark backslash escape, so it reads as `~` under any
+reader, and it also keeps a line starting with `~~~` from opening a code fence.
+Autolinks and link destinations keep `~` unescaped, since a backslash escape
+does not work in an autolink.
+
 Translating `<sub>` to tildes depends on the characters on both sides of each
 delimiter. Using the notation of the emphasis section, consider `1~233..34~5`,
 where `1` and `5` are the characters of the emitted Markdown just before and
