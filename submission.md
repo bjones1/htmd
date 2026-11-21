@@ -1,56 +1,81 @@
 Project 2 submission
 ====================
 
+Team name: (team name)
+
 Team members are Armanzhan Onggarbay, Nurlybek Orynbassar, Miras Shaltayev, and Aidyn Tazhibay. The specification consists of the file [testing_approach.md](testing_approach.md).
 
 Draft submission
 ----------------
 
-### Contributions
+Each "Build and run test" summarizes LLM output on that team member's computer, based on the prompt "Verify that you can compile and run the project in the current git repo."
 
-* Armanzhan Onggarbay: (Armanzhan's contributions)
-* Nurlybek Orynbassar: Wrote the "Whitespace" section of `testing_approach.md` and revised it over four LLM review rounds.
-* Miras Shaltayev: Wrote the initial draft of `testing_approach.md`.
-* Aidyn Tazhibay: Wrote the "Escaping" section of `testing_approach.md` and revised it over six LLM review rounds.
+### Miras Shaltayev
 
-### Compiler test
+GitHub userid: miras-kbtu
 
-The following statements summarize LLM output on each team member's computer, based on the prompt "Verify that you can compile and run the project in the current git repo."
+#### Contributions
 
-#### Armanzhan Onggarbay
+Wrote the initial draft of `testing_approach.md`.
 
-(Summarized LLM output)
-
-#### Nurlybek Orynbassar
-
-Claude Opus 5.5 (Claude Code 2.1.319) found that the project builds and runs on this machine with no changes: `cargo build` finished with no errors or warnings, and `cargo clippy -- --deny warnings` exited with status 0 (it touched `src/lib.rs` first to force a fresh check instead of a cached one). Since `htmd` is a library, it ran the bundled examples: `cargo run --example simple` exited with code 0 and prints nothing, because it only runs `assert_eq!` checks which held, and `cargo run --example table` printed the expected Markdown table. `cargo test` passed 267 tests across all suites with 0 failures and one test ignored in the source.
-
-#### Miras Shaltayev
+#### Build and run test
 
 Claude Sonnet 5.5 found that `cargo` was installed in `~/.cargo/bin` but not on the `PATH`, and fixed this with `export PATH="$HOME/.cargo/bin:$PATH"`. After that, `cargo build` finished with no errors, `cargo run --example simple` exited with code 0 (it prints nothing, since the example only runs `assert_eq!` checks that passed), and `cargo test` passed in every test group, with one test ignored in the source. It did not run `cargo clippy -- --deny warnings`, which the CI also requires.
 
-#### Aidyn Tazhibay
+#### Specification review rounds
 
-Claude Opus 5.5 (Claude Code, medium effort) found that the project compiles and runs on this machine with Rust 1.99.1, which I had installed with `rustup-init`: `cargo build` finished with no errors, and `cargo clippy -- --deny warnings` reported no warnings. Since `htmd` is a library, it ran the bundled examples: `cargo run --example simple` printed nothing, because it only runs `assert_eq!` checks which held, and `cargo run --example table` printed the expected Markdown table. `cargo test` passed 267 tests across all suites with 0 failures and one test ignored in the source.
+(Table showing spec review rounds)
 
-### Spec review rounds
+#### Last specification review
 
-| Section | Round | Findings | Main changes made |
-| ------- | ----- | -------- | ----------------- |
-| Whitespace | 1 | 14 | `<br>` is raw HTML in Faithful mode; links may hold edge whitespace; `<code>` is not preformatted; added `<pre>` and fenced-code loss, NBSP moved out of emphasis, tables need `ENABLE_TABLES` |
-| Whitespace | 2 | 11 | Leading whitespace in a leading emphasis is not idempotent; code span with a line ending collapses all whitespace; `<pre>` in a cell collapses only in pipe tables; emphasis next to punctuation stays raw HTML; raw inline edges excluded from "does not matter"; rule 2 allows `ENABLE_TABLES` |
-| Whitespace | 3 | 6 | Code spans: trim before the line-ending test; headerless-table `<pre>` writes blank lines as `&#10;` and has the leading-LF bug; item 5 limited to Markdown blocks; lossy-case exception stated against "Known failures" |
-| Whitespace | 4 | 8 | Leading-emphasis bug also at the document root; raw `<code>` keeps collapsed edge whitespace; `<textarea>` and `<pre>` in a list have the leading-LF bug; htmd and pulldown-cmark share one whitespace set |
-| Escaping | 1 | 11 | Code rule limited to Faithful mode; `&lt;<span>div</span>` moved to over-escapes; round trip compared after the Whitespace equivalences and pulldown-cmark's spelling; scope narrowed to text nodes; ATX closing `#` and `!` before a link added |
-| Escaping | 2 | 11 | Over-escape redefined as an escape the position does not need, with both causes; `<` rule stated; `\|` escaped even inside code spans in pipe-table cells; text in an HTML block is not escaped, text in a raw HTML inline is; idempotency reason fixed |
-| Escaping | 3 | 9 | Over-escape after the opening markup of an ATX heading or raw inline; `<` rule points to `escape.rs`; every `\|` in a cell's Markdown is escaped; NBSP and `</ a` near misses; `ENABLE_TABLES` for every pipe-table case |
-| Escaping | 4 | 10 | Code-span delimiter rule corrected; `-` run needs `---` and `- - -` beside `--foo`; list and blockquote markup start a line; form feed added as a closer; near misses for item 5; block-separation failures filed as list bugs |
-| Escaping | 5 | 5 | Text nodes after a list or `<pre>` sibling added; leading whitespace is dropped only at the start of a block; any HTML whitespace closes a marker; over- and under-escape defined once, first; only conditional markers in a cell need a reason |
-| Escaping | 6 | 5 | Expectations come from the rules, not from htmd's output; a `<` cut short by a sibling listed as an over-escape; code-span padding and the backtick fence stated; two htmd bugs recorded as known failures (a backtick in a fence's language, whitespace moved next to an escaped `<`) |
+(LLM and prompt used)
 
-### Last LLM review
+(LLM output, possibly with strikethrough)
 
-#### Whitespace
+### Armanzhan Onggarbay
+
+GitHub userid: aronggarbay
+
+#### Contributions
+
+(Armanzhan's contributions)
+
+#### Build and run test
+
+(Summarized LLM output)
+
+#### Specification review rounds
+
+(Table showing spec review rounds)
+
+#### Last specification review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
+
+### Nurlybek Orynbassar
+
+GitHub userid: noxfurry
+
+#### Contributions
+
+Wrote the "Whitespace" section of `testing_approach.md` and revised it over four LLM review rounds.
+
+#### Build and run test
+
+Claude Opus 5.5 (Claude Code 2.1.319) found that the project builds and runs on this machine with no changes: `cargo build` finished with no errors or warnings, and `cargo clippy -- --deny warnings` exited with status 0 (it touched `src/lib.rs` first to force a fresh check instead of a cached one). Since `htmd` is a library, it ran the bundled examples: `cargo run --example simple` exited with code 0 and prints nothing, because it only runs `assert_eq!` checks which held, and `cargo run --example table` printed the expected Markdown table. `cargo test` passed 267 tests across all suites with 0 failures and one test ignored in the source.
+
+#### Specification review rounds
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 14 | `<br>` is raw HTML in Faithful mode; links may hold edge whitespace; `<code>` is not preformatted; added `<pre>` and fenced-code loss, NBSP moved out of emphasis, tables need `ENABLE_TABLES` |
+| 2 | 11 | Leading whitespace in a leading emphasis is not idempotent; code span with a line ending collapses all whitespace; `<pre>` in a cell collapses only in pipe tables; emphasis next to punctuation stays raw HTML; raw inline edges excluded from "does not matter"; rule 2 allows `ENABLE_TABLES` |
+| 3 | 6 | Code spans: trim before the line-ending test; headerless-table `<pre>` writes blank lines as `&#10;` and has the leading-LF bug; item 5 limited to Markdown blocks; lossy-case exception stated against "Known failures" |
+| 4 | 8 | Leading-emphasis bug also at the document root; raw `<code>` keeps collapsed edge whitespace; `<textarea>` and `<pre>` in a list have the leading-LF bug; htmd and pulldown-cmark share one whitespace set |
+
+#### Last specification review
 
 Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Whitespace" in testing_approach.md, writing findings to review.md. Verify each claim about htmd and pulldown-cmark behavior by running throwaway code, and do not commit it. Do not edit testing_approach.md."
 
@@ -286,7 +311,30 @@ Findings which were not applied are struck through.
 >
 > The failures the section already lists all reproduce.
 
-#### Escaping
+### Aidyn Tazhibay
+
+GitHub userid: (Aidyn's GitHub userid)
+
+#### Contributions
+
+Wrote the "Escaping" section of `testing_approach.md` and revised it over six LLM review rounds.
+
+#### Build and run test
+
+Claude Opus 5.5 (Claude Code, medium effort) found that the project compiles and runs on this machine with Rust 1.99.1, which I had installed with `rustup-init`: `cargo build` finished with no errors, and `cargo clippy -- --deny warnings` reported no warnings. Since `htmd` is a library, it ran the bundled examples: `cargo run --example simple` printed nothing, because it only runs `assert_eq!` checks which held, and `cargo run --example table` printed the expected Markdown table. `cargo test` passed 267 tests across all suites with 0 failures and one test ignored in the source.
+
+#### Specification review rounds
+
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 11 | Code rule limited to Faithful mode; `&lt;<span>div</span>` moved to over-escapes; round trip compared after the Whitespace equivalences and pulldown-cmark's spelling; scope narrowed to text nodes; ATX closing `#` and `!` before a link added |
+| 2 | 11 | Over-escape redefined as an escape the position does not need, with both causes; `<` rule stated; `\|` escaped even inside code spans in pipe-table cells; text in an HTML block is not escaped, text in a raw HTML inline is; idempotency reason fixed |
+| 3 | 9 | Over-escape after the opening markup of an ATX heading or raw inline; `<` rule points to `escape.rs`; every `\|` in a cell's Markdown is escaped; NBSP and `</ a` near misses; `ENABLE_TABLES` for every pipe-table case |
+| 4 | 10 | Code-span delimiter rule corrected; `-` run needs `---` and `- - -` beside `--foo`; list and blockquote markup start a line; form feed added as a closer; near misses for item 5; block-separation failures filed as list bugs |
+| 5 | 5 | Text nodes after a list or `<pre>` sibling added; leading whitespace is dropped only at the start of a block; any HTML whitespace closes a marker; over- and under-escape defined once, first; only conditional markers in a cell need a reason |
+| 6 | 5 | Expectations come from the rules, not from htmd's output; a `<` cut short by a sibling listed as an over-escape; code-span padding and the backtick fence stated; two htmd bugs recorded as known failures (a backtick in a fence's language, whitespace moved next to an escaped `<`) |
+
+#### Last specification review
 
 Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Escaping" in testing_approach.md, writing findings to review.md." Each round ran in a new session. This is the output of round 6; all its findings were applied.
 
@@ -502,7 +550,31 @@ Claude Opus 5.5 (Claude Code), in a new session, with the prompt: "Review /Users
 
 ### Armanzhan Onggarbay
 
-(Same sections as Miras Shaltayev)
+GitHub userid: aronggarbay
+
+#### Contributions
+
+(Armanzhan Onggarbay's contributions)
+
+#### Specification review rounds
+
+(Table showing spec review rounds)
+
+#### Last specification review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
+
+#### Implementation review rounds
+
+(Table showing implementation review rounds)
+
+#### Last implementation review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
 
 ### Nurlybek Orynbassar
 
@@ -789,4 +861,28 @@ Claude Opus 5.5 (Claude Code), with the prompt: "Review the implementation of th
 
 ### Aidyn Tazhibay
 
-(Same sections as Miras Shaltayev)
+GitHub userid: (Aidyn Tazhibay's GitHub userid)
+
+#### Contributions
+
+(Aidyn Tazhibay's contributions)
+
+#### Specification review rounds
+
+(Table showing spec review rounds)
+
+#### Last specification review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
+
+#### Implementation review rounds
+
+(Table showing implementation review rounds)
+
+#### Last implementation review
+
+(LLM and prompt used)
+
+(LLM output, possibly with strikethrough)
