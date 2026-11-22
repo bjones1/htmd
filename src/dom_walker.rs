@@ -7,6 +7,7 @@ use crate::{
     element_handler::{
         ElementHandlers,
         element_util::{math_delimiter, serialize_element},
+        sub::in_subscript,
     },
 };
 
@@ -185,10 +186,14 @@ fn is_markdown_block_start(byte: u8) -> bool {
 /// The bytes which carry CommonMark meaning wherever in a text node they
 /// appear, and so are escaped one by one. A `&` could begin an
 /// [entity or numeric character reference](https://spec.commonmark.org/0.31.2/#entity-and-numeric-character-references),
-/// and a `$` a math expression; see the math section of
+/// a `$` a math expression, and a `~` a subscript or strikethrough; see the
+/// math and subscript sections of
 /// `translation_approach.md`.
 fn is_markdown_inline_special(byte: u8) -> bool {
-    matches!(byte, b'\\' | b'&' | b'*' | b'_' | b'`' | b'[' | b']' | b'$')
+    matches!(
+        byte,
+        b'\\' | b'&' | b'*' | b'_' | b'`' | b'[' | b']' | b'$' | b'~'
+    )
 }
 
 pub(crate) fn walk_children(
@@ -435,7 +440,8 @@ fn trim_output_end_spaces(output: &mut String) {
 /// '==='      -> '\==='      // setext underline
 /// '---'      -> '\---'      // setext underline, thematic break
 /// '```'      -> '\`\`\`'    // code fence, escaped as three inline specials
-/// '~~~'      -> '\~~~'      // code fence
+/// '~~~'      -> '\~\~\~'    // code fence; every tilde, see `push_tilde_run`
+/// 'a~b'      -> 'a\~b'      // subscript or strikethrough delimiter
 /// '# Not h1' -> '\# Not h1' // ATX heading
 /// '1. Item'  -> '1\. Item'  // ordered list item
 /// '1) Item'  -> '1\) Item'  // ordered list item
@@ -472,7 +478,7 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
     // second-char space of list markers, so pre-escape checks match the old
     // post-escape behavior without `insert(0, ...)`.
     let needs_leading_backslash = match first {
-        '=' | '~' | '>' => true,
+        '=' | '>' => true,
         // A line of nothing but `-` and spaces is also a thematic break or a
         // setext underline. Anything else after the second `-` -- `--foo` --
         // is neither, and opens no list either.
@@ -489,8 +495,16 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
     if needs_leading_backslash {
         escaped.push('\\');
     }
-    for ch in text.chars() {
+    let mut chars = text.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
         match ch {
+            '~' => {
+                let mut run_len = 1;
+                while chars.next_if(|&(_, next)| next == '~').is_some() {
+                    run_len += 1;
+                }
+                push_tilde_run(&mut escaped, run_len, &text[..index]);
+            }
             '\\' => escaped.push_str("\\\\"),
             '&' => escaped.push_str("\\&"),
             '*' => escaped.push_str("\\*"),
@@ -512,6 +526,25 @@ fn escape_if_needed(text: Cow<'_, str>) -> Cow<'_, str> {
     // Perform the HTML escape after the other escapes, so that the \\
     // characters inserted here don't get escaped again.
     escape_html(escaped.into())
+}
+
+/// Writes a run of `run_len` tildes, `before` being the part of its text node
+/// ahead of it. A run of one or two is escaped wherever it is, so that it opens
+/// no subscript or strikethrough. A longer run is text, and is escaped only
+/// where it could be read otherwise: at the start of a text node, after spaces
+/// at most, which may start a line and
+/// so open a code fence, and inside a subscript's content. There every tilde
+/// of the run is escaped, since the `~~` an escaped first tilde leaves behind
+/// still opens or closes a strikethrough. See the "Subscript" section of
+/// `translation_approach.md`.
+fn push_tilde_run(escaped: &mut String, run_len: usize, before: &str) {
+    let is_escaped = run_len <= 2 || before.bytes().all(|byte| byte == b' ') || in_subscript();
+    for _ in 0..run_len {
+        if is_escaped {
+            escaped.push('\\');
+        }
+        escaped.push('~');
+    }
 }
 
 /// Cases:
