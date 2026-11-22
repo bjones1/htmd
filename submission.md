@@ -14,7 +14,9 @@ upstream `2e7bf3a`).
   translated to pulldown-cmark's `~a~` syntax and when it falls back to HTML,
   and ran review rounds 1–6.
 * Zhexenbiyev Arsen: Created the team's fork of htmd and the `subscript-htmd`
-  branch, and opened the team's pull request upstream.
+  branch, and opened the team's pull request upstream. In the final submission,
+  found that the branch no longer compiled after the merge of upstream `main`
+  (`563291b`) and repaired it (see "Zhexenbiyev Arsen" below).
 * Khamzin Daulet: Verified that the project builds and passes the CI checks
   (`cargo build`, `cargo clippy`, `cargo test`) on the branch, recorded the
   output below, and ran review round 7 of the Subscript section (part 5).
@@ -1146,3 +1148,44 @@ Claude response (Markdown formatting normalized; findings and wording retained):
 > - Four lines in the quoted response end with `&#x20;`, left over from copying. It shows up only as a space, but you could delete it.
 > - The quoted section is the reply as shown in chat, including progress notes. It doesn’t include `subscript-corrections.md`. A short note saying so would make “complete” exact.
 > - The contribution line could mention your Windows verification of the corrected `4cb0627`.
+
+### Zhexenbiyev Arsen
+
+GitHub userid: `ASPLightNext`
+
+#### Contributions
+
+Reviewed the implementation at `9792293` (the head of this pull request) and found that it did not build after the merge of upstream `main` in `563291b`, then restored the merge's lost changes and verified the result.
+
+#### Specification review rounds
+
+I performed no specification review round in the final submission; the specification rounds are recorded in Dustin Johnson's section above.
+
+#### Implementation review rounds
+
+This round covers only the final submission. It continues the numbering of the implementation review rounds above (rounds 1–6).
+
+| Round | Necessary findings | Optional/trivial findings | Main changes made |
+| --- | ---: | ---: | --- |
+| 7 | 1 | 0 | Reviewed `9792293`: `cargo build` failed because the merge `563291b` kept the older `src/dom_walker.rs` and `src/element_handler/element_util.rs` and so dropped upstream's `crate::Node` wrapper; re-applied the subscript changes onto upstream's versions of both files. |
+
+The merge `563291b` took these two files from the branch's side rather than upstream's. Upstream had since moved `math_delimiter` and `serialize_node`, and made `Element::node` a `crate::Node` wrapper, so the branch failed with nine compile errors (`E0432`, `E0425`, `E0283`, `E0308`, `E0609`, `E0277`) in `span.rs`, `node.rs`, `dom_walker.rs`, `element_util.rs` and `sub.rs`. Every earlier verification in this file predates the merge. The fix takes upstream's two files unchanged (`git checkout b41b774 -- <files>`) and re-adds only the subscript changes:
+
+* `dom_walker.rs`: `~` is an inline special; a run of tildes is escaped by `push_tilde_run` (runs of one or two always, longer runs only at the start of a text node or inside a subscript); a leading `~` no longer needs its own escape.
+* `element_util.rs`: `serialize_subtree_html` (built on upstream's `serialize_node`) and `escape_html_block_blank_lines` made `pub(crate)` for `sub.rs`.
+* `sub.rs`: passes `element.node.as_rc()` to `has_block_descendant`.
+
+No behavior of `sub_handler` or of the specification changed, and no test was edited.
+
+Model: Claude Sonnet 5.5, in Claude Code (an interactive session on Windows), which also made the fix. The prompt was a conversational request to review the implementation and to make a real contribution; it was not saved verbatim, so it is not reproduced here. The review read `src/element_handler/sub.rs` at `9792293` and ran the CI commands, which is how the failure was found.
+
+Verification after the fix (Windows, rustc/cargo 1.100.0, repository lockfile):
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --check` | Passed |
+| `cargo build --locked` | Passed |
+| `cargo clippy --locked -- --deny warnings` | Passed |
+| `cargo test --locked` | Passed: 38 unit tests (1 ignored), 244 integration tests, 4 documentation tests |
+
+The integration tests include 17 Subscript tests. These totals equal those recorded for `4cb0627`.

@@ -81,7 +81,7 @@ pub(super) fn sub_handler(handlers: &dyn Handlers, element: &Element) -> Option<
     }
 
     // Step 1 of either mode.
-    if has_block_descendant(element.node) {
+    if has_block_descendant(element.node.as_rc()) {
         if !is_faithful {
             let mut result = handlers.walk_children(element.node, element.context);
             // An inline context holds a single line; trimmed as for a `<span>`.
