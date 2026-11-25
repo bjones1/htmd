@@ -1,5 +1,5 @@
 //! Records the htmd and pulldown-cmark versions this build uses, which the
-//! page header shows (spec, Page layout).
+//! page header shows (spec, Page layout)
 
 use std::fs;
 
