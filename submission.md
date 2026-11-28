@@ -177,12 +177,9 @@ GitHub userid: SokolovVD-IT
 
 #### Contributions
 
-Rewrote the `~a~` versus HTML rules as prose after the instructor review
-(character references, neighboring tildes), and implemented `<sub>` in htmd
-with its tests. After the instructor's second review, rewrote the section: the
-single-tilde rules stated in full with their departures from `_`, conservative
-Faithful rules which write `~a~` judged from the neighboring DOM nodes, and the
-character reference encoding moved to a "not implemented" note.
+Rewrote the Subscript rules as prose after both instructor reviews, including
+conservative Faithful rules for `~a~`, and implemented `<sub>` in htmd with its
+tests.
 
 #### Specification review rounds
 
