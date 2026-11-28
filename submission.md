@@ -861,28 +861,259 @@ Claude Opus 5.5 (Claude Code), with the prompt: "Review the implementation of th
 
 ### Aidyn Tazhibay
 
-GitHub userid: (Aidyn Tazhibay's GitHub userid)
+GitHub userid: aidyntazhibai
 
 #### Contributions
 
-(Aidyn Tazhibay's contributions)
+After the instructor's review removed my "Escaping" section, I took over the "Test helpers" section of `testing_approach.md`, revised it over four LLM review rounds, and had an LLM implement it as `CMARK_OPTIONS` and the four `assert_faithful*` helpers in `tests/common/mod.rs`, with 18 tests in `tests/test_helpers_tests.rs`, revised over two implementation review rounds.
 
 #### Specification review rounds
 
-(Table showing spec review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 10 | `Options::all()` replaced by a named set of extensions, since smart punctuation and others change ordinary text; helpers build their own failure messages; `#[should_panic]` tests match each property's name; check 4 split into three steps; argument types given |
+| 2 | 7 | Removing old-style footnotes also removed footnotes, so they are added back; the reason for the kept extensions corrected; the misuse check moved before any conversion; property 3 messages show the converted HTML |
+| 3 | 8 | `CMARK_OPTIONS` spelled out as six extensions; a real unstable input named; `translation_mode` stated as ignored; the property 2 message shows the normalized-tree diff |
+| 4 | 7 | Check 0 got its own message prefix, so its test can no longer pass without it; the constant built with `union`; property 3 defined for unstable cases; each check's expected message and test inputs named |
 
 #### Last specification review
 
-(LLM and prompt used)
+Prompting Claude Opus 5.5 (Claude Code, medium effort), in a new session, with `Review the section named "Test helpers" in testing_approach.md, writing findings to review.md.` produced the following output. The session also received a short note that it was reviewing one team member's section for a course assignment and should write only `review.md`. This is the output of round 4; findings 1-6 were applied, and strikethrough indicates output that I deemed irrelevant.
 
-(LLM output, possibly with strikethrough)
+> Review: "Test helpers" section of testing_approach.md
+> ====================================================
+>
+> Reviewed at commit 098e426 ("Test helpers: apply review round 3"). Claims were
+> checked against `tests/common/mod.rs`, `tests/common/html_compare.rs`,
+> pulldown-cmark 0.13.4 and a scratch crate (outside the repo) which runs htmd
+> in Faithful mode and renders with the six `CMARK_OPTIONS` extensions.
+>
+> Verified as stated
+> ------------------
+>
+> * `<p><code>a\nb</code></p>` converts to `<code>a b</code>`, renders to
+>   `<p><code>a b</code></p>`, converts to `` `a b` ``, and `` `a b` `` is then a
+>   fixed point. So the unstable input works for checks 4.2 and 4.3.
+> * htmd escapes `~~b~~`, `~b~`, `$x$`, `[^1]` and `> [!NOTE]`, so none of the
+>   six extensions fires on those inputs, consistent with "htmd's output should
+>   trigger none of them".
+> * `htmd::options::Options` derives `Clone`, so taking `&Options` and cloning it
+>   for the two conversions is implementable.
+> * `normalize_html` and `html_equivalent` exist with the names the section uses.
+>
+> Findings
+> --------
+>
+> ### 1. The check 0 `#[should_panic]` case passes even if check 0 is missing (major)
+>
+> Check 0 and check 4 both panic with `property 3:`, and `should_panic(expected
+> = ...)` matches only a substring. The section says the check 0 case "passes
+> `expected_second_markdown` equal to `expected_markdown`", and the only
+> unstable input it names is `<p><code>a\nb</code></p>`. With that input and
+> `expected_second_markdown = "<code>a b</code>"`, a helper with no check 0 at
+> all passes checks 2 and 3, then fails check 4.2 (the actual second Markdown
+> is `` `a b` ``) with `property 3:`. The test still passes, so it does not test
+> check 0.
+>
+> Suggested fix (either):
+>
+> * Use a **stable** input for the check 0 case, e.g. `<p>a</p>` with both
+>   Markdown strings `a`. Without check 0, checks 2--4.3 all pass and nothing
+>   panics, so the test fails as it should.
+> * Or give check 0 its own prefix (e.g. `unstable helper misused:`) and expect
+>   that. This also removes the oddity of reporting a misuse of the helper as a
+>   failure of property 3.
+>
+> ### 2. `CMARK_OPTIONS` cannot be written as `A | B | ...` in a `const` (minor)
+>
+> bitflags 2 does not implement `BitOr` as `const`; `const X: Options =
+> Options::ENABLE_TABLES | Options::ENABLE_MATH;` fails with E0015. The
+> constant must be spelled `ENABLE_TABLES.union(ENABLE_MATH).union(...)` (or be
+> a `static`/function). The prose may keep `|` as notation, but a reader
+> implementing "a constant" literally hits a compile error; one clause saying
+> it is built with `union` would prevent that.
+>
+> ### 3. The list of excluded extensions omits `ENABLE_OLD_FOOTNOTES` (minor)
+>
+> `Options::all()` in 0.13.4 also contains `ENABLE_OLD_FOOTNOTES`, which the
+> sentence "The rest of `Options::all()` is left out, because ..." does not
+> mention. Its reason differs from the others (it changes footnote syntax
+> rather than reading ordinary text as markup), so either name it with its
+> reason or reword to "the rest, including old-style footnotes, ...".
+>
+> ### 4. Property 3 is redefined by the `_unstable` helpers without saying so (minor)
+>
+> "Properties" defines property 3 as `convert_faithful(h2)` equals the Markdown
+> of property 1. The `_unstable` helpers check something else under the same
+> name: the second Markdown differs, and it is a fixed point (check 4.3). The
+> section should state in one sentence that for unstable cases property 3 is
+> replaced by "the second conversion gives `expected_second_markdown`, which is
+> stable", so the panic prefix `property 3:` matches a stated definition. (If
+> the fix belongs in "Properties", note it for that section's author.)
+>
+> ### 5. Check numbers and property numbers are easy to confuse (minor, clarity)
+>
+> Check 2 is property 2, check 3 is property 1, check 4 is property 3, and
+> "Tests of the helpers" refers to "checks 0 and 2--4" while the panics name
+> properties. A reader writing `#[should_panic(expected = "property 3:")]` for
+> "check 3" gets it wrong. Suggest naming the property next to each check
+> reference there, e.g. "checks 0, 2 (property 2), 3 (property 1) and 4
+> (property 3)", or mapping check to expected prefix in a short table.
+>
+> ### 6. Which input each `#[should_panic]` case uses is left implicit (minor)
+>
+> For the stable helpers, the check 4 case needs an input whose second Markdown
+> differs, i.e. the unstable input passed to a stable helper. For the
+> `_unstable` helpers, the check 3 (property 1) case must keep the wrong
+> `expected_markdown` different from `expected_second_markdown`, or check 0
+> fires first and the test passes for the wrong reason (same pattern as
+> finding 1). One sentence per case stating the input and which expected value
+> is made wrong would make every case pin the check it claims to test.
+>
+> ### ~~7. Reuse of `assert_html_equivalent` (suggestion)~~
+>
+> ~~`html_compare.rs` already has `assert_html_equivalent`, which prints the
+> `normalize_html` diff, but its message does not start with `property 2:`.
+> The section implies the helpers re-implement the diff output around
+> `html_equivalent`. Consider saying whether `assert_html_equivalent` gains a
+> message prefix parameter or is bypassed, so the two diff formats do not
+> drift apart.~~
+>
+> Summary
+> -------
+>
+> One finding (1) makes a specified helper test vacuous and should be fixed
+> before implementation; the rest are compile-level (2), completeness (3, 4)
+> and clarity (5--7) issues.
+
 
 #### Implementation review rounds
 
-(Table showing implementation review rounds)
+| Round | Findings | Main changes made |
+| ----- | -------- | ----------------- |
+| 1 | 8 | The passing `_options` tests use setext headings, so the options must reach the conversion; the unstable input's reliance on an htmd bug documented; the check 4.3 message shows the first Markdown; check 4 tests match a longer message; `#[track_caller]` reaches the test through a function instead of a closure |
+| 2 | 5 | No correctness bugs; the spec names the unstable `_options` input and the longer check 4 message, and says that no test shows the pulldown-cmark options reach the rendering |
 
 #### Last implementation review
 
-(LLM and prompt used)
+Prompting Claude Opus 5.5 (Claude Code, medium effort), in a new session, with `Review the implementation of the "Test helpers" section of testing_approach.md in tests/common/mod.rs and tests/test_helpers_tests.rs, writing findings to review.md.` produced the following output. The session also received the same short note as the specification reviews. Findings 1-3 were applied to the spec, and strikethrough indicates output that I deemed irrelevant. The implementation itself was written by Claude Opus 5.5 in a new session, prompted with `Implement the section named "Test helpers" in testing_approach.md. Run cargo build, cargo clippy --all-targets -- --deny warnings, and cargo test before finishing.`
 
-(LLM output, possibly with strikethrough)
+> Review: implementation of "Test helpers" (round 2)
+> ==================================================
+>
+> Scope: `tests/common/mod.rs` (`CMARK_OPTIONS`, the four `assert_faithful*`
+> helpers, `check_faithful`, `convert_or_panic`) and `tests/test_helpers_tests.rs`,
+> checked against the "Test helpers" section of `testing_approach.md`
+> (commit 1221838).
+>
+> Verification
+> ------------
+>
+> * `cargo build`: passes.
+> * `cargo clippy --all-targets -- --deny warnings`: passes (stricter than CI,
+>   which lints without `--all-targets`).
+> * `cargo test`: every binary passes; `test_helpers_tests` runs 18 tests, all OK
+>   (1 test ignored elsewhere, unrelated).
+>
+> Conformance to the spec
+> -----------------------
+>
+> All of these match the spec:
+>
+> * Signatures and argument order of all four helpers match the table;
+>   `htmd_options` is `&Options` and goes to both conversions; `cmark_options` is
+>   by value.
+> * `CMARK_OPTIONS` names exactly the six extensions, joined with `union`.
+> * Order of checks: check 0 runs before any conversion (in
+>   `assert_faithful_unstable_options`), then convert/render with `expect`, then
+>   property 2, property 1, property 3 (4.1 / 4.2), then 4.3 rendering
+>   `expected_second_markdown` with the same options.
+> * Panic prefixes are `unstable helper misused:`, `property 2:`, `property 1:`,
+>   `property 3:`. The property 2 message carries the normalized-tree diff, and
+>   the property 3 messages carry the converted HTML.
+> * `#[track_caller]` runs through the whole chain, and `convert_or_panic` is a
+>   fn rather than a closure, so a failure points at the test line.
+> * `#[allow(dead_code)]` is on every public helper. `render_markdown` and
+>   `round_trip` are kept.
+> * Test file: for each helper there is one passing case and one
+>   `#[should_panic]` case per check (0 only for `_unstable`, plus 2, 3 and 4).
+>   Each case gets only its own check's expected value wrong. Inputs are the ones
+>   the spec names, and the htmd-bug note on the unstable input is present. There
+>   is no 4.3 case, as the spec says.
+>
+> Findings
+> --------
+>
+> ### 1. No test shows that `cmark_options` reach the rendering (medium)
+>
+> The passing `_options` cases prove that `htmd_options` reach the conversion,
+> because Setex changes the Markdown. Nothing does the same for `cmark_options`.
+> None of the inputs (`<p>a</p>`, `<h1>a</h1>`, `<p><code>a\nb</code></p>`,
+> `<h1><code>a\nb</code></h1>`) renders any differently with or without
+> extensions. So each of these mutations leaves all 18 tests green:
+>
+> * `check_faithful` renders with `CommonMarkOptions::empty()` instead of
+>   `cmark_options` (in step 1 or in 4.3);
+> * `assert_faithful` / `assert_faithful_unstable` pass `empty()` instead of
+>   `CMARK_OPTIONS`.
+>
+> The spec only requires the htmd options to be proven ("so the options must
+> reach the conversion"), so the implementation conforms. This is a gap in the
+> spec, and the tests inherit it. Suggested fix, spec first and then test: have
+> the passing `_unstable_options` case (or an added one) use a pulldown-cmark
+> option that changes text htmd leaves unescaped. For example, smart punctuation:
+>
+> ```rust
+> assert_faithful_unstable_options(
+>     "<p>don't</p>",
+>     &Options::default(),
+>     pulldown_cmark::Options::ENABLE_SMART_PUNCTUATION,
+>     "don't",
+>     "<p>don\u{2019}t</p>",
+>     "don\u{2019}t",
+> );
+> ```
+>
+> This has not been run. It should pass only if the options reach both
+> `render_markdown` calls. Showing that the non-`_options` helpers use
+> `CMARK_OPTIONS` is harder, because htmd's output is meant to trigger none of
+> the six extensions, so any input which shows it is an htmd bug. Accepting
+> that gap is reasonable, but the spec should say so.
+>
+> ### 2. The spec does not name the input of the passing unstable `_options` case (low)
+>
+> `faithful_unstable_options_passes` uses `<h1><code>a\nb</code></h1>`, with
+> Markdown `<code>a b</code>\n================` and second Markdown
+> `` `a b`\n===== ``. That choice is sound: it combines the unstable input with
+> Setex, so both the options and the instability are exercised. The spec,
+> however, says only that "the unstable input is `<p><code>a\nb</code></p>`" and
+> that the passing `_options` cases use Setex with "`<h1>a</h1>` gives `a\n=`".
+> A reader following the spec would expect one of those two inputs. One sentence
+> in the spec naming this combined input would fix it.
+>
+> ### 3. The `property 3:` expectation is narrower than the spec says (nit)
+>
+> The check 4 cases use
+> `#[should_panic(expected = "property 3: converting the round trip")]`. The spec
+> says check 4 expects `property 3:`. The longer string is better, because it
+> tells the 4.2 failure apart from the 4.3 message ("the second Markdown is not
+> stable"). Suggest the spec say so, so the test file and the spec agree.
+>
+> ### ~~4. `translation_mode` being ignored is documented but not tested (nit)~~
+>
+> ~~The spec and the rustdoc on `assert_faithful_options` both say
+> `htmd_options.translation_mode` is ignored. No case passes, for example,
+> `TranslationMode::Pure` with an input whose Pure output differs from its
+> Faithful output. The behaviour comes from `convert_faithful_options`, which
+> already existed, so this is low risk. Add a case only if the spec is extended.~~
+>
+> ### ~~5. Panic message contents beyond the prefix are untested (nit)~~
+>
+> ~~`should_panic(expected = ...)` checks only a substring. Spec features such as
+> the normalized-tree diff in the property 2 message, and the converted HTML in
+> property 3, could be dropped without any test failing. That is acceptable for
+> test helpers, and the spec does not ask for such tests. It is noted only so
+> the choice is made on purpose.~~
+>
+> No correctness bugs found. Findings 1 and 2 are best fixed in the spec first
+> and then carried into `tests/test_helpers_tests.rs`.
