@@ -313,7 +313,7 @@ Findings which were not applied are struck through.
 
 ### Aidyn Tazhibay
 
-GitHub userid: (Aidyn's GitHub userid)
+GitHub userid: aidyntazhibai
 
 #### Contributions
 
@@ -321,7 +321,7 @@ Wrote the "Escaping" section of `testing_approach.md` and revised it over six LL
 
 #### Build and run test
 
-Claude Opus 5.5 (Claude Code, medium effort) found that the project compiles and runs on this machine with Rust 1.99.1, which I had installed with `rustup-init`: `cargo build` finished with no errors, and `cargo clippy -- --deny warnings` reported no warnings. Since `htmd` is a library, it ran the bundled examples: `cargo run --example simple` printed nothing, because it only runs `assert_eq!` checks which held, and `cargo run --example table` printed the expected Markdown table. `cargo test` passed 267 tests across all suites with 0 failures and one test ignored in the source.
+Claude Opus 5.5 (Claude Code, medium effort), in a new session given the prompt above plus a short note that this was a course assignment and that it should not edit, commit or push anything, found that the project compiles and runs on this machine with Rust 1.99.1, which I had installed with `rustup-init`: `cargo build` finished with no errors, and `cargo clippy -- --deny warnings` reported no warnings. Since `htmd` is a library, it ran the bundled examples: `cargo run --example simple` printed nothing, because it only runs `assert_eq!` checks which held, and `cargo run --example table` printed the expected Markdown table. `cargo test` passed 267 tests across all suites with 0 failures and one test ignored in the source.
 
 #### Specification review rounds
 
@@ -336,7 +336,7 @@ Claude Opus 5.5 (Claude Code, medium effort) found that the project compiles and
 
 #### Last specification review
 
-Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Escaping" in testing_approach.md, writing findings to review.md." Each round ran in a new session. This is the output of round 6; all its findings were applied.
+Claude Opus 5.5 (Claude Code), with the prompt: "Review the section named "Escaping" in testing_approach.md, writing findings to review.md." Each round ran in a new session, which also received a short note that it was reviewing one team member's section for a course assignment and should write only `review.md`. This is the output of round 6; all its findings were applied.
 
 > Review: "Escaping" section of testing_approach.md
 > ===============================================
