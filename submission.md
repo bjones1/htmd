@@ -121,7 +121,7 @@ produced the following output:
 
 ### Arsen Zhanserkenov
 
-GitHub userid: TODO (Arsen: add your GitHub userid)
+GitHub userid: Zhanserkenov
 
 #### Contributions
 
@@ -347,7 +347,7 @@ Prompting Copilot in VS Code (model not exposed in this interface) with `Review 
 
 ### Arsen Zhanserkenov
 
-GitHub userid: TODO (Arsen: add your GitHub userid)
+GitHub userid: Zhanserkenov
 
 #### Contributions
 
