@@ -53,37 +53,37 @@ factual errors, unclear wording, or missing cases as numbered findings.`
 produced the following output; strikethrough indicates LLM output that I
 deemed incorrect or irrelevant.
 
-1. ~~The negative example `a ~b~c` is not a valid failure case under
-   CommonMark/pulldown-cmark subscript rules. The opener is left-flanking
-   because it is preceded by a space, and the closer is right-flanking even
-   when followed by a letter, so this should be treated as a valid subscript,
-   not as a literal-text case. The prose currently says it "fails for the same
-   reason on one side," which contradicts the delimiter-flanking model.~~
-   (pulldown-cmark 0.13.4 renders `a ~b~c` as literal text.)
-2. ~~The rule sentence is oversimplified and not the actual algorithm: "A
-   single `~` opens a subscript only if the character before it is whitespace,
-   punctuation, or the start of the line, and closes it only if the character
-   after it is whitespace, punctuation, or the end of the line" is not the
-   CommonMark left/right-flanking rule. The real test is both sides of the
-   delimiter run together: opener/closer validity depends on
-   left-flanking/right-flanking, not on a one-sided check of just the adjacent
-   character. This matters because cases like `x.~2~` are valid even though
-   the closer is not followed by whitespace/punctuation.~~ (In `x.~2~` the
-   closer is followed by the end of the line, which the rule covers; for a
-   single `~` the stated rule gives the same result as the flanking rules.)
-3. The explanation "Nothing written next to the tildes can fix this" is too
-   absolute and inconsistent with the surrounding point that the parser looks
-   at the characters outside the element. In fact, changing the neighboring
-   characters can make the same content valid: `H ~2~ O` is a valid subscript,
-   while `H~2~O` is not. The document is describing the outside-neighbor test
-   correctly, but then states the opposite too strongly.
-4. ~~The section is missing a key positive case that shows the real boundary
-   behavior: examples such as `a ~b~c` or `x.~2~` are exactly the cases
-   CommonMark uses to demonstrate that the check is on the characters outside
-   the delimiters, not on the content inside. Right now the doc only presents
-   the blocking cases and omits the corresponding valid "one-side letter,
-   other-side space/punctuation" cases that explain the rule.~~ (Based on
-   finding 1; `x.~2~` is already a row of the table.)
+> 1. ~~The negative example `a ~b~c` is not a valid failure case under
+>    CommonMark/pulldown-cmark subscript rules. The opener is left-flanking
+>    because it is preceded by a space, and the closer is right-flanking even
+>    when followed by a letter, so this should be treated as a valid subscript,
+>    not as a literal-text case. The prose currently says it "fails for the same
+>    reason on one side," which contradicts the delimiter-flanking model.~~
+>    (pulldown-cmark 0.13.4 renders `a ~b~c` as literal text.)
+> 2. ~~The rule sentence is oversimplified and not the actual algorithm: "A
+>    single `~` opens a subscript only if the character before it is whitespace,
+>    punctuation, or the start of the line, and closes it only if the character
+>    after it is whitespace, punctuation, or the end of the line" is not the
+>    CommonMark left/right-flanking rule. The real test is both sides of the
+>    delimiter run together: opener/closer validity depends on
+>    left-flanking/right-flanking, not on a one-sided check of just the adjacent
+>    character. This matters because cases like `x.~2~` are valid even though
+>    the closer is not followed by whitespace/punctuation.~~ (In `x.~2~` the
+>    closer is followed by the end of the line, which the rule covers; for a
+>    single `~` the stated rule gives the same result as the flanking rules.)
+> 3. The explanation "Nothing written next to the tildes can fix this" is too
+>    absolute and inconsistent with the surrounding point that the parser looks
+>    at the characters outside the element. In fact, changing the neighboring
+>    characters can make the same content valid: `H ~2~ O` is a valid subscript,
+>    while `H~2~O` is not. The document is describing the outside-neighbor test
+>    correctly, but then states the opposite too strongly.
+> 4. ~~The section is missing a key positive case that shows the real boundary
+>    behavior: examples such as `a ~b~c` or `x.~2~` are exactly the cases
+>    CommonMark uses to demonstrate that the check is on the characters outside
+>    the delimiters, not on the content inside. Right now the doc only presents
+>    the blocking cases and omits the corresponding valid "one-side letter,
+>    other-side space/punctuation" cases that explain the rule.~~ (Based on
+>    finding 1; `x.~2~` is already a row of the table.)
 
 ### Pavel Shegay
 
@@ -97,6 +97,7 @@ to escape a literal `~` in text.
 #### Build and run test
 
 Prompting Copilot Fusion (GPT-6 Luna), Standard, with `Verify that you can compile and run the project in the current git repo.` produced:
+
 > Verified successfully: `cargo build --locked` compiled the project, and `cargo run --locked --example simple` ran the simple example and exited with code 0. No source files were changed.
 
 #### Specification review rounds
@@ -155,7 +156,7 @@ separate review prompt or external reviewer response is claimed.
 Scope: the empty/whitespace-only and nesting explanations, the added table
 rows, and the Approach steps in the Subscript section. The review compared
 them with the document's raw HTML inline and emphasis rules and inspected
-[pulldown-cmark 0.13.4 delimiter checks](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2138-L2223).
+[pulldown-cmark 0.13.4 delimiter checks](https://github.com/pulldown-cmark/pulldown-cmark/blob/v0.13.4/pulldown-cmark/src/firstpass.rs#L2249-L2337).
 
 1. Accepted and fixed: make the HTML fallback terminal for delimiter selection,
    while still applying text escaping to content inside retained tags.
@@ -178,7 +179,10 @@ GitHub userid: SokolovVD-IT
 
 Rewrote the `~a~` versus HTML rules as prose after the instructor review
 (character references, neighboring tildes), and implemented `<sub>` in htmd
-with its tests.
+with its tests. After the instructor's second review, rewrote the section: the
+single-tilde rules stated in full with their departures from `_`, conservative
+Faithful rules which write `~a~` judged from the neighboring DOM nodes, and the
+character reference encoding moved to a "not implemented" note.
 
 #### Specification review rounds
 
@@ -400,9 +404,10 @@ cargo build, cargo clippy -- --deny warnings and cargo test pass.`
 
 Changed files:
 
-- `src/element_handler/sub.rs` (new): the `<sub>` handler. Faithful mode always
-  keeps the tags (Approach step 4) and translates the children inline. Pure
-  mode moves edge whitespace outside, writes `~content~`, drops an empty
+- `src/element_handler/sub.rs` (new): the `<sub>` handler. Faithful mode
+  writes `~content~` when Approach steps 1-4 show that both delimiters flank,
+  judging each side from the neighboring DOM node, and keeps the tags
+  otherwise. Pure mode moves edge whitespace outside, writes `~content~`, drops an empty
   subscript, keeps only the outer level of a nested one, and combines a run of
   adjacent subscripts into one, whatever their children or attributes.
 - `src/element_handler/mod.rs`: registers the handler for `sub`.
@@ -410,7 +415,7 @@ Changed files:
   step 3), not only a `~` at the start of a line; leaves combining `<sub>`
   runs to the handler.
 - `src/util/escape.rs`: the same escaping for image `alt` text.
-- `tests/subscript_tests.rs` (new): 12 tests; each converts HTML and reads the
+- `tests/subscript_tests.rs` (new): 15 tests; each converts HTML and reads the
   Markdown back with pulldown-cmark `ENABLE_SUBSCRIPT`.
 - `tests/basic_tests.rs`, `tests/turndown_online_demo_tests.rs`,
   `tests/html/turndown_test_index.html`: expected output updated for the
@@ -419,7 +424,7 @@ Changed files:
   mode's handling of a nested subscript is stated.
 
 Results: `cargo build` and `cargo clippy -- --deny warnings` passed;
-`cargo test` passed 279 tests (267 before plus 12 new), 1 ignored.
+`cargo test` passed 282 tests (267 before plus 15 new), 1 ignored.
 
 Pavel's implementation review round 1 found that Pure mode wrote `~a~~*b*~`
 for `<p><sub>a</sub><sub><em>b</em></sub></p>`, because `can_combine` merges
@@ -429,9 +434,10 @@ different attributes (`~a~~b~` before, `~ab~` now).
 
 Limitations:
 
-- Faithful mode never emits `~x~`: a handler cannot see the emitted
-  characters around the element, so the conservative fallback of step 4
-  applies to every `<sub>`. The encoding steps 1-2 (`&#72;~2~&#79;`) are not
-  implemented.
+- Faithful mode is conservative: a handler cannot see the emitted characters
+  around the element, so a subscript next to a letter, a `~`, or another
+  element stays HTML (`H<sub>2</sub>O`). The character reference encoding
+  (`&#72;~2~&#79;`) in the section's "not implemented" note would remove this
+  limitation.
 - Pure mode is lossy: `H<sub>2</sub>O` becomes `H~2~O`, which reads back as
   literal text; attributes and comments are dropped.

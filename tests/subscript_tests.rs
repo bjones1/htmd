@@ -28,37 +28,87 @@ fn assert_pure(html: &str, markdown: &str, html_back: &str) {
     assert_eq!(html_back, render_subscript(&actual), "round trip of {html}");
 }
 
-/// Approach step 4: faithful mode cannot see the characters around the
-/// element, so it keeps the tags even where `~2~` would flank.
+/// Approach steps 4-5: faithful mode writes `~b~` where each delimiter's
+/// neighbor is whitespace, punctuation, or the edge of a block.
 #[test]
-fn faithful_keeps_tags_whatever_the_neighbors() {
+fn faithful_writes_tildes_where_both_delimiters_flank() {
     for (html, markdown) in [
-        ("<p>H<sub>2</sub>O</p>", "H<sub>2</sub>O"),
-        ("<p>a <sub>b</sub> c</p>", "a <sub>b</sub> c"),
-        ("<p><sub>b</sub></p>", "<sub>b</sub>"),
-        ("<p>x <sub>2</sub>.</p>", "x <sub>2</sub>."),
-        ("<p>x.<sub>2</sub></p>", "x.<sub>2</sub>"),
-        ("<p>a <sub>.</sub> b</p>", "a <sub>.</sub> b"),
+        ("<p><sub>b</sub></p>", "~b~"),
+        ("<p>a <sub>b</sub> c</p>", "a ~b~ c"),
+        ("<p>x <sub>2</sub>.</p>", "x ~2~."),
+        ("<p>x.<sub>2</sub></p>", "x.~2~"),
+        ("<p>(<sub>2</sub>)</p>", "(~2~)"),
+        ("<h1><sub>b</sub></h1>", "# ~b~"),
     ] {
-        assert_faithful(html, markdown, &format!("{html}\n"));
+        assert_faithful(
+            html,
+            markdown,
+            &format!(
+                "{html}
+"
+            ),
+        );
     }
 }
 
-/// Approach step 2: empty content and content with whitespace at an edge keep
-/// the tags and the whitespace.
+/// Approach step 2: edge whitespace moves outside the delimiters, where it is
+/// the neighbor which lets them flank.
 #[test]
-fn faithful_keeps_empty_and_whitespace_edged_subscripts() {
+fn faithful_moves_edge_whitespace_outside() {
+    assert_faithful(
+        "<p>x<sub> a </sub>y</p>",
+        "x ~a~ y",
+        "<p>x <sub>a</sub> y</p>
+",
+    );
+}
+
+/// Approach step 4: a neighbor which is a letter, a `~`, or an element keeps
+/// the tags, since the delimiter might not flank.
+#[test]
+fn faithful_keeps_tags_beside_unsafe_neighbors() {
+    for (html, markdown) in [
+        ("<p>H<sub>2</sub>O</p>", "H<sub>2</sub>O"),
+        ("<p>a<sub>b</sub> c</p>", "a<sub>b</sub> c"),
+        ("<p>a <sub>b</sub>c</p>", "a <sub>b</sub>c"),
+        ("<p>a~<sub>b</sub></p>", r"a\~<sub>b</sub>"),
+        ("<p><em>a</em><sub>b</sub></p>", "*a*<sub>b</sub>"),
+        ("<p><em><sub>a</sub></em></p>", "<em><sub>a</sub></em>"),
+    ] {
+        assert_faithful(
+            html,
+            markdown,
+            &format!(
+                "{html}
+"
+            ),
+        );
+    }
+}
+
+/// Approach steps 2-3: empty content and content with punctuation at an edge
+/// keep the tags.
+#[test]
+fn faithful_keeps_empty_and_punctuation_edged_subscripts() {
     for (html, markdown) in [
         ("<p>a<sub></sub>b</p>", "a<sub></sub>b"),
         ("<p>a<sub> </sub>b</p>", "a<sub> </sub>b"),
-        ("<p>x<sub> a </sub>y</p>", "x<sub> a </sub>y"),
+        ("<p>a <sub>.</sub> b</p>", "a <sub>.</sub> b"),
+        ("<p>a <sub>b.</sub> c</p>", "a <sub>b.</sub> c"),
     ] {
-        assert_faithful(html, markdown, &format!("{html}\n"));
+        assert_faithful(
+            html,
+            markdown,
+            &format!(
+                "{html}
+"
+            ),
+        );
     }
 }
 
-/// Approach step 1: attributes, a comment child, a `<sub>` ancestor, and a
-/// run of adjacent subscripts each keep the tags.
+/// Approach step 1: attributes, a comment child, and a `<sub>` ancestor keep
+/// the tags; adjacent subscripts keep theirs under step 4.
 #[test]
 fn faithful_keeps_tags_of_step_one() {
     for (html, markdown) in [
@@ -73,17 +123,54 @@ fn faithful_keeps_tags_of_step_one() {
             "<sub>a</sub><sub>b</sub>",
         ),
     ] {
-        assert_faithful(html, markdown, &format!("{html}\n"));
+        assert_faithful(
+            html,
+            markdown,
+            &format!(
+                "{html}
+"
+            ),
+        );
     }
 }
 
-/// Children of a retained `<sub>` are still translated in an inline context.
+/// Children are translated in an inline context, inside tildes or kept tags.
 #[test]
-fn faithful_translates_children_inside_kept_tags() {
+fn faithful_translates_children() {
+    assert_faithful(
+        "<p>test <sub>sub<em>script</em> works</sub></p>",
+        "test ~sub*script* works~",
+        "<p>test <sub>sub<em>script</em> works</sub></p>
+",
+    );
     assert_faithful(
         "<p><sub><em>a</em></sub></p>",
         "<sub>*a*</sub>",
-        "<p><sub><em>a</em></sub></p>\n",
+        "<p><sub><em>a</em></sub></p>
+",
+    );
+    // Only the outer level of a nested subscript can be written with tildes.
+    assert_faithful(
+        "<p><sub>x <sub>a</sub> y</sub></p>",
+        "~x <sub>a</sub> y~",
+        "<p><sub>x <sub>a</sub> y</sub></p>
+",
+    );
+}
+
+/// The edge of a table cell is the edge of a block.
+#[test]
+fn faithful_writes_tildes_in_a_table_cell() {
+    let html = "<table><thead><tr><th>h</th></tr></thead><tbody><tr><td><sub>a</sub></td></tr></tbody></table>";
+    let markdown = convert_faithful(html).unwrap();
+    assert!(markdown.contains("| ~a~ |"), "{markdown}");
+    assert!(
+        render_markdown(
+            &markdown,
+            CommonMarkOptions::ENABLE_SUBSCRIPT | CommonMarkOptions::ENABLE_TABLES
+        )
+        .contains("<td><sub>a</sub></td>"),
+        "{markdown}"
     );
 }
 
@@ -92,7 +179,7 @@ fn faithful_translates_children_inside_kept_tags() {
 fn literal_tildes_are_escaped() {
     assert_faithful(
         "<p><sub>a~b</sub></p>",
-        r"<sub>a\~b</sub>",
+        r"~a\~b~",
         "<p><sub>a~b</sub></p>\n",
     );
     // Unescaped, `a ~b~ c` would read back as a subscript.
